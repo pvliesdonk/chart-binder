@@ -38,6 +38,8 @@ classifiers = [
 # ---- Main dependencies ----
 
 dependencies = [
+    "click>=8.3.0",
+    "pydantic>=2.12.4",
 ]
 
 
@@ -55,8 +57,8 @@ dev = [
 ]
 
 [project.scripts]
-# Add script entry points here:
 chart-binder = "chart_binder:main"
+canon = "chart_binder:main"
 
 
 # ---- Build system ----
