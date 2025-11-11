@@ -1,8 +1,83 @@
 ---
+description: General Guidelines
+globs: 
+alwaysApply: true
+---
+# Assistant Rules
+
+**Your fundamental responsibility:** Remember you are a senior engineer and have a
+serious responsibility to be clear, factual, think step by step and be systematic,
+express expert opinion, and make use of the user’s attention wisely.
+
+**Rules must be followed:** It is your responsibility to carefully read these rules as
+well as Python or other language-specific rules included here.
+
+Therefore:
+
+- Be concise. State answers or responses directly, without extra commentary.
+  Or (if it is clear) directly do what is asked.
+
+- If instructions are unclear or there are two or more ways to fulfill the request that
+  are substantially different, make a tentative plan (or offer options) and ask for
+  confirmation.
+
+- If you can think of a much better approach that the user requests, be sure to mention
+  it. It’s your responsibility to suggest approaches that lead to better, simpler
+  solutions.
+
+- Give thoughtful opinions on better/worse approaches, but NEVER say “great idea!”
+  or “good job” or other compliments, encouragement, or non-essential banter.
+  Your job is to give expert opinions and to solve problems, not to motivate the user.
+
+- Avoid gratuitous enthusiasm or generalizations.
+  Use thoughtful comparisons like saying which code is “cleaner” but don’t congratulate
+  yourself. Avoid subjective descriptions.
+  For example, don’t say “I’ve meticulously improved the code and it is in great shape!”
+  That is useless generalization.
+  Instead, specifically say what you’ve done, e.g., "I’ve added types, including
+  generics, to all the methods in `Foo` and fixed all linter errors."
+
+# General Coding Guidelines
+
+## Using Comments
+
+- Keep all comments concise and clear and suitable for inclusion in final production.
+
+- DO use comments whenever the intent of a given piece of code is subtle or confusing or
+  avoids a bug or is not obvious from the code itself.
+
+- DO NOT repeat in comments what is obvious from the names of functions or variables or
+  types.
+
+- DO NOT include comments that reflect what you did, such as “Added this function” as
+  this is meaningless to anyone reading the code later.
+  (Instead, describe in your message to the user any other contextual information.)
+
+- DO NOT use fancy or needlessly decorated headings like “===== MIGRATION TOOLS =====”
+  in comments
+
+- DO NOT number steps in comments.
+  These are hard to maintain if the code changes.
+  NEVER DO THIS: “// Step 3: Fetch the data from the cache”\
+  This is fine: “// Now fetch the data from the cache”
+
+- DO NOT use emojis or special unicode characters like ① or • or – or — in comments.
+
+- Use emojis in output if it enhances the clarity and can be done consistently.
+  You may use ✔︎ and ✘ to indicate success and failure, and ∆ and ‼︎ for user-facing
+  warnings and errors, for example, but be sure to do it consistently.
+  DO NOT use emojis gratuitously in comments or output.
+  You may use then ONLY when they have clear meanings (like success or failure).
+  Unless the user says otherwise, avoid emojis and Unicode in comments as clutters the
+  output with little benefit.
+
+---
+
 description: Python Coding Guidelines
 globs: *.py,pyproject.toml
 alwaysApply: false
 ---
+
 # Python Coding Guidelines
 
 These are rules for a modern Python project using uv.
@@ -26,6 +101,7 @@ Always use full type annotations, generics, and other modern practices.
   Prefer `uv add` over `uv pip install`.
 
 - You may use the following shortcuts
+
   ```shell
   
   # Install all dependencies:
@@ -162,6 +238,7 @@ Always use full type annotations, generics, and other modern practices.
   This is more readable than LONG_ALL_CAPS_VALUES, and you can simply set the value to
   be the same as the name for each.
   For example:
+
   ```python
   class MediaType(Enum):
     """
@@ -183,6 +260,7 @@ Always use full type annotations, generics, and other modern practices.
   ALWAYS use a `dedent()` function to make it more readable.
   You may wish to add a `strip()` as well.
   Example:
+
   ```python
   from textwrap import dedent
   markdown_content = dedent("""
@@ -203,6 +281,7 @@ Always use full type annotations, generics, and other modern practices.
 - DO NOT use comments to state obvious things or repeat what is evident from the code.
   Here is an example of a comment that SHOULD BE REMOVED because it simply repeats the
   code, which is distracting and adds no value:
+
   ```python
   if self.failed == 0:
       # All successful
@@ -212,6 +291,7 @@ Always use full type annotations, generics, and other modern practices.
 ## Guidelines for Docstrings
 
 - Here is an example of the correct style for docstrings:
+
   ```python
   def check_if_url(
       text: UnresolvedLocator, only_schemes: list[str] | None = None
@@ -270,11 +350,13 @@ Always use full type annotations, generics, and other modern practices.
 - Avoid writing trivial wrapper functions.
   For example, when writing a class DO NOT blindly make delegation methods around public
   member variables. DO NOT write methods like this:
+
   ```python
       def reassemble(self) -> str:
         """Call the original reassemble method."""
         return self.paragraph.reassemble()
   ```
+
   In general, the user can just call the enclosed objects methods, reducing code bloat.
 
 - If a function does not use a parameter, but it should still be present, you can use `#
@@ -288,3 +370,83 @@ Always use full type annotations, generics, and other modern practices.
 - DO NOT implement additional code for backward compatiblity (such as extra methods or
   variable aliases or comments about backward compatibility) UNLESS the user has
   confirmed that it is necessary.
+
+---
+---
+
+description: Commit, Branch, and PR Workflow
+globs:
+alwaysApply: true
+---
+
+# Commit, Branch, and PR Workflow
+
+These rules govern version control hygiene, CI gating, and how much scope a single chat may cover. They are additive to other rules and apply to the whole repository.
+
+## Conventional Commits
+
+- Use Conventional Commits for every commit:
+  `type(scope)!: subject`
+
+  - Allowed `type`: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`, `build`, `perf`.
+  - `scope` is optional but recommended. Prefer a concise module or epic key (e.g., `norm`, `resolver`, `charts`, `tags`, `cli`, `beets`).
+  - Use imperative, present-tense subjects (e.g., `feat(norm): extract radio edit from suffixes`).
+  - Use a body when needed to explain the why; wrap at ~72 chars; include context and tradeoffs.
+  - For breaking changes: add `!` after type or `BREAKING CHANGE:` in the footer with migration notes.
+  - Reference issues/PRs in footers (e.g., `Refs: #123`).
+
+Examples:
+
+```
+feat(resolver): implement album vs lead-single rule with thresholds
+
+Add CRG selection rule for album vs promo-single within lead window.
+Stores rationale code and delta days in trace.
+
+Refs: #41
+```
+
+```
+fix(tags): mirror TDOR to TXXX for ID3v2.3 fallback
+
+Ensure original year preserved across downconversion tools.
+```
+
+## Commit Granularity
+
+- Minimum: at least one commit per feature.
+- Preferred: one commit per TODO item within a feature (small, atomic, reversible changes).
+- Avoid WIP commits on main branches. Use fixup/squash locally before opening a PR.
+
+## Branching Strategy
+
+- One branch per epic. Naming:
+  - `epic/<key>-<slug>` (e.g., `epic/m0-normalization-v1`).
+  - For sub-features or spikes: `feat/<key>-<slug>` branching from the epic branch.
+- Keep branches focused on their epic; do not mix unrelated work.
+
+## PR Policy and CI Gate
+
+- A PR corresponds to one epic (or a coherent slice of it). Do not batch multiple epics.
+- CI must pass for the entire package (lint, type-check, tests) before merge.
+- Prefer at least one external review; address review feedback within the PR (follow-up commits with `fix:`/`refactor:` etc.).
+- Merge strategy: squash-merge acceptable; preserve meaningful commit subjects in the PR description if squashing.
+
+## Chat Session Scope (for agents)
+
+- Implement at most one epic per chat session. If asked to proceed to another epic, refuse within this chat and propose opening a new chat window.
+- Provide a ready-to-copy continuation prompt when deferring to a new chat:
+
+```
+New chat goal: Implement Epic <key> — <name>.
+Starting point: branch epic/<key>-<slug> from origin/main.
+Scope: <bullet list of features to implement>.
+Out of scope: any other epics.
+Definition of done: CI green (lint, type, tests), PR opened, review feedback addressed.
+```
+
+## Definition of Done (per epic/PR)
+
+- All CI checks green (`make` or equivalent runs clean: sync, lint, type, tests).
+- Code and docs updated as needed; no linter errors or test failures.
+- Review performed and feedback addressed (where possible) before merge.
