@@ -1,0 +1,77 @@
+---
+description: Commit, Branch, and PR Workflow
+globs: 
+alwaysApply: true
+---
+# Commit, Branch, and PR Workflow
+
+These rules govern version control hygiene, CI gating, and how much scope a single chat may cover. They are additive to other rules and apply to the whole repository.
+
+## Conventional Commits
+
+- Use Conventional Commits for every commit:
+  `type(scope)!: subject`
+
+  - Allowed `type`: `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`, `build`, `perf`.
+  - `scope` is optional but recommended. Prefer a concise module or epic key (e.g., `norm`, `resolver`, `charts`, `tags`, `cli`, `beets`).
+  - Use imperative, present-tense subjects (e.g., `feat(norm): extract radio edit from suffixes`).
+  - Use a body when needed to explain the why; wrap at ~72 chars; include context and tradeoffs.
+  - For breaking changes: add `!` after type or `BREAKING CHANGE:` in the footer with migration notes.
+  - Reference issues/PRs in footers (e.g., `Refs: #123`).
+
+Examples:
+
+```
+feat(resolver): implement album vs lead-single rule with thresholds
+
+Add CRG selection rule for album vs promo-single within lead window.
+Stores rationale code and delta days in trace.
+
+Refs: #41
+```
+
+```
+fix(tags): mirror TDOR to TXXX for ID3v2.3 fallback
+
+Ensure original year preserved across downconversion tools.
+```
+
+## Commit Granularity
+
+- Minimum: at least one commit per feature.
+- Preferred: one commit per TODO item within a feature (small, atomic, reversible changes).
+- Avoid WIP commits on main branches. Use fixup/squash locally before opening a PR.
+
+## Branching Strategy
+
+- One branch per epic. Naming:
+  - `epic/<key>-<slug>` (e.g., `epic/m0-normalization-v1`).
+  - For sub-features or spikes: `feat/<key>-<slug>` branching from the epic branch.
+- Keep branches focused on their epic; do not mix unrelated work.
+
+## PR Policy and CI Gate
+
+- A PR corresponds to one epic (or a coherent slice of it). Do not batch multiple epics.
+- CI must pass for the entire package (lint, type-check, tests) before merge.
+- Prefer at least one external review; address review feedback within the PR (follow-up commits with `fix:`/`refactor:` etc.).
+- Merge strategy: squash-merge acceptable; preserve meaningful commit subjects in the PR description if squashing.
+
+## Chat Session Scope (for agents)
+
+- Implement at most one epic per chat session. If asked to proceed to another epic, refuse within this chat and propose opening a new chat window.
+- Provide a ready-to-copy continuation prompt when deferring to a new chat:
+
+```
+New chat goal: Implement Epic <key> — <name>.
+Starting point: branch epic/<key>-<slug> from origin/main.
+Scope: <bullet list of features to implement>.
+Out of scope: any other epics.
+Definition of done: CI green (lint, type, tests), PR opened, review feedback addressed.
+```
+
+## Definition of Done (per epic/PR)
+
+- All CI checks green (`make` or equivalent runs clean: sync, lint, type, tests).
+- Code and docs updated as needed; no linter errors or test failures.
+- Review performed and feedback addressed (where possible) before merge.
+
