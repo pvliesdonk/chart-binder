@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -111,26 +112,23 @@ class MusicGraphDB:
         updated_at: float | None = None,
     ) -> None:
         """Upsert artist record."""
-        import time
-
         if updated_at is None:
             updated_at = time.time()
 
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO artist (mbid, name, sort_name, disambiguation, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(mbid) DO UPDATE SET
-                name = excluded.name,
-                sort_name = excluded.sort_name,
-                disambiguation = excluded.disambiguation,
-                updated_at = excluded.updated_at
-            """,
-            (mbid, name, sort_name, disambiguation, updated_at),
-        )
-        conn.commit()
-        conn.close()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO artist (mbid, name, sort_name, disambiguation, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(mbid) DO UPDATE SET
+                    name = excluded.name,
+                    sort_name = excluded.sort_name,
+                    disambiguation = excluded.disambiguation,
+                    updated_at = excluded.updated_at
+                """,
+                (mbid, name, sort_name, disambiguation, updated_at),
+            )
+            conn.commit()
 
     def upsert_recording(
         self,
@@ -142,27 +140,24 @@ class MusicGraphDB:
         updated_at: float | None = None,
     ) -> None:
         """Upsert recording record."""
-        import time
-
         if updated_at is None:
             updated_at = time.time()
 
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO recording (mbid, title, artist_mbid, length_ms, disambiguation, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(mbid) DO UPDATE SET
-                title = excluded.title,
-                artist_mbid = excluded.artist_mbid,
-                length_ms = excluded.length_ms,
-                disambiguation = excluded.disambiguation,
-                updated_at = excluded.updated_at
-            """,
-            (mbid, title, artist_mbid, length_ms, disambiguation, updated_at),
-        )
-        conn.commit()
-        conn.close()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO recording (mbid, title, artist_mbid, length_ms, disambiguation, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mbid) DO UPDATE SET
+                    title = excluded.title,
+                    artist_mbid = excluded.artist_mbid,
+                    length_ms = excluded.length_ms,
+                    disambiguation = excluded.disambiguation,
+                    updated_at = excluded.updated_at
+                """,
+                (mbid, title, artist_mbid, length_ms, disambiguation, updated_at),
+            )
+            conn.commit()
 
     def upsert_release_group(
         self,
@@ -175,28 +170,25 @@ class MusicGraphDB:
         updated_at: float | None = None,
     ) -> None:
         """Upsert release_group record."""
-        import time
-
         if updated_at is None:
             updated_at = time.time()
 
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO release_group (mbid, title, artist_mbid, type, first_release_date, disambiguation, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(mbid) DO UPDATE SET
-                title = excluded.title,
-                artist_mbid = excluded.artist_mbid,
-                type = excluded.type,
-                first_release_date = excluded.first_release_date,
-                disambiguation = excluded.disambiguation,
-                updated_at = excluded.updated_at
-            """,
-            (mbid, title, artist_mbid, type, first_release_date, disambiguation, updated_at),
-        )
-        conn.commit()
-        conn.close()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO release_group (mbid, title, artist_mbid, type, first_release_date, disambiguation, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mbid) DO UPDATE SET
+                    title = excluded.title,
+                    artist_mbid = excluded.artist_mbid,
+                    type = excluded.type,
+                    first_release_date = excluded.first_release_date,
+                    disambiguation = excluded.disambiguation,
+                    updated_at = excluded.updated_at
+                """,
+                (mbid, title, artist_mbid, type, first_release_date, disambiguation, updated_at),
+            )
+            conn.commit()
 
     def upsert_release(
         self,
@@ -211,40 +203,37 @@ class MusicGraphDB:
         updated_at: float | None = None,
     ) -> None:
         """Upsert release record."""
-        import time
-
         if updated_at is None:
             updated_at = time.time()
 
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO release (mbid, title, release_group_mbid, artist_mbid, date, country, barcode, disambiguation, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(mbid) DO UPDATE SET
-                title = excluded.title,
-                release_group_mbid = excluded.release_group_mbid,
-                artist_mbid = excluded.artist_mbid,
-                date = excluded.date,
-                country = excluded.country,
-                barcode = excluded.barcode,
-                disambiguation = excluded.disambiguation,
-                updated_at = excluded.updated_at
-            """,
-            (
-                mbid,
-                title,
-                release_group_mbid,
-                artist_mbid,
-                date,
-                country,
-                barcode,
-                disambiguation,
-                updated_at,
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO release (mbid, title, release_group_mbid, artist_mbid, date, country, barcode, disambiguation, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mbid) DO UPDATE SET
+                    title = excluded.title,
+                    release_group_mbid = excluded.release_group_mbid,
+                    artist_mbid = excluded.artist_mbid,
+                    date = excluded.date,
+                    country = excluded.country,
+                    barcode = excluded.barcode,
+                    disambiguation = excluded.disambiguation,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    mbid,
+                    title,
+                    release_group_mbid,
+                    artist_mbid,
+                    date,
+                    country,
+                    barcode,
+                    disambiguation,
+                    updated_at,
+                ),
+            )
+            conn.commit()
 
     def upsert_recording_release(
         self,
@@ -255,54 +244,48 @@ class MusicGraphDB:
         updated_at: float | None = None,
     ) -> None:
         """Upsert recording_release relationship."""
-        import time
-
         if updated_at is None:
             updated_at = time.time()
 
-        conn = self._get_connection()
-        conn.execute(
-            """
-            INSERT INTO recording_release (recording_mbid, release_mbid, track_position, track_number, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(recording_mbid, release_mbid) DO UPDATE SET
-                track_position = excluded.track_position,
-                track_number = excluded.track_number,
-                updated_at = excluded.updated_at
-            """,
-            (recording_mbid, release_mbid, track_position, track_number, updated_at),
-        )
-        conn.commit()
-        conn.close()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO recording_release (recording_mbid, release_mbid, track_position, track_number, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(recording_mbid, release_mbid) DO UPDATE SET
+                    track_position = excluded.track_position,
+                    track_number = excluded.track_number,
+                    updated_at = excluded.updated_at
+                """,
+                (recording_mbid, release_mbid, track_position, track_number, updated_at),
+            )
+            conn.commit()
 
     def get_artist(self, mbid: str) -> dict[str, Any] | None:
         """Get artist by MBID."""
-        conn = self._get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM artist WHERE mbid = ?", (mbid,))
-        row = cursor.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM artist WHERE mbid = ?", (mbid,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     def get_recording(self, mbid: str) -> dict[str, Any] | None:
         """Get recording by MBID."""
-        conn = self._get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM recording WHERE mbid = ?", (mbid,))
-        row = cursor.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        with self._get_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM recording WHERE mbid = ?", (mbid,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     def verify_foreign_keys(self) -> bool:
         """Verify that foreign key constraints are enabled."""
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA foreign_keys")
-        result = cursor.fetchone()
-        conn.close()
-        return result is not None and result[0] == 1
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA foreign_keys")
+            result = cursor.fetchone()
+            return result is not None and result[0] == 1
 
 
 ## Tests

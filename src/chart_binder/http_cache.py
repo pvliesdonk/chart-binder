@@ -24,25 +24,24 @@ class HttpCache:
 
     def _init_db(self) -> None:
         """Initialize SQLite database schema."""
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS cache_entries (
-                url TEXT PRIMARY KEY,
-                cache_key TEXT NOT NULL,
-                etag TEXT,
-                last_modified TEXT,
-                cached_at REAL NOT NULL,
-                expires_at REAL NOT NULL,
-                status_code INTEGER NOT NULL,
-                content_type TEXT
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS cache_entries (
+                    url TEXT PRIMARY KEY,
+                    cache_key TEXT NOT NULL,
+                    etag TEXT,
+                    last_modified TEXT,
+                    cached_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+                    status_code INTEGER NOT NULL,
+                    content_type TEXT
+                )
+                """
             )
-            """
-        )
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_expires_at ON cache_entries(expires_at)")
-        conn.commit()
-        conn.close()
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_expires_at ON cache_entries(expires_at)")
+            conn.commit()
 
     def _get_cache_key(self, url: str) -> str:
         """Generate cache key from URL."""
@@ -58,16 +57,15 @@ class HttpCache:
 
         Checks TTL and returns cached response only if not expired.
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
 
-        cursor.execute(
-            "SELECT * FROM cache_entries WHERE url = ? AND expires_at > ?",
-            (url, time.time()),
-        )
-        row = cursor.fetchone()
-        conn.close()
+            cursor.execute(
+                "SELECT * FROM cache_entries WHERE url = ? AND expires_at > ?",
+                (url, time.time()),
+            )
+            row = cursor.fetchone()
 
         if not row:
             return None
@@ -106,77 +104,74 @@ class HttpCache:
         cached_at = time.time()
         expires_at = cached_at + self.ttl_seconds
 
-        conn = sqlite3.connect(self.db_path)
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO cache_entries
-            (url, cache_key, etag, last_modified, cached_at, expires_at, status_code, content_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                url,
-                cache_key,
-                response.headers.get("etag"),
-                response.headers.get("last-modified"),
-                cached_at,
-                expires_at,
-                response.status_code,
-                response.headers.get("content-type"),
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO cache_entries
+                (url, cache_key, etag, last_modified, cached_at, expires_at, status_code, content_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    url,
+                    cache_key,
+                    response.headers.get("etag"),
+                    response.headers.get("last-modified"),
+                    cached_at,
+                    expires_at,
+                    response.status_code,
+                    response.headers.get("content-type"),
+                ),
+            )
+            conn.commit()
 
     def invalidate(self, url: str) -> None:
         """Remove cache entry for specific URL."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT cache_key FROM cache_entries WHERE url = ?", (url,))
-        row = cursor.fetchone()
+            cursor.execute("SELECT cache_key FROM cache_entries WHERE url = ?", (url,))
+            row = cursor.fetchone()
 
-        if row:
-            cache_path = self._get_cache_path(row[0])
-            cache_path.unlink(missing_ok=True)
-            conn.execute("DELETE FROM cache_entries WHERE url = ?", (url,))
-            conn.commit()
-
-        conn.close()
+            if row:
+                cache_path = self._get_cache_path(row[0])
+                cache_path.unlink(missing_ok=True)
+                conn.execute("DELETE FROM cache_entries WHERE url = ?", (url,))
+                conn.commit()
 
     def purge_expired(self) -> int:
         """Remove expired cache entries and return count of removed entries."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT cache_key FROM cache_entries WHERE expires_at <= ?", (time.time(),))
-        expired_keys = [row[0] for row in cursor.fetchall()]
+            cursor.execute(
+                "SELECT cache_key FROM cache_entries WHERE expires_at <= ?", (time.time(),)
+            )
+            expired_keys = [row[0] for row in cursor.fetchall()]
 
-        for cache_key in expired_keys:
-            cache_path = self._get_cache_path(cache_key)
-            cache_path.unlink(missing_ok=True)
+            for cache_key in expired_keys:
+                cache_path = self._get_cache_path(cache_key)
+                cache_path.unlink(missing_ok=True)
 
-        cursor.execute("DELETE FROM cache_entries WHERE expires_at <= ?", (time.time(),))
-        removed_count = cursor.rowcount
-        conn.commit()
-        conn.close()
+            cursor.execute("DELETE FROM cache_entries WHERE expires_at <= ?", (time.time(),))
+            removed_count = cursor.rowcount
+            conn.commit()
 
-        return removed_count
+            return removed_count
 
     def clear(self) -> None:
         """Clear all cache entries."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT cache_key FROM cache_entries")
-        all_keys = [row[0] for row in cursor.fetchall()]
+            cursor.execute("SELECT cache_key FROM cache_entries")
+            all_keys = [row[0] for row in cursor.fetchall()]
 
-        for cache_key in all_keys:
-            cache_path = self._get_cache_path(cache_key)
-            cache_path.unlink(missing_ok=True)
+            for cache_key in all_keys:
+                cache_path = self._get_cache_path(cache_key)
+                cache_path.unlink(missing_ok=True)
 
-        conn.execute("DELETE FROM cache_entries")
-        conn.commit()
-        conn.close()
+            conn.execute("DELETE FROM cache_entries")
+            conn.commit()
 
 
 ## Tests
@@ -203,6 +198,8 @@ def test_http_cache_basic(tmp_path):
 
 
 def test_http_cache_ttl_expired(tmp_path):
+    from freezegun import freeze_time
+
     cache = HttpCache(tmp_path / "cache", ttl_seconds=1)
 
     url = "https://example.com/test"
@@ -212,11 +209,11 @@ def test_http_cache_ttl_expired(tmp_path):
         request=httpx.Request("GET", url),
     )
 
-    cache.put(url, response)
-    time.sleep(1.1)
-
-    cached = cache.get(url)
-    assert cached is None
+    with freeze_time("2024-01-01 12:00:00") as frozen_time:
+        cache.put(url, response)
+        frozen_time.tick(delta=1.1)
+        cached = cache.get(url)
+        assert cached is None
 
 
 def test_http_cache_invalidate(tmp_path):
@@ -237,22 +234,25 @@ def test_http_cache_invalidate(tmp_path):
 
 
 def test_http_cache_purge_expired(tmp_path):
+    from freezegun import freeze_time
+
     cache = HttpCache(tmp_path / "cache", ttl_seconds=1)
 
     url1 = "https://example.com/test1"
     url2 = "https://example.com/test2"
 
-    for url in [url1, url2]:
-        response = httpx.Response(
-            status_code=200,
-            content=b"test",
-            request=httpx.Request("GET", url),
-        )
-        cache.put(url, response)
+    with freeze_time("2024-01-01 12:00:00") as frozen_time:
+        for url in [url1, url2]:
+            response = httpx.Response(
+                status_code=200,
+                content=b"test",
+                request=httpx.Request("GET", url),
+            )
+            cache.put(url, response)
 
-    time.sleep(1.1)
-    removed = cache.purge_expired()
-    assert removed == 2
+        frozen_time.tick(delta=1.1)
+        removed = cache.purge_expired()
+        assert removed == 2
 
 
 def test_http_cache_clear(tmp_path):

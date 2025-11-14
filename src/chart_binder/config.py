@@ -40,39 +40,56 @@ class Config(BaseModel):
 
         Environment variables take precedence and follow the pattern:
         CHART_BINDER_<SECTION>_<KEY> (e.g., CHART_BINDER_HTTP_CACHE_TTL_SECONDS)
+
+        All values are gathered into a single dictionary first, then validated
+        by Pydantic to ensure consistent type checking and coercion.
         """
         config_dict: dict[str, object] = {}
 
         if config_path and config_path.exists():
             config_dict = tomllib.loads(config_path.read_text())
 
-        config = cls.model_validate(config_dict)
-        return cls._apply_env_overrides(config)
+        config_dict = cls._merge_env_overrides(config_dict)
+        return cls.model_validate(config_dict)
 
     @classmethod
-    def _apply_env_overrides(cls, config: Config) -> Config:
-        """Apply environment variable overrides to config."""
+    def _merge_env_overrides(cls, config_dict: dict[str, object]) -> dict[str, object]:
+        """
+        Merge environment variable overrides into config dictionary.
+
+        Returns a new dictionary with env vars applied, ready for Pydantic validation.
+        """
         env_prefix = "CHART_BINDER_"
 
         if offline := os.getenv(f"{env_prefix}OFFLINE_MODE"):
-            config.offline_mode = offline.lower() in ("true", "1", "yes")
+            config_dict["offline_mode"] = offline.lower() in ("true", "1", "yes")
+
+        http_cache = config_dict.setdefault("http_cache", {})
+        if not isinstance(http_cache, dict):
+            http_cache = {}
+            config_dict["http_cache"] = http_cache
 
         if cache_dir := os.getenv(f"{env_prefix}HTTP_CACHE_DIRECTORY"):
-            config.http_cache.directory = Path(cache_dir)
+            http_cache["directory"] = cache_dir
 
         if cache_ttl := os.getenv(f"{env_prefix}HTTP_CACHE_TTL_SECONDS"):
-            config.http_cache.ttl_seconds = int(cache_ttl)
+            http_cache["ttl_seconds"] = cache_ttl
 
         if cache_enabled := os.getenv(f"{env_prefix}HTTP_CACHE_ENABLED"):
-            config.http_cache.enabled = cache_enabled.lower() in ("true", "1", "yes")
+            http_cache["enabled"] = cache_enabled.lower() in ("true", "1", "yes")
+
+        database = config_dict.setdefault("database", {})
+        if not isinstance(database, dict):
+            database = {}
+            config_dict["database"] = database
 
         if db_music_path := os.getenv(f"{env_prefix}DATABASE_MUSIC_GRAPH_PATH"):
-            config.database.music_graph_path = Path(db_music_path)
+            database["music_graph_path"] = db_music_path
 
         if db_charts_path := os.getenv(f"{env_prefix}DATABASE_CHARTS_PATH"):
-            config.database.charts_path = Path(db_charts_path)
+            database["charts_path"] = db_charts_path
 
-        return config
+        return config_dict
 
 
 ## Tests
