@@ -38,6 +38,9 @@ classifiers = [
 # ---- Main dependencies ----
 
 dependencies = [
+    "click>=8.3.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.12.4",
 ]
 
 
@@ -52,11 +55,12 @@ dev = [
     "rich>=14.0.0",
     "basedpyright>=1.29.1",
     "funlog>=0.2.1",
+    "freezegun>=1.5.5",
 ]
 
 [project.scripts]
-# Add script entry points here:
 chart-binder = "chart_binder:main"
+canon = "chart_binder:main"
 
 
 # ---- Build system ----
