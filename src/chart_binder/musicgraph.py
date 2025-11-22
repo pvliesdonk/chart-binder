@@ -136,7 +136,8 @@ class MusicGraphDB:
         if fetched_at is None:
             fetched_at = time.time()
 
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 INSERT INTO artist (mbid, name, sort_name, begin_area_country, wikidata_qid, diacritics_signature, disambiguation, fetched_at)
@@ -162,6 +163,8 @@ class MusicGraphDB:
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def upsert_recording(
         self,
@@ -178,7 +181,8 @@ class MusicGraphDB:
         if fetched_at is None:
             fetched_at = time.time()
 
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 INSERT INTO recording (mbid, title, artist_mbid, length_ms, isrcs_json, flags_json, disambiguation, fetched_at)
@@ -204,6 +208,8 @@ class MusicGraphDB:
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def upsert_release_group(
         self,
@@ -224,7 +230,8 @@ class MusicGraphDB:
         if fetched_at is None:
             fetched_at = time.time()
 
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 INSERT INTO release_group (mbid, title, artist_mbid, type, secondary_types_json, first_release_date, labels_json, countries_json, discogs_master_id, spotify_album_id, disambiguation, fetched_at)
@@ -258,6 +265,8 @@ class MusicGraphDB:
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def upsert_release(
         self,
@@ -280,7 +289,8 @@ class MusicGraphDB:
         if fetched_at is None:
             fetched_at = time.time()
 
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 INSERT INTO release (mbid, title, release_group_mbid, artist_mbid, date, country, label, format, catno, barcode, flags_json, discogs_release_id, disambiguation, fetched_at)
@@ -318,6 +328,8 @@ class MusicGraphDB:
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def upsert_recording_release(
         self,
@@ -332,7 +344,8 @@ class MusicGraphDB:
         if fetched_at is None:
             fetched_at = time.time()
 
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 INSERT INTO recording_release (recording_mbid, release_mbid, track_position, disc_number, track_number, fetched_at)
@@ -353,32 +366,43 @@ class MusicGraphDB:
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def get_artist(self, mbid: str) -> dict[str, Any] | None:
         """Get artist by MBID."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM artist WHERE mbid = ?", (mbid,))
             row = cursor.fetchone()
             return dict(row) if row else None
+        finally:
+            conn.close()
 
     def get_recording(self, mbid: str) -> dict[str, Any] | None:
         """Get recording by MBID."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM recording WHERE mbid = ?", (mbid,))
             row = cursor.fetchone()
             return dict(row) if row else None
+        finally:
+            conn.close()
 
     def verify_foreign_keys(self) -> bool:
         """Verify that foreign key constraints are enabled."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute("PRAGMA foreign_keys")
             result = cursor.fetchone()
             return result is not None and result[0] == 1
+        finally:
+            conn.close()
 
 
 ## Tests

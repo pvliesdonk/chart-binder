@@ -73,6 +73,26 @@ class Normalizer:
 
     CANONICAL_SEPARATOR = " • "
 
+    # Edition tag extraction patterns
+    PATTERN_EDIT = r'\s*[\(\[]\s*(radio\s+edit|single\s+edit|7"\s*edit|edit)\s*[\)\]]$'
+    PATTERN_LIVE = r"\s*[\(\[]\s*live(?:\s+at\s+([^\)\]]+))?\s*[\)\]]$"
+    PATTERN_REMASTER = r"\s*[\(\[]\s*remaster(?:ed)?(?:\s+(\d{4}))?\s*[\)\]]$"
+    PATTERN_MIX = r"\s*[\(\[]\s*(mono|stereo)\s*[\)\]]$"
+    PATTERN_ACOUSTIC = r"\s*[\(\[]\s*(acoustic|unplugged|piano\s+version)\s*[\)\]]$"
+    PATTERN_REMIX = r"\s*[\(\[]\s*([^)\]]*remix)\s*[\)\]]$"
+    PATTERN_EXTENDED = r'\s*[\(\[]\s*(extended(?:\s+mix)?|12"\s*mix|club\s+mix|dub|instrumental|karaoke\s+version)\s*[\)\]]$'
+    PATTERN_DEMO = r"\s*[\(\[]\s*(demo|early\s+version|rough\s+mix)\s*[\)\]]$"
+    PATTERN_CONTENT = r"\s*[\(\[]\s*(clean|explicit)\s*[\)\]]$"
+    PATTERN_RE_RECORDING = (
+        r"\s*[\(\[]\s*(re-recorded|taylor\'?s\s+version|new\s+recording)\s*[\)\]]$"
+    )
+    PATTERN_MEDLEY = r"\s*[\(\[]\s*medley\s*[\)\]]$"
+    PATTERN_KARAOKE = r"\s*[\(\[]\s*(?:originally\s+performed\s+by\s+[^\)\]]+)\s*[\)\]]$"
+    PATTERN_SESSION = r"\s*[\(\[]\s*(peel)\s+session\s*[\)\]]$"
+    PATTERN_DASH_SUFFIX = (
+        r"\s*-\s*(remaster(?:ed)?\s+\d{4}|live\s+at\s+.+|radio\s+edit|single\s+version)$"
+    )
+
     EXCEPTION_ARTISTS = {
         "the the",
         "the 1975",
@@ -181,8 +201,8 @@ class Normalizer:
         return s.strip()
 
     def _apply_casefold(self, s: str) -> str:
-        """Convert to lowercase for matching."""
-        return s.lower()
+        """Convert to lowercase for matching with language-specific rules."""
+        return s.casefold()
 
     def _apply_punctuation_canonicalization(self, s: str) -> str:
         """Canonicalize quotes, dashes, and ellipsis."""
@@ -297,49 +317,19 @@ class Normalizer:
     def _try_extract_one_suffix(self, s: str) -> tuple[str, list[EditionTag]]:
         """Try to extract one edition suffix from end of string."""
         patterns = [
-            (
-                r'\s*[\(\[]\s*(radio\s+edit|single\s+edit|7"\s*edit|edit)\s*[\)\]]$',
-                TagKind.edit,
-                "sub",
-                self._parse_edit_sub,
-            ),
-            (r"\s*[\(\[]\s*live(?:\s+at\s+([^\)\]]+))?\s*[\)\]]$", TagKind.live, "value", None),
-            (
-                r"\s*[\(\[]\s*remaster(?:ed)?(?:\s+(\d{4}))?\s*[\)\]]$",
-                TagKind.remaster,
-                "value",
-                None,
-            ),
-            (r"\s*[\(\[]\s*(mono|stereo)\s*[\)\]]$", TagKind.mix, "sub", None),
-            (
-                r"\s*[\(\[]\s*(acoustic|unplugged|piano\s+version)\s*[\)\]]$",
-                TagKind.acoustic,
-                "note",
-                None,
-            ),
-            (r"\s*[\(\[]\s*([^)\]]*remix)\s*[\)\]]$", TagKind.remix, "value", None),
-            (
-                r'\s*[\(\[]\s*(extended(?:\s+mix)?|12"\s*mix|club\s+mix|dub|instrumental|karaoke\s+version)\s*[\)\]]$',
-                TagKind.extended,
-                "sub",
-                self._parse_extended_sub,
-            ),
-            (r"\s*[\(\[]\s*(demo|early\s+version|rough\s+mix)\s*[\)\]]$", TagKind.demo, None, None),
-            (r"\s*[\(\[]\s*(clean|explicit)\s*[\)\]]$", TagKind.content, "sub", None),
-            (
-                r"\s*[\(\[]\s*(re-recorded|taylor\'?s\s+version|new\s+recording)\s*[\)\]]$",
-                TagKind.re_recording,
-                "note",
-                None,
-            ),
-            (r"\s*[\(\[]\s*medley\s*[\)\]]$", TagKind.medley, None, None),
-            (
-                r"\s*[\(\[]\s*(?:originally\s+performed\s+by\s+[^\)\]]+)\s*[\)\]]$",
-                TagKind.karaoke,
-                None,
-                None,
-            ),
-            (r"\s*[\(\[]\s*peel\s+session\s*[\)\]]$", TagKind.session, "sub", None),
+            (self.PATTERN_EDIT, TagKind.edit, "sub", self._parse_edit_sub),
+            (self.PATTERN_LIVE, TagKind.live, "value", None),
+            (self.PATTERN_REMASTER, TagKind.remaster, "value", None),
+            (self.PATTERN_MIX, TagKind.mix, "sub", None),
+            (self.PATTERN_ACOUSTIC, TagKind.acoustic, "note", None),
+            (self.PATTERN_REMIX, TagKind.remix, "value", None),
+            (self.PATTERN_EXTENDED, TagKind.extended, "sub", self._parse_extended_sub),
+            (self.PATTERN_DEMO, TagKind.demo, None, None),
+            (self.PATTERN_CONTENT, TagKind.content, "sub", None),
+            (self.PATTERN_RE_RECORDING, TagKind.re_recording, "note", None),
+            (self.PATTERN_MEDLEY, TagKind.medley, None, None),
+            (self.PATTERN_KARAOKE, TagKind.karaoke, None, None),
+            (self.PATTERN_SESSION, TagKind.session, "sub", None),
         ]
 
         for pattern, kind, value_field, parser in patterns:
@@ -356,10 +346,7 @@ class Normalizer:
                 new_s = s[: match.start()].strip()
                 return new_s, [tag]
 
-        dash_pattern = (
-            r"\s*-\s*(remaster(?:ed)?\s+\d{4}|live\s+at\s+[^$]+|radio\s+edit|single\s+version)$"
-        )
-        match = re.search(dash_pattern, s, re.IGNORECASE)
+        match = re.search(self.PATTERN_DASH_SUFFIX, s, re.IGNORECASE)
         if match:
             suffix = match.group(1).lower()
             if "remaster" in suffix:

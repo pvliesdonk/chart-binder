@@ -70,7 +70,8 @@ class ChartsDB:
         if created_at is None:
             created_at = time.time()
 
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 INSERT INTO alias_norm (alias_id, type, raw, normalized, ruleset_version, created_at)
@@ -79,25 +80,30 @@ class ChartsDB:
                     type = excluded.type,
                     raw = excluded.raw,
                     normalized = excluded.normalized,
-                    ruleset_version = excluded.ruleset_version,
-                    created_at = excluded.created_at
+                    ruleset_version = excluded.ruleset_version
                 """,
                 (alias_id, type, raw, normalized, ruleset_version, created_at),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def get_alias(self, type: str, raw: str) -> dict[str, Any] | None:  # noqa: A002
         """Get alias normalization by type and raw text."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM alias_norm WHERE type = ? AND raw = ?", (type, raw))
             row = cursor.fetchone()
             return dict(row) if row else None
+        finally:
+            conn.close()
 
     def list_aliases(self, type: str | None = None) -> list[dict[str, Any]]:  # noqa: A002
         """List all aliases, optionally filtered by type."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             if type:
@@ -105,14 +111,19 @@ class ChartsDB:
             else:
                 cursor.execute("SELECT * FROM alias_norm ORDER BY type, raw")
             return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
 
     def verify_foreign_keys(self) -> bool:
         """Verify that foreign key constraints are enabled."""
-        with self._get_connection() as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.cursor()
             cursor.execute("PRAGMA foreign_keys")
             result = cursor.fetchone()
             return result is not None and result[0] == 1
+        finally:
+            conn.close()
 
 
 ## Tests

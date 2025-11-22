@@ -93,7 +93,7 @@ def test_qa_suzan_freek():
     """QA Pack #11: Suzan & Freek"""
     norm = Normalizer()
     result = norm.normalize_artist("Suzan & Freek")
-    assert " • " in result.core or "&" not in result.core
+    assert result.core == "suzan • freek"
 
 
 def test_qa_the_beatles():
@@ -211,7 +211,9 @@ def test_qa_curly_quotes():
     """QA Pack #26: Curly quotes canonicalization"""
     norm = Normalizer()
     result = norm.normalize_title("Don't Stop Believin'")
-    assert "'" in result.core or "'" not in result.core
+    assert result.core == "don't stop believin'"
+    assert "\u2018" not in result.core  # Left curly quote
+    assert "\u2019" not in result.core  # Right curly quote
 
 
 def test_qa_dashes():
@@ -226,14 +228,14 @@ def test_qa_artist_separator_ampersand():
     """QA Pack #28: Artist separator normalization (&)"""
     norm = Normalizer()
     result = norm.normalize_artist("Simon & Garfunkel")
-    assert "&" not in result.core or " • " in result.core
+    assert result.core == "simon • garfunkel"
 
 
 def test_qa_artist_separator_plus():
     """QA Pack #29: Artist separator normalization (+)"""
     norm = Normalizer()
     result = norm.normalize_artist("Salt + Pepper")
-    assert "+" not in result.core or " • " in result.core
+    assert result.core == "salt • pepper"
 
 
 def test_qa_multiple_guests():
@@ -241,4 +243,6 @@ def test_qa_multiple_guests():
     norm = Normalizer()
     result = norm.normalize_artist("Artist feat. Guest1 feat. Guest2")
     assert result.core == "artist"
-    assert len(result.guests) >= 1
+    assert len(result.guests) == 2
+    assert "guest1" in result.guests
+    assert "guest2" in result.guests
