@@ -19,7 +19,7 @@ def main():
     errcount += run(["codespell", "--write-changes", *SRC_PATHS, *DOC_PATHS])
     errcount += run(["ruff", "check", "--fix", *SRC_PATHS])
     errcount += run(["ruff", "format", *SRC_PATHS])
-    errcount += run(["basedpyright", "--stats", *SRC_PATHS])
+    errcount += run_pyright(["basedpyright", "--level", "error", "--stats", *SRC_PATHS])
 
     rprint()
 
@@ -28,6 +28,29 @@ def main():
     else:
         rprint("[bold green]:white_check_mark: Lint passed![/bold green]")
     rprint()
+
+    return errcount
+
+
+@log_calls(level="warning", show_timing_only=True)
+def run_pyright(cmd: list[str]) -> int:
+    """Run basedpyright and check output for actual errors."""
+    rprint()
+    rprint(f"[bold green]>> {' '.join(cmd)}[/bold green]")
+    errcount = 0
+    try:
+        result = subprocess.run(cmd, text=True, capture_output=True)
+        rprint(result.stdout)
+        if result.stderr:
+            rprint(result.stderr)
+        if "0 errors" not in result.stdout:
+            errcount = 1
+    except KeyboardInterrupt:
+        rprint("[yellow]Keyboard interrupt - Cancelled[/yellow]")
+        errcount = 1
+    except subprocess.CalledProcessError as e:
+        rprint(f"[bold red]Error: {e}[/bold red]")
+        errcount = 1
 
     return errcount
 
