@@ -62,7 +62,12 @@ class CandidateBuilder:
         self.normalizer = normalizer
 
     def discover_by_isrc(self, isrc: str) -> list[Candidate]:
-        """Discover candidates by ISRC."""
+        """
+        Discover candidates by ISRC.
+
+        Note: Currently returns empty list until DB query methods are implemented.
+        See TODO markers in _find_recordings_by_isrc and _find_release_groups_for_recording.
+        """
         candidates = []
 
         recordings = self._find_recordings_by_isrc(isrc)
@@ -89,7 +94,14 @@ class CandidateBuilder:
     def discover_by_title_artist_length(
         self, title: str, artist: str, length_ms: int | None = None
     ) -> list[Candidate]:
-        """Discover candidates by normalized title+artist+length bucket."""
+        """
+        Discover candidates by normalized title+artist+length bucket.
+
+        Length bucket uses ±10% tolerance for fuzzy matching.
+
+        Note: Currently returns empty list until DB query methods are implemented.
+        See TODO markers in _find_recordings_by_fuzzy_match and _find_release_groups_for_recording.
+        """
         # Normalize inputs
         title_result = self.normalizer.normalize_title(title)
         artist_result = self.normalizer.normalize_artist(artist)
@@ -126,11 +138,25 @@ class CandidateBuilder:
         return candidates
 
     def build_evidence_bundle(self, candidate_set: CandidateSet) -> EvidenceBundle:
-        """Construct evidence bundle v1 from candidate set."""
+        """
+        Construct evidence bundle v1 from candidate set.
+
+        TODO: Gather full evidence for decision rules
+        Currently includes minimal fields:
+        - recordings: mbid, title, length_ms
+        - release_groups: mbid only
+        - provenance: sources_used, discovery_methods
+
+        Full implementation should include:
+        - artist.begin_area_country, wikidata_country
+        - recording.flags (is_live, is_remix, etc.)
+        - release_group.primary_type, secondary_types, first_release_date, labels, countries
+        - releases within each RG with flags (is_official, is_promo, etc.)
+        - timeline_facts (earliest_soundtrack_date, earliest_album_date, etc.)
+        """
         bundle = EvidenceBundle()
 
-        # For now, stub implementation
-        # In full version, would gather all evidence for decision rules
+        # TODO: Expand to full evidence bundle fields per spec
         bundle.recordings = [
             {"mbid": c.recording_mbid, "title": c.title, "length_ms": c.length_ms}
             for c in candidate_set.candidates
@@ -139,7 +165,7 @@ class CandidateBuilder:
         bundle.release_groups = [{"mbid": c.release_group_mbid} for c in candidate_set.candidates]
 
         bundle.provenance = {
-            "sources_used": ["MB"],  # For now, only MusicBrainz
+            "sources_used": ["MB"],  # TODO: Track actual sources used (MB, Discogs, Spotify)
             "discovery_methods": list({c.discovery_method for c in candidate_set.candidates}),
         }
 
@@ -175,18 +201,33 @@ class CandidateBuilder:
         return hashlib.sha256(json_bytes).hexdigest()
 
     def _find_recordings_by_isrc(self, isrc: str) -> list[dict[str, Any]]:
-        """Find recordings by ISRC in musicgraph DB."""
-        # Stub: In full implementation, would query musicgraph.sqlite
-        # SELECT * FROM recording WHERE isrcs_json LIKE '%"isrc%'
+        """
+        Find recordings by ISRC in musicgraph DB.
+
+        TODO: Implement ISRC lookup query
+        Expected query:
+            SELECT * FROM recording
+            WHERE json_extract(isrcs_json, '$') LIKE '%' || ? || '%'
+
+        Returns empty list until implemented.
+        """
+        # TODO: Implement DB query for ISRC lookup
         return []
 
     def _find_release_groups_for_recording(self, recording_mbid: str) -> list[dict[str, Any]]:
-        """Find release groups that contain this recording."""
-        # Stub: In full implementation, would join through recording_release and release
-        # SELECT DISTINCT rg.* FROM release_group rg
-        # JOIN release r ON r.release_group_mbid = rg.mbid
-        # JOIN recording_release rr ON rr.release_mbid = r.mbid
-        # WHERE rr.recording_mbid = ?
+        """
+        Find release groups that contain this recording.
+
+        TODO: Implement release_group lookup via recording_release join
+        Expected query:
+            SELECT DISTINCT rg.* FROM release_group rg
+            JOIN release r ON r.release_group_mbid = rg.mbid
+            JOIN recording_release rr ON rr.release_mbid = r.mbid
+            WHERE rr.recording_mbid = ?
+
+        Returns empty list until implemented.
+        """
+        # TODO: Implement DB join query for release_group discovery
         return []
 
     def _find_recordings_by_fuzzy_match(
@@ -196,12 +237,20 @@ class CandidateBuilder:
         length_min: int | None,
         length_max: int | None,
     ) -> list[dict[str, Any]]:
-        """Find recordings by fuzzy title+artist+length match."""
-        # Stub: In full implementation, would normalize all recordings and match
-        # This would require either:
-        # 1. Pre-normalized title_core/artist_core columns
-        # 2. Full-scan normalization (slow)
-        # 3. Work key index
+        """
+        Find recordings by fuzzy title+artist+length match.
+
+        TODO: Implement fuzzy matching query
+        Options:
+        1. Pre-normalized title_core/artist_core columns (requires schema change)
+        2. Full-scan normalization (slow but works with current schema)
+        3. Work key index (optimal, requires schema change)
+
+        For now, consider option 2 with LIMIT for initial implementation.
+
+        Returns empty list until implemented.
+        """
+        # TODO: Implement fuzzy matching query (consider performance implications)
         return []
 
 
