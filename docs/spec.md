@@ -4,13 +4,13 @@
 
 Provide a deterministic Python library with a thin CLI to canonicalize audio files to a Canonical Release Group (CRG) and a Representative Release (RR), embed portable canonical IDs and a compact CHARTS blob, and expose clear explainability and drift detection. A Beets plugin will reuse the library.
 
-Non-goals for v1: full live network ingestion (fixtures first), GUIs, Postgres migrations, and any LLM adjudication (kept disabled unless a true tie remains).
+Non-goals for v1: GUIs, Postgres migrations. Live source integration and LLM adjudication are included in the roadmap but fixtures-first for deterministic testing (live sources via VCR cassettes; LLM kept disabled by default until Phase 2).
 
 ## 2. System Overview
 
 Components (deterministic, testable, decoupled):
 
-- Ingestors: MusicBrainz, Discogs, Spotify, Wikidata, AcoustID (stubbed/fixtures for MVP), chart scrapers (fixtures).
+- Ingestors: MusicBrainz, Discogs, Spotify, Wikidata, AcoustID (live API clients with VCR-based tests for CI), chart scrapers (fixtures).
 - Normalizer: Normalization Ruleset v1 to produce artist/title cores, guests, and edition tags; maintains alias registry.
 - Candidate Builder: Expands candidate graph (recording ↔ release_group ↔ release) using ISRC/AcoustID/title+duration corroboration.
 - Resolver: Canonicalization Rule Table selects CRG first, then RR, with explicit rationale codes and safe INDETERMINATE outcomes.
@@ -68,7 +68,15 @@ Modes: `--offline`, `--frozen`, `--refresh`, `--apply`, `--pin`, `--unpin`.
 - `cache.http.ttl = {mb=3600, discogs=86400, spotify=7200, wikidata=604800}`
 - `cache.paths = {http="/cache/http", db="/db"}`
 - `labels.authority_order = ["Island","EMI","Columbia","Warner", …]` (optional)
-- `llm.enabled = false` (tie-break only), `llm.model_id?`, `llm.timeout_s?`
+- LLM adjudication (Phase 2):
+  - `llm.enabled = false` (set to `true` for INDETERMINATE tie-breaking)
+  - `llm.model_id = "claude-3.5-sonnet"` or `"gpt-4o"`, `"gpt-4o-mini"`
+  - `llm.api_key_env = "ANTHROPIC_API_KEY"` or `"OPENAI_API_KEY"`
+  - `llm.timeout_s = 30`
+  - `llm.max_tokens = 1024`
+  - `llm.auto_accept_threshold = 0.85` (auto-accept if confidence ≥ this)
+  - `llm.review_threshold = 0.60` (escalate to human review if < this)
+  - `llm.prompt_template_version = "v1"` (for A/B testing prompts)
 
 ## 6. Storage & Data Model (SQLite-first)
 

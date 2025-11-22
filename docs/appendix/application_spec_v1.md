@@ -6,7 +6,7 @@ A Python library (clean API) with a thin CLI for batch ops. Beets plugin later r
 
 ## Components
 
-1. **Ingestors**: MusicBrainz, Discogs, Spotify, Wikidata/Wikipedia, Chromaprint/AcoustID, Charts scrapers.
+1. **Ingestors**: MusicBrainz, Discogs, Spotify, Wikidata/Wikipedia, Chromaprint/AcoustID (live API clients with rate limiting and cache-aware fetching; VCR cassettes for CI), Charts scrapers (fixtures).
 2. **Normalizer**: applies Normalization Ruleset v1 + Truth Table.
 3. **Resolver**: builds candidate graph (recording↔RG↔release), applies Canonicalization Rule Table, picks CRG + RR.
 4. **Charts ETL**: scrape → normalize → link → snapshot; exposes coverage queries.
@@ -50,8 +50,8 @@ A Python library (clean API) with a thin CLI for batch ops. Beets plugin later r
 * `charts.link.thresholds = {auto=0.85, review=0.60}`
 * `cache.http.ttl = {mb=3600, discogs=86400, spotify=7200, wikidata=604800}`
 * `cache.paths = {...}`
-* `llm.enabled=false` (tie-break only), `llm.model_id?`, `llm.timeout_s?`
 * `labels.authority_order = ["Island","EMI","Columbia","Warner",…]` (optional)
+* `llm.enabled=false`, `llm.model_id="claude-3.5-sonnet"`, `llm.api_key_env="ANTHROPIC_API_KEY"`, `llm.timeout_s=30`, `llm.max_tokens=1024`, `llm.auto_accept_threshold=0.85`, `llm.review_threshold=0.60`, `llm.prompt_template_version="v1"`
 
 ## Storage Layout (single file or split DBs)
 
