@@ -20,6 +20,7 @@ class DatabaseConfig(BaseModel):
 
     music_graph_path: Path = Field(default=Path("musicgraph.sqlite"))
     charts_path: Path = Field(default=Path("charts.sqlite"))
+    decisions_path: Path = Field(default=Path("decisions.sqlite"))
 
 
 class LiveSourcesConfig(BaseModel):
@@ -111,6 +112,9 @@ class Config(BaseModel):
 
         if db_charts_path := os.getenv(f"{env_prefix}DATABASE_CHARTS_PATH"):
             database["charts_path"] = db_charts_path
+
+        if db_decisions_path := os.getenv(f"{env_prefix}DATABASE_DECISIONS_PATH"):
+            database["decisions_path"] = db_decisions_path
 
         # Live sources config
         live_sources = config_dict.setdefault("live_sources", {})
