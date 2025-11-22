@@ -239,6 +239,58 @@ docs: update normalization ruleset
 - [Spec deviations if any]
 ```
 
+### Pull Request Description Workflow
+
+**IMPORTANT**: To make PR descriptions easy to access and copy, follow this workflow:
+
+**When creating a PR:**
+
+1. **Create PR description file** at the root of the repo:
+   - Filename: `EPIC{N}_PR.md` (e.g., `EPIC4_PR.md`)
+   - Content: Full PR description in markdown format
+   - Commit and push this file with your branch
+
+2. **Provide GitHub links** to the user:
+   - PR creation link: `https://github.com/{owner}/{repo}/compare/main...{branch}?expand=1`
+   - Raw PR description: `https://github.com/{owner}/{repo}/blob/{branch}/EPIC{N}_PR.md`
+   - User can click "Raw" button on GitHub to easily copy the description
+
+3. **Benefits**:
+   - No need to copy/paste from Claude Code interface
+   - Description viewable directly on GitHub
+   - Easy to access via "Raw" button
+   - Version controlled with the branch
+
+**After PR is merged or when addressing review comments:**
+
+1. **Remove the PR description file**:
+   ```bash
+   git rm EPIC{N}_PR.md
+   git commit -m "docs: remove PR description file after merge"
+   ```
+
+2. **Why remove it**:
+   - PR description is now preserved in the GitHub PR itself
+   - Keeps repo clean
+   - Avoids stale documentation files
+
+**Example workflow:**
+
+```bash
+# Creating PR
+echo "PR content..." > EPIC4_PR.md
+git add EPIC4_PR.md
+git commit -m "docs: add Epic 4 PR description"
+git push
+
+# After PR merged
+git rm EPIC4_PR.md
+git commit -m "docs: remove PR description file after merge"
+git push
+```
+
+**Note**: This pattern solves the copy-paste difficulty in web-based Claude Code interface while keeping the repo clean long-term.
+
 ## Common Tasks
 
 ### Adding a New Normalization Rule
