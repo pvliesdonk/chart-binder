@@ -163,7 +163,7 @@ def test_crg_rule_2b_single_true_premiere(resolver):
     Rule 2B: Single True Premiere.
 
     Single RG should be selected when it's truly first (outside lead window or no album).
-    Album comes 120 days after single (outside 90-day lead window).
+    Album comes 143 days after single (outside 90-day lead window).
     """
     evidence_bundle = {
         "artist": {"mb_artist_id": "artist-1", "name": "Test Artist"},
@@ -748,4 +748,5 @@ def test_partial_date_parsing(resolver):
     decision = resolver.resolve(evidence_bundle)
 
     assert decision.state == DecisionState.DECIDED
-    assert decision.release_group_mbid in ["rg-year-only", "rg-year-month"]
+    # Should deterministically select "rg-year-only" (1965-01-01 < 1965-06-01)
+    assert decision.release_group_mbid == "rg-year-only"

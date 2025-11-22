@@ -9,6 +9,7 @@ See: docs/appendix/canonicalization_rule_table_v1.md
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -87,17 +88,17 @@ class DecisionTrace:
         Format: evh=9b1f2c...;crg=SINGLE_TRUE_PREMIERE;rr=ORIGIN_COUNTRY_EARLIEST;src=mb,dc;cfg=lw90,rg10
         """
         # Extract sources used (mb, dc, sp, wd)
+        source_map = {
+            "MB": "mb",
+            "Discogs": "dc",
+            "Spotify": "sp",
+            "Wikidata": "wd",
+        }
         sources = set()
         for candidate in self.considered_candidates:
             for src in candidate.get("sources", []):
-                if src == "MB":
-                    sources.add("mb")
-                elif src == "Discogs":
-                    sources.add("dc")
-                elif src == "Spotify":
-                    sources.add("sp")
-                elif src == "Wikidata":
-                    sources.add("wd")
+                if src in source_map:
+                    sources.add(source_map[src])
 
         sources_str = ",".join(sorted(sources))
 
@@ -320,9 +321,9 @@ class Resolver:
         if not earliest_soundtracks:
             return None
 
-        # Tie-breaker: label authority → artist origin country presence
+        # Tie-breaker: label authority → artist origin country presence → lexicographic MBID
         # TODO: Implement label authority and country tie-breakers
-        selected = earliest_soundtracks[0]
+        selected = sorted(earliest_soundtracks, key=lambda c: c["rg_mbid"])[0]
 
         return {
             "state": DecisionState.DECIDED,
@@ -354,7 +355,8 @@ class Resolver:
 
         # Rule 2A: Album-first within window
         if album_date and single_date:
-            delta_days = (single_date - album_date).days
+            # delta_days > 0 means album came AFTER single (lead single scenario)
+            delta_days = (album_date - single_date).days
 
             # Check if single is promo/lead
             # TODO: Implement promo detection from secondary types, Discogs notes, pattern match
@@ -368,7 +370,9 @@ class Resolver:
                     if c["primary_type"] == "Album" and c["first_release_date"]
                 ]
                 if album_candidates:
-                    earliest_album = min(album_candidates, key=lambda c: c["first_release_date"])
+                    earliest_album = min(
+                        album_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
+                    )
                     return {
                         "state": DecisionState.DECIDED,
                         "crg_mbid": earliest_album["rg_mbid"],
@@ -388,7 +392,7 @@ class Resolver:
                 ]
                 if single_ep_candidates:
                     earliest_single = min(
-                        single_ep_candidates, key=lambda c: c["first_release_date"]
+                        single_ep_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
                     )
                     return {
                         "state": DecisionState.DECIDED,
@@ -418,7 +422,9 @@ class Resolver:
         # Check if Live is earliest
         if not non_live_candidates:
             # Only Live candidates exist
-            earliest_live = min(live_candidates, key=lambda c: c["first_release_date"])
+            earliest_live = min(
+                live_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
+            )
             return {
                 "state": DecisionState.DECIDED,
                 "crg_mbid": earliest_live["rg_mbid"],
@@ -431,7 +437,9 @@ class Resolver:
         earliest_non_live_date = min(c["first_release_date"] for c in non_live_candidates)
 
         if earliest_live_date < earliest_non_live_date:
-            earliest_live = min(live_candidates, key=lambda c: c["first_release_date"])
+            earliest_live = min(
+                live_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
+            )
             return {
                 "state": DecisionState.DECIDED,
                 "crg_mbid": earliest_live["rg_mbid"],
@@ -604,7 +612,9 @@ class Resolver:
                 # Select earliest among origin country releases
                 origin_with_dates = [r for r in origin_releases if r.get("date")]
                 if origin_with_dates:
-                    earliest_origin = min(origin_with_dates, key=lambda r: r["date"])
+                    earliest_origin = min(
+                        origin_with_dates, key=lambda r: (r["date"], r["mb_release_id"])
+                    )
                     return {
                         "state": DecisionState.DECIDED,
                         "rr_mbid": earliest_origin["mb_release_id"],
@@ -620,7 +630,7 @@ class Resolver:
                 "missing_facts": ["no_release_dates"],
             }
 
-        earliest_release = min(releases_with_dates, key=lambda r: r["date"])
+        earliest_release = min(releases_with_dates, key=lambda r: (r["date"], r["mb_release_id"]))
 
         # Step 4: Reissue/remaster guard
         # TODO: Implement reissue detection and guard logic
@@ -657,20 +667,13 @@ class Resolver:
 
         Removes timestamps and cache ages, then computes SHA256.
         """
-        # Create canonical representation (exclude provenance.fetched_at_utc and cache_age_s)
-        canonical = {
-            k: v
-            for k, v in evidence_bundle.items()
-            if k not in ["provenance"]  # Will add back provenance without volatile fields
-        }
+        # Deep copy to avoid mutating the original bundle
+        canonical = copy.deepcopy(evidence_bundle)
 
-        # Add provenance without volatile fields
-        if "provenance" in evidence_bundle:
-            canonical["provenance"] = {
-                k: v
-                for k, v in evidence_bundle["provenance"].items()
-                if k not in ["fetched_at_utc", "cache_age_s"]
-            }
+        # Remove volatile fields from provenance if present
+        if "provenance" in canonical:
+            canonical["provenance"].pop("fetched_at_utc", None)
+            canonical["provenance"].pop("cache_age_s", None)
 
         # Serialize to canonical JSON
         json_bytes = json.dumps(
@@ -680,15 +683,31 @@ class Resolver:
         return hashlib.sha256(json_bytes).hexdigest()
 
     def _parse_date(self, date_str: str) -> datetime:
-        """Parse ISO date string (YYYY-MM-DD) to datetime."""
-        # Handle partial dates (YYYY-MM or YYYY)
-        parts = date_str.split("-")
-        if len(parts) == 1:
-            # Year only
-            return datetime(int(parts[0]), 1, 1)
-        elif len(parts) == 2:
-            # Year-month
-            return datetime(int(parts[0]), int(parts[1]), 1)
-        else:
-            # Full date
-            return datetime.strptime(date_str, "%Y-%m-%d")
+        """
+        Parse ISO date string (YYYY-MM-DD) to datetime.
+
+        Args:
+            date_str: Date string in format YYYY, YYYY-MM, or YYYY-MM-DD
+
+        Returns:
+            datetime object (partial dates padded with Jan 1 for missing components)
+
+        Raises:
+            ValueError: If date_str is not a valid ISO date format
+        """
+        try:
+            # Handle partial dates (YYYY-MM or YYYY)
+            parts = date_str.split("-")
+            if len(parts) == 1:
+                # Year only
+                return datetime(int(parts[0]), 1, 1)
+            elif len(parts) == 2:
+                # Year-month
+                return datetime(int(parts[0]), int(parts[1]), 1)
+            else:
+                # Full date
+                return datetime.strptime(date_str, "%Y-%m-%d")
+        except (ValueError, IndexError) as e:
+            raise ValueError(
+                f"Invalid date format: '{date_str}'. Expected YYYY, YYYY-MM, or YYYY-MM-DD."
+            ) from e

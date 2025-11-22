@@ -21,11 +21,11 @@ The implementation follows a strict rule-based algorithm with explicit tie-break
 - `DecisionTrace`: Full structured trace for audit (ruleset version, evidence hash, considered candidates, CRG/RR selection details, missing facts)
 - `CanonicalDecision`: Output with CRG/RR MBIDs, rationale codes, decision trace, and compact tag
 
-**CRG Selection Algorithm (7 rules, first match wins):**
+**CRG Selection Algorithm (7 decision rules + INDETERMINATE fallback, first match wins):**
 
 1. **Soundtrack Origin** (`CRG:SOUNDTRACK_PREMIERE`)
    - Selects Soundtrack RG if its first_release_date ≤ min of all other types
-   - Tie-breakers: label authority → artist origin country presence
+   - Tie-breakers: label authority → artist origin country presence → lexicographic MBID
 
 2. **Album Lead-Window** (`CRG:ALBUM_LEAD_WINDOW`)
    - Selects Album RG when single is promo/lead within 90-day window of album
@@ -49,8 +49,8 @@ The implementation follows a strict rule-based algorithm with explicit tie-break
    - Fallback to earliest RG with confirmed first_release_date
    - Tie-breakers: artist origin country → label authority → country precedence → lexicographic MBID
 
-8. **Indeterminate** (`CRG:INDETERMINATE`)
-   - Returns when dates missing or conflicting after all tie-breakers
+**INDETERMINATE Fallback** (`CRG:INDETERMINATE`)
+   - Returns when dates missing or conflicting after all tie-breakers exhausted
    - Emits missing_facts for escalation (e.g., "need single street date", "confirm OST release liner")
 
 **RR Selection within CRG (5 steps):**
