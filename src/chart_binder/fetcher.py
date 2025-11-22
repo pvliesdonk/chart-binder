@@ -21,6 +21,13 @@ from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.spotify import SpotifyClient
 from chart_binder.wikidata import WikidataClient
 
+# Confidence scores for different search methods (0.0-1.0)
+# Higher values indicate more reliable matching methods
+CONFIDENCE_ISRC_MUSICBRAINZ = 0.95  # ISRC is unique and MusicBrainz is canonical
+CONFIDENCE_ISRC_SPOTIFY = 0.90  # ISRC is unique but Spotify metadata less canonical
+CONFIDENCE_TEXT_SEARCH = 0.70  # Text search is fuzzy and may have false positives
+# Note: AcoustID confidence comes directly from the API response
+
 
 class FetchMode(Enum):
     """Fetch mode for controlling network access."""
@@ -153,10 +160,18 @@ class UnifiedFetcher:
 
         Returns:
             Dict with recording data and related entities
+
+        Raises:
+            ValueError: If recording not found in database when in OFFLINE mode
         """
         if self.config.mode == FetchMode.OFFLINE:
-            # TODO: Return from cache/db only
-            pass
+            # Return from database only, no network access
+            recording_data = self.db.get_recording(mbid)
+            if not recording_data:
+                raise ValueError(
+                    f"Recording {mbid} not found in database (OFFLINE mode - no network access)"
+                )
+            return {"recording": recording_data}
 
         # Fetch from MusicBrainz
         recording = self.mb_client.get_recording(mbid)
@@ -228,7 +243,7 @@ class UnifiedFetcher:
                         "title": rec.title,
                         "artist_name": rec.artist_name,
                         "source": "musicbrainz_isrc",
-                        "confidence": 0.95,
+                        "confidence": CONFIDENCE_ISRC_MUSICBRAINZ,
                     }
                 )
 
@@ -243,7 +258,7 @@ class UnifiedFetcher:
                             "artist_name": track.artist_name,
                             "isrc": track.isrc,
                             "source": "spotify_isrc",
-                            "confidence": 0.90,
+                            "confidence": CONFIDENCE_ISRC_SPOTIFY,
                         }
                     )
 
@@ -269,7 +284,7 @@ class UnifiedFetcher:
                         "title": rec.title,
                         "artist_name": rec.artist_name,
                         "source": "musicbrainz_search",
-                        "confidence": 0.70,  # Lower confidence for search
+                        "confidence": CONFIDENCE_TEXT_SEARCH,
                     }
                 )
 

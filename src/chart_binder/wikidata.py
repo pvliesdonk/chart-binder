@@ -75,9 +75,17 @@ class WikidataClient:
             wikidata_qid = f"Q{wikidata_qid}"
 
         query = f"""
-        SELECT DISTINCT ?property ?countryCode ?countryLabel WHERE {{
-          VALUES ?property {{ wd:P27 wd:P495 wd:P740 }}
-          wd:{wikidata_qid} ?property ?country .
+        SELECT DISTINCT ?propertyType ?countryCode ?countryLabel WHERE {{
+          {{
+            wd:{wikidata_qid} wdt:P27 ?country .
+            BIND("P27" AS ?propertyType)
+          }} UNION {{
+            wd:{wikidata_qid} wdt:P495 ?country .
+            BIND("P495" AS ?propertyType)
+          }} UNION {{
+            wd:{wikidata_qid} wdt:P740 ?country .
+            BIND("P740" AS ?propertyType)
+          }}
           ?country wdt:P297 ?countryCode .
 
           SERVICE wikibase:label {{
@@ -91,8 +99,10 @@ class WikidataClient:
             "format": "json",
         }
 
-        # Check cache
-        cache_key = f"{self.SPARQL_ENDPOINT}?qid={wikidata_qid}"
+        # Check cache - use query as cache key for correctness
+        import hashlib
+        query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
+        cache_key = f"{self.SPARQL_ENDPOINT}?qhash={query_hash}"
         if self.cache:
             cached = self.cache.get(cache_key)
             if cached:
@@ -144,17 +154,11 @@ class WikidataClient:
             if country_label_obj:
                 country_name = country_label_obj.get("value")
 
-            # Extract property type
+            # Extract property type (now directly from SPARQL BIND)
             property_type = None
-            property_obj = binding.get("property")
-            if property_obj:
-                property_uri = property_obj.get("value", "")
-                if "P27" in property_uri:
-                    property_type = "P27"
-                elif "P495" in property_uri:
-                    property_type = "P495"
-                elif "P740" in property_uri:
-                    property_type = "P740"
+            property_type_obj = binding.get("propertyType")
+            if property_type_obj:
+                property_type = property_type_obj.get("value")
 
             results.append(
                 WikidataCountryResult(
@@ -200,12 +204,12 @@ def test_wikidata_parse_response():
         "results": {
             "bindings": [
                 {
-                    "property": {"value": "http://www.wikidata.org/entity/P27"},
+                    "propertyType": {"value": "P27"},
                     "countryCode": {"value": "US"},
                     "countryLabel": {"value": "United States"},
                 },
                 {
-                    "property": {"value": "http://www.wikidata.org/entity/P740"},
+                    "propertyType": {"value": "P740"},
                     "countryCode": {"value": "GB"},
                     "countryLabel": {"value": "United Kingdom"},
                 },

@@ -76,6 +76,14 @@ class SpotifyClient:
         self.client_secret = client_secret or os.getenv("SPOTIFY_CLIENT_SECRET")
         self.cache = cache
 
+        # Validate that both credentials are provided together or both are None
+        if bool(self.client_id) != bool(self.client_secret):
+            raise ValueError(
+                "Both SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be provided together. "
+                f"Got: client_id={'set' if self.client_id else 'missing'}, "
+                f"client_secret={'set' if self.client_secret else 'missing'}"
+            )
+
         self._access_token: str | None = None
         self._token_expires_at: float = 0.0
         self._client = httpx.Client(timeout=30.0)
