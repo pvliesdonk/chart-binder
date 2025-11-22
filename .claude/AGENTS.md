@@ -252,8 +252,8 @@ docs: update normalization ruleset
 
 2. **Provide GitHub links** to the user:
    - PR creation link: `https://github.com/{owner}/{repo}/compare/main...{branch}?expand=1`
-   - Raw PR description: `https://github.com/{owner}/{repo}/blob/{branch}/EPIC{N}_PR.md`
-   - User can click "Raw" button on GitHub to easily copy the description
+   - Direct raw link for copying: `https://raw.githubusercontent.com/{owner}/{repo}/{branch}/EPIC{N}_PR.md`
+   - Alternative: View file at `https://github.com/{owner}/{repo}/blob/{branch}/EPIC{N}_PR.md` and click "Raw" button
 
 3. **Benefits**:
    - No need to copy/paste from Claude Code interface
@@ -261,22 +261,25 @@ docs: update normalization ruleset
    - Easy to access via "Raw" button
    - Version controlled with the branch
 
-**After PR review (when addressing comments):**
+**Before merging the PR:**
 
 1. **Remove the PR description file**:
    ```bash
    git rm EPIC{N}_PR.md
-   # Include removal as part of your review fix commit
-   git add ...other files...
-   git commit -m "fix: address PR review comments"
+   git commit -m "docs: remove PR description file before merge"
    git push
    ```
 
-2. **Why remove it after review**:
-   - PR description is now preserved in the GitHub PR itself
-   - Keeps repo clean
+2. **Why remove it before merge**:
+   - PR description is preserved in the GitHub PR itself
+   - Keeps repo clean (file doesn't end up in main)
    - Avoids stale documentation files
    - No longer needed once PR is created
+
+3. **When to remove**:
+   - Can be removed right after PR creation (once description is transferred to GitHub)
+   - Or as part of addressing review comments
+   - Must be removed before merge to keep main clean
 
 **Example workflow:**
 
@@ -288,12 +291,21 @@ git commit -m "docs: add Epic 4 PR description"
 git push
 # Now create the PR on GitHub using the file
 
-# 2. Addressing review comments
+# 2. Before merge (choose one approach):
+
+# Option A: Remove immediately after PR creation
+git rm EPIC4_PR.md
+git commit -m "docs: remove PR description file"
+git push
+
+# Option B: Remove when addressing review comments
 git rm EPIC4_PR.md
 # Make your fixes
 git add src/...
 git commit -m "fix: address PR review comments"
 git push
+
+# Either way, ensure it's removed before merge
 ```
 
 **Note**: This pattern solves the copy-paste difficulty in web-based Claude Code interface while keeping the repo clean long-term.
