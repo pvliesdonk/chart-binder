@@ -261,31 +261,38 @@ docs: update normalization ruleset
    - Easy to access via "Raw" button
    - Version controlled with the branch
 
-**After PR is merged or when addressing review comments:**
+**After PR review (when addressing comments):**
 
 1. **Remove the PR description file**:
    ```bash
    git rm EPIC{N}_PR.md
-   git commit -m "docs: remove PR description file after merge"
+   # Include removal as part of your review fix commit
+   git add ...other files...
+   git commit -m "fix: address PR review comments"
+   git push
    ```
 
-2. **Why remove it**:
+2. **Why remove it after review**:
    - PR description is now preserved in the GitHub PR itself
    - Keeps repo clean
    - Avoids stale documentation files
+   - No longer needed once PR is created
 
 **Example workflow:**
 
 ```bash
-# Creating PR
+# 1. Creating PR
 echo "PR content..." > EPIC4_PR.md
 git add EPIC4_PR.md
 git commit -m "docs: add Epic 4 PR description"
 git push
+# Now create the PR on GitHub using the file
 
-# After PR merged
+# 2. Addressing review comments
 git rm EPIC4_PR.md
-git commit -m "docs: remove PR description file after merge"
+# Make your fixes
+git add src/...
+git commit -m "fix: address PR review comments"
 git push
 ```
 
