@@ -192,8 +192,28 @@ class Normalizer:
         s = s.replace("\u2026", "...")
         return s
 
+    TRANSLITERATION_MAP = {
+        "ø": "o",
+        "Ø": "O",
+        "å": "a",
+        "Å": "A",
+        "æ": "ae",
+        "Æ": "AE",
+        "ð": "d",
+        "Ð": "D",
+        "þ": "th",
+        "Þ": "TH",
+        "ß": "ss",
+        "œ": "oe",
+        "Œ": "OE",
+        "ł": "l",
+        "Ł": "L",
+    }
+    TRANSLITERATION_TABLE = str.maketrans(TRANSLITERATION_MAP)
+
     def _strip_diacritics(self, s: str) -> str:
         """Remove diacritics for matching."""
+        s = s.translate(self.TRANSLITERATION_TABLE)
         nfd = unicodedata.normalize("NFD", s)
         return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
@@ -203,6 +223,8 @@ class Normalizer:
         diacritics = []
         for i, c in enumerate(nfd):
             if unicodedata.category(c) == "Mn":
+                diacritics.append(f"{i}:{c}")
+            elif c in self.TRANSLITERATION_MAP or c.lower() in self.TRANSLITERATION_MAP:
                 diacritics.append(f"{i}:{c}")
         return ",".join(diacritics)
 
