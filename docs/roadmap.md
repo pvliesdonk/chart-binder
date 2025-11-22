@@ -4,10 +4,11 @@ This roadmap turns the specification into small, implementable units suitable fo
 
 ## Milestones
 
-- M0: Foundations (config, DBs, HTTP cache, normalization core)
+- M0: Foundations (config, DBs, HTTP cache, normalization core, live source ingestors)
 - M1: Canonicalization (candidates + CRG/RR + decisions + drift)
-- M2: Tagging + CLI + Charts ETL (fixtures) + CHARTS export
+- M2: Tagging + CLI + Charts ETL + CHARTS export
 - M3: Beets plugin adapter + coverage reports
+- Phase 2: LLM adjudication + human review queue
 
 ## Epics, Features, Acceptance
 
@@ -37,13 +38,30 @@ This roadmap turns the specification into small, implementable units suitable fo
 - Acceptance
   - All Normalization QA pack cases pass; idempotence holds.
 
+### Epic 3.5 — Live Source Ingestors (M0/M1 boundary)
+
+- Features
+  - **MusicBrainz API client**: recording/release-group/release lookups by MBID or search query; batch lookup optimization; URL relationships parsing; rate limiting (1 req/sec, configurable).
+  - **Discogs API client**: master/release lookups by ID; OAuth authentication; marketplace data filtering; rate limiting (60/min auth, 25/min unauth).
+  - **Spotify Web API client**: track/album metadata by ID or search; client credentials flow; preview URL and popularity extraction; rate limiting per ToS.
+  - **Wikidata SPARQL client**: artist country/origin queries (P27, P495, P740); result caching; timeout handling.
+  - **AcoustID client**: fingerprint submission and lookup; duration+fingerprint corroboration; confidence thresholds.
+  - **Unified fetcher interface**: `fetch_recording(mbid)`, `search_recordings(isrc|title_artist)` with fallback chain; cache-aware with TTL/ETag respect; `--offline|--refresh|--frozen` mode support.
+  - **Entity hydration**: parse API responses into `musicgraph.sqlite` entities; maintain external ID linkages; timestamp provenance (`fetched_at_utc`).
+- Acceptance
+  - Live API calls succeed with valid credentials (use VCR cassettes for CI); rate limits enforced (token bucket verification); cache hit/miss logic correct; `--offline` mode never hits network; entity CRUD round-trips with all fields populated; fixture-based tests continue passing via mocked responses.
+- Notes
+  - Tests use recorded VCR cassettes (pytest-vcr) to avoid live network in CI while validating response parsing.
+  - Fixtures remain primary for deterministic golden tests; live sources augment with real-world variability testing.
+
 ### Epic 4 — Candidate Builder (M1)
 
 - Features
-  - Candidate discovery by (ISRC | AcoustID | title+artist_core+length bucket).
+  - Candidate discovery by (ISRC | AcoustID | title+artist_core+length bucket) using live sources from Epic 3.5.
   - Evidence bundle v1 construction (deterministic canonical JSON; hash function).
 - Acceptance
   - Fixture-based inputs produce expected candidate sets and evidence_hash stability.
+  - Live source integration tests with VCR cassettes validate end-to-end discovery flow.
 
 ### Epic 5 — Canonical Resolver: CRG & RR (M1)
 
@@ -105,12 +123,42 @@ This roadmap turns the specification into small, implementable units suitable fo
 - Acceptance
   - Import flow shows side-by-side; writes respect mode; summary includes canonized/augmented/skipped/indeterminate and cache stats.
 
-### Epic 13 — Human-in-the-Loop (Phase 2)
+### Epic 13 — LLM Adjudication & Human-in-the-Loop (Phase 2)
 
 - Features
-  - Minimal review queue for confidence 0.60–0.85 and ambiguous CRG; accept/keep/augment/skip; persist overrides with provenance.
+  - **LLM Adjudication for True Ties**:
+    - Structured prompt template: evidence bundle (artist, recording candidates, RG candidates with releases, timeline facts) + config snapshot + rationale for INDETERMINATE state + missing facts.
+    - Prompt format: System instruction defining role ("You are a music metadata expert..."), evidence as JSON with minimal explanation, specific question ("Which release group is the canonical premiere for this recording?"), output constraints (must return valid CRG MBID + confidence 0-1 + brief rationale).
+    - Model invocation: configurable `llm.model_id` (e.g., `claude-3.5-sonnet`, `gpt-4o`), `llm.timeout_s` (default 30), `llm.max_tokens` (default 1024).
+    - Response parsing: extract CRG/RR selection, confidence score, and rationale from structured JSON or natural language output; validate MBID exists in evidence bundle; log full prompt+response for audit.
+    - Confidence thresholds: auto-accept ≥ 0.85, escalate to human review 0.60–0.85, reject < 0.60 (keep INDETERMINATE).
+    - Fallback on LLM failure: timeout, parse error, or low confidence → escalate to human queue or keep INDETERMINATE.
+  - **Human Review Queue**:
+    - Queue population: INDETERMINATE decisions after all deterministic rules exhausted; LLM suggestions with confidence 0.60–0.85; conflicting sources (MB vs Discogs dates disagree > 1 year).
+    - Review UI (CLI-first, web later): display evidence bundle, decision trace, LLM suggestion (if any), side-by-side candidate comparison.
+    - Actions: `accept <crg_mbid> <rr_mbid>` (manual selection), `accept-llm` (accept LLM suggestion), `keep-indeterminate` (defer), `add-alias <from> <to>` (create normalization override), `skip` (ignore file).
+    - Provenance tracking: `{user_id, timestamp, action, rationale_text, llm_suggestion_id}` stored in `decision_history` or `override_rule`.
+  - **Override Rules**:
+    - Per-artist or per-track scoped overrides: "For artist X, always prefer RG Y over Z" or "For recording R, canonical is always RG W".
+    - Stored in `override_rule` table: `{scope, artist_mbid?, recording_mbid?, target_rg_mbid, target_rr_mbid?, created_by, created_at, reason}`.
+    - Applied before resolver runs (hard override) or as tie-breaker (soft preference).
+  - **Audit Trail**:
+    - Full LLM prompt + response logged to `llm_adjudication_log` table: `{decision_id, model_id, prompt_template_version, prompt_json, response_json, confidence, accepted, created_at}`.
+    - Decision history tracks source: `{source: "deterministic" | "llm_auto" | "llm_reviewed" | "manual"}`.
 - Acceptance
-  - Queue resolves deterministically; overrides applied and auditable.
+  - LLM adjudication resolves 80%+ of INDETERMINATE cases with confidence ≥ 0.60; prompt+response logged for all invocations; timeout/error handling graceful; confidence thresholds enforced; human review queue displays all fields correctly; overrides applied and reflected in drift review; audit trail complete for compliance/debugging.
+- Config
+  ```toml
+  [llm]
+  enabled = false  # Set to true to enable LLM adjudication
+  model_id = "claude-3.5-sonnet"  # or "gpt-4o", "gpt-4o-mini", etc.
+  api_key_env = "ANTHROPIC_API_KEY"  # or "OPENAI_API_KEY"
+  timeout_s = 30
+  max_tokens = 1024
+  auto_accept_threshold = 0.85  # Auto-accept if LLM confidence ≥ this
+  review_threshold = 0.60  # Escalate to human if confidence < this
+  prompt_template_version = "v1"  # Track prompt iterations for A/B testing
+  ```
 
 ### Epic 14 — Quality, Performance, Security (Continuous)
 
@@ -121,11 +169,13 @@ This roadmap turns the specification into small, implementable units suitable fo
 
 ## Dependencies & Order
 
-1) Config → 2) Caches/DBs → 3) Normalization → 4) Candidates → 5) Resolver → 6) Decisions/Drift → 7) Tags → 8) Charts ETL → 9) CHARTS export → 10) CLI polish → 11) Explainability → 12) Beets → 13) Human-in-the-Loop.
+1) Config → 2) Caches/DBs → 3) Normalization → 3.5) Live Sources → 4) Candidates → 5) Resolver → 6) Decisions/Drift → 7) Tags → 8) Charts ETL → 9) CHARTS export → 10) CLI polish → 11) Explainability → 12) Beets → 13) LLM Adjudication & Human Review.
 
 ## Mini‑LLM Implementation Guidance
 
-- Prefer fixtures and stubs; disallow live network in CI.
+- **Fixtures first for golden tests**: All deterministic logic (normalization, resolver rules) tested with fixtures. Use VCR cassettes (pytest-vcr) for live source tests to record/replay API responses.
+- **Live sources for integration**: After fixtures validate core logic, live sources provide real-world variability testing and end-to-end validation.
+- **CI remains deterministic**: Disallow live network in CI; use recorded cassettes or mocked responses. `--offline` mode enforced for reproducibility.
 - Keep tasks ≤ ~100–150 LOC; expose pure functions with typed inputs/outputs.
 - Deterministic ordering everywhere (sorted keys, stable hashing, fixed rounding).
 - Add acceptance tests per feature before wiring into CLI.
@@ -138,8 +188,9 @@ This roadmap turns the specification into small, implementable units suitable fo
 
 ## Deliverables per Milestone
 
-- M0: Config module, DB schemas + helpers, normalization with QA tests.
-- M1: Candidate builder, resolver, decision store + drift CLI, golden decisions.
-- M2: Tag writers + verify, CLI subcommands, Charts ETL with fixtures, CHARTS export.
+- M0: Config module, DB schemas + helpers, normalization with QA tests, live source ingestors with VCR-based tests.
+- M1: Candidate builder (using live sources), resolver, decision store + drift CLI, golden decisions.
+- M2: Tag writers + verify, CLI subcommands, Charts ETL, CHARTS export.
 - M3: Beets plugin adapter and coverage reports.
+- Phase 2: LLM adjudication module, human review CLI, override rules, audit trail.
 
