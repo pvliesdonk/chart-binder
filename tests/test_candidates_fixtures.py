@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from chart_binder.candidates import Candidate, CandidateBuilder, CandidateSet
+from chart_binder.candidates import Candidate, CandidateBuilder, CandidateSet, DiscoveryMethod
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.normalize import Normalizer
 
@@ -75,7 +75,7 @@ def musicgraph_db(tmp_path):
     return db
 
 
-def test_fixture_candidate_discovery_isrc(musicgraph_db, tmp_path):
+def test_fixture_candidate_discovery_isrc(musicgraph_db):
     """
     Epic 4 Acceptance: ISRC-based discovery produces expected candidates.
 
@@ -94,7 +94,7 @@ def test_fixture_candidate_discovery_isrc(musicgraph_db, tmp_path):
     assert isinstance(candidates, list)
 
 
-def test_fixture_candidate_discovery_title_artist_length(musicgraph_db, tmp_path):
+def test_fixture_candidate_discovery_title_artist_length(musicgraph_db):
     """
     Epic 4 Acceptance: Title+artist+length discovery with fuzzy matching.
 
@@ -135,7 +135,7 @@ def test_evidence_bundle_determinism(tmp_path):
                 artist_name="Test Artist",
                 length_ms=240000,
                 isrcs=["TEST123"],
-                discovery_method="isrc",
+                discovery_method=DiscoveryMethod.ISRC,
             )
         ],
         normalized_title="test song",
@@ -167,17 +167,17 @@ def test_evidence_bundle_candidate_order_independence(tmp_path):
         Candidate(
             recording_mbid="rec-aaa",
             release_group_mbid="rg-111",
-            discovery_method="isrc",
+            discovery_method=DiscoveryMethod.ISRC,
         ),
         Candidate(
             recording_mbid="rec-zzz",
             release_group_mbid="rg-999",
-            discovery_method="title_artist_length",
+            discovery_method=DiscoveryMethod.TITLE_ARTIST_LENGTH,
         ),
         Candidate(
             recording_mbid="rec-mmm",
             release_group_mbid="rg-555",
-            discovery_method="isrc",
+            discovery_method=DiscoveryMethod.ISRC,
         ),
     ]
 
@@ -185,17 +185,17 @@ def test_evidence_bundle_candidate_order_independence(tmp_path):
         Candidate(
             recording_mbid="rec-zzz",
             release_group_mbid="rg-999",
-            discovery_method="title_artist_length",
+            discovery_method=DiscoveryMethod.TITLE_ARTIST_LENGTH,
         ),
         Candidate(
             recording_mbid="rec-mmm",
             release_group_mbid="rg-555",
-            discovery_method="isrc",
+            discovery_method=DiscoveryMethod.ISRC,
         ),
         Candidate(
             recording_mbid="rec-aaa",
             release_group_mbid="rg-111",
-            discovery_method="isrc",
+            discovery_method=DiscoveryMethod.ISRC,
         ),
     ]
 
@@ -224,17 +224,17 @@ def test_evidence_bundle_provenance_tracking(tmp_path):
             Candidate(
                 recording_mbid="rec-1",
                 release_group_mbid="rg-1",
-                discovery_method="isrc",
+                discovery_method=DiscoveryMethod.ISRC,
             ),
             Candidate(
                 recording_mbid="rec-2",
                 release_group_mbid="rg-2",
-                discovery_method="title_artist_length",
+                discovery_method=DiscoveryMethod.TITLE_ARTIST_LENGTH,
             ),
             Candidate(
                 recording_mbid="rec-3",
                 release_group_mbid="rg-3",
-                discovery_method="isrc",
+                discovery_method=DiscoveryMethod.ISRC,
             ),
         ]
     )
@@ -292,7 +292,7 @@ def test_candidate_set_structure():
                 artist_name="Artist Name",
                 length_ms=240000,
                 isrcs=["ISRC123"],
-                discovery_method="isrc",
+                discovery_method=DiscoveryMethod.ISRC,
             )
         ],
         normalized_title="song title",

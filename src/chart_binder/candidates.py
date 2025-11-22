@@ -3,11 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.normalize import Normalizer
+
+
+class DiscoveryMethod(StrEnum):
+    """Discovery method for candidates."""
+
+    ISRC = "isrc"
+    ACOUSTID = "acoustid"
+    TITLE_ARTIST_LENGTH = "title_artist_length"
+    UNKNOWN = "unknown"
 
 
 @dataclass
@@ -21,7 +31,7 @@ class Candidate:
     artist_name: str = ""
     length_ms: int | None = None
     isrcs: list[str] = field(default_factory=list)
-    discovery_method: str = "unknown"  # isrc, acoustid, title_artist_length
+    discovery_method: DiscoveryMethod = DiscoveryMethod.UNKNOWN
 
 
 @dataclass
@@ -75,6 +85,11 @@ class CandidateBuilder:
         for rec in recordings:
             release_groups = self._find_release_groups_for_recording(rec["mbid"])
 
+            # Get full ISRC list from record, ensure queried ISRC is included
+            record_isrcs = rec.get("isrcs", [])
+            if isrc not in record_isrcs:
+                record_isrcs = [isrc, *record_isrcs]
+
             for rg in release_groups:
                 candidates.append(
                     Candidate(
@@ -84,8 +99,8 @@ class CandidateBuilder:
                         title=rec["title"],
                         artist_name=rg.get("artist_name", ""),
                         length_ms=rec.get("length_ms"),
-                        isrcs=[isrc],
-                        discovery_method="isrc",
+                        isrcs=record_isrcs,
+                        discovery_method=DiscoveryMethod.ISRC,
                     )
                 )
 
@@ -131,7 +146,8 @@ class CandidateBuilder:
                         title=rec["title"],
                         artist_name=rg.get("artist_name", ""),
                         length_ms=rec.get("length_ms"),
-                        discovery_method="title_artist_length",
+                        isrcs=rec.get("isrcs", []),
+                        discovery_method=DiscoveryMethod.TITLE_ARTIST_LENGTH,
                     )
                 )
 
@@ -143,9 +159,9 @@ class CandidateBuilder:
 
         TODO: Gather full evidence for decision rules
         Currently includes minimal fields:
-        - recordings: mbid, title, length_ms
-        - release_groups: mbid only
-        - provenance: sources_used, discovery_methods
+        - recordings: mbid, title, length_ms (deduplicated)
+        - release_groups: mbid only (deduplicated)
+        - provenance: sources_used, discovery_methods (sorted)
 
         Full implementation should include:
         - artist.begin_area_country, wikidata_country
@@ -157,16 +173,28 @@ class CandidateBuilder:
         bundle = EvidenceBundle()
 
         # TODO: Expand to full evidence bundle fields per spec
-        bundle.recordings = [
-            {"mbid": c.recording_mbid, "title": c.title, "length_ms": c.length_ms}
-            for c in candidate_set.candidates
-        ]
+        # Deduplicate recordings by mbid
+        recordings_map: dict[str, dict[str, Any]] = {}
+        for c in candidate_set.candidates:
+            if c.recording_mbid not in recordings_map:
+                recordings_map[c.recording_mbid] = {
+                    "mbid": c.recording_mbid,
+                    "title": c.title,
+                    "length_ms": c.length_ms,
+                }
+        bundle.recordings = list(recordings_map.values())
 
-        bundle.release_groups = [{"mbid": c.release_group_mbid} for c in candidate_set.candidates]
+        # Deduplicate release_groups by mbid
+        release_groups_map: dict[str, dict[str, Any]] = {}
+        for c in candidate_set.candidates:
+            if c.release_group_mbid not in release_groups_map:
+                release_groups_map[c.release_group_mbid] = {"mbid": c.release_group_mbid}
+        bundle.release_groups = list(release_groups_map.values())
 
         bundle.provenance = {
             "sources_used": ["MB"],  # TODO: Track actual sources used (MB, Discogs, Spotify)
-            "discovery_methods": list({c.discovery_method for c in candidate_set.candidates}),
+            # Sort discovery_methods for deterministic hashing
+            "discovery_methods": sorted({c.discovery_method for c in candidate_set.candidates}),
         }
 
         # Hash the evidence bundle
@@ -252,78 +280,3 @@ class CandidateBuilder:
         """
         # TODO: Implement fuzzy matching query (consider performance implications)
         return []
-
-
-## Tests
-
-
-def test_candidate_discovery_by_isrc(tmp_path):
-    from chart_binder.musicgraph import MusicGraphDB
-
-    db = MusicGraphDB(tmp_path / "musicgraph.sqlite")
-    norm = Normalizer()
-    builder = CandidateBuilder(db, norm)
-
-    # Stub test - would need fixtures
-    candidates = builder.discover_by_isrc("USRC17607839")
-    assert isinstance(candidates, list)
-
-
-def test_evidence_bundle_hashing(tmp_path):
-    from chart_binder.musicgraph import MusicGraphDB
-
-    db = MusicGraphDB(tmp_path / "musicgraph.sqlite")
-    norm = Normalizer()
-    builder = CandidateBuilder(db, norm)
-
-    candidate_set = CandidateSet(
-        file_path=Path("/tmp/test.mp3"),
-        candidates=[
-            Candidate(
-                recording_mbid="rec-1",
-                release_group_mbid="rg-1",
-                title="Test Song",
-                artist_name="Test Artist",
-                discovery_method="isrc",
-            )
-        ],
-    )
-
-    bundle = builder.build_evidence_bundle(candidate_set)
-
-    # Hash should be deterministic
-    assert len(bundle.evidence_hash) == 64  # SHA256 hex length
-    assert bundle.evidence_hash.isalnum()
-
-    # Same input should produce same hash
-    bundle2 = builder.build_evidence_bundle(candidate_set)
-    assert bundle.evidence_hash == bundle2.evidence_hash
-
-
-def test_evidence_hash_determinism(tmp_path):
-    from chart_binder.musicgraph import MusicGraphDB
-
-    db = MusicGraphDB(tmp_path / "musicgraph.sqlite")
-    norm = Normalizer()
-    builder = CandidateBuilder(db, norm)
-
-    # Different candidate order should produce same hash (sorted internally)
-    candidate_set1 = CandidateSet(
-        candidates=[
-            Candidate(recording_mbid="rec-2", release_group_mbid="rg-2", discovery_method="isrc"),
-            Candidate(recording_mbid="rec-1", release_group_mbid="rg-1", discovery_method="isrc"),
-        ]
-    )
-
-    candidate_set2 = CandidateSet(
-        candidates=[
-            Candidate(recording_mbid="rec-1", release_group_mbid="rg-1", discovery_method="isrc"),
-            Candidate(recording_mbid="rec-2", release_group_mbid="rg-2", discovery_method="isrc"),
-        ]
-    )
-
-    bundle1 = builder.build_evidence_bundle(candidate_set1)
-    bundle2 = builder.build_evidence_bundle(candidate_set2)
-
-    # Hash should be the same despite different input order
-    assert bundle1.evidence_hash == bundle2.evidence_hash
