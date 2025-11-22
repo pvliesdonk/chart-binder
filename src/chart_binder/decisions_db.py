@@ -1,0 +1,585 @@
+"""
+Decisions database for storing canonicalization decisions and drift tracking.
+
+Implements the decision store and state machine per Epic 6.
+Tracks file artifacts, decisions, history, and overrides.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import time
+import uuid
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+
+class DecisionState(StrEnum):
+    """State of canonicalization decision per drift contract."""
+
+    UNDECIDED = "undecided"
+    DECIDED = "decided"
+    STALE_EVIDENCE = "stale_evidence"
+    STALE_RULES = "stale_rules"
+    STALE_BOTH = "stale_both"
+    INDETERMINATE = "indeterminate"
+
+
+class SupersededReason(StrEnum):
+    """Reason for decision superseding."""
+
+    REFRESH = "refresh"
+    RULESET_CHANGE = "ruleset_change"
+    MANUAL_OVERRIDE = "manual_override"
+    PIN = "pin"
+
+
+@dataclass
+class FileArtifact:
+    """File artifact signature and metadata."""
+
+    file_id: str
+    library_root: str
+    relative_path: str
+    duration_ms: int | None = None
+    fp_id: str | None = None
+    orig_tags_hash: str | None = None
+    created_at: float | None = None
+
+
+@dataclass
+class Decision:
+    """Canonicalization decision for a file."""
+
+    decision_id: str
+    file_id: str
+    work_key: str
+    mb_rg_id: str  # Canonical Release Group
+    mb_release_id: str  # Representative Release
+    mb_recording_id: str | None
+    ruleset_version: str
+    config_snapshot_json: str
+    evidence_hash: str
+    trace_compact: str
+    state: DecisionState
+    pinned: bool = False
+    created_at: float | None = None
+    updated_at: float | None = None
+
+
+@dataclass
+class DecisionHistory:
+    """Archived decision history."""
+
+    decision_id: str
+    file_id: str
+    work_key: str
+    mb_rg_id: str
+    mb_release_id: str
+    mb_recording_id: str | None
+    ruleset_version: str
+    config_snapshot_json: str
+    evidence_hash: str
+    trace_compact: str
+    state: DecisionState
+    pinned: bool
+    created_at: float
+    updated_at: float
+    superseded_at: float
+    superseded_reason: SupersededReason
+
+
+class DecisionsDB:
+    """
+    SQLite database for decision storage and drift tracking.
+
+    Provides schema creation and CRUD operations for:
+    - file_artifact: File signatures and metadata
+    - decision: Current decisions with state machine
+    - decision_history: Archived decisions
+    - override_rule: Manual overrides (future)
+    """
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a database connection with foreign keys enabled."""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        return conn
+
+    def _init_db(self) -> None:
+        """Initialize database schema."""
+        conn = self._get_connection()
+
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS file_artifact (
+                file_id TEXT PRIMARY KEY,
+                library_root TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                duration_ms INTEGER,
+                fp_id TEXT,
+                orig_tags_hash TEXT,
+                created_at REAL NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_file_path
+                ON file_artifact(library_root, relative_path);
+
+            CREATE TABLE IF NOT EXISTS decision (
+                decision_id TEXT PRIMARY KEY,
+                file_id TEXT NOT NULL UNIQUE,
+                work_key TEXT NOT NULL,
+                mb_rg_id TEXT NOT NULL,
+                mb_release_id TEXT NOT NULL,
+                mb_recording_id TEXT,
+                ruleset_version TEXT NOT NULL,
+                config_snapshot_json TEXT NOT NULL,
+                evidence_hash TEXT NOT NULL,
+                trace_compact TEXT NOT NULL,
+                state TEXT NOT NULL,
+                pinned INTEGER NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                FOREIGN KEY (file_id) REFERENCES file_artifact(file_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_decision_file ON decision(file_id);
+            CREATE INDEX IF NOT EXISTS idx_decision_state ON decision(state);
+            CREATE INDEX IF NOT EXISTS idx_decision_rg ON decision(mb_rg_id);
+
+            CREATE TABLE IF NOT EXISTS decision_history (
+                decision_id TEXT NOT NULL,
+                file_id TEXT NOT NULL,
+                work_key TEXT NOT NULL,
+                mb_rg_id TEXT NOT NULL,
+                mb_release_id TEXT NOT NULL,
+                mb_recording_id TEXT,
+                ruleset_version TEXT NOT NULL,
+                config_snapshot_json TEXT NOT NULL,
+                evidence_hash TEXT NOT NULL,
+                trace_compact TEXT NOT NULL,
+                state TEXT NOT NULL,
+                pinned INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL,
+                superseded_at REAL NOT NULL,
+                superseded_reason TEXT NOT NULL,
+                PRIMARY KEY (decision_id, superseded_at)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_history_file ON decision_history(file_id);
+            CREATE INDEX IF NOT EXISTS idx_history_superseded
+                ON decision_history(superseded_at);
+
+            CREATE TABLE IF NOT EXISTS override_rule (
+                override_id TEXT PRIMARY KEY,
+                scope TEXT NOT NULL,
+                scope_id TEXT NOT NULL,
+                directive TEXT NOT NULL,
+                note TEXT,
+                created_by TEXT,
+                created_at REAL NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_override_scope
+                ON override_rule(scope, scope_id);
+
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            INSERT OR IGNORE INTO schema_meta (key, value)
+                VALUES ('db_version_decisions', '1');
+            """
+        )
+
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def generate_file_id(path: Path, size: int, mtime: float) -> str:
+        """
+        Generate stable file ID from path, size, and mtime.
+
+        This creates a deterministic signature for file artifact tracking.
+        """
+        signature = f"{path}:{size}:{int(mtime)}"
+        return hashlib.sha256(signature.encode()).hexdigest()
+
+    def upsert_file_artifact(
+        self,
+        file_id: str,
+        library_root: str,
+        relative_path: str,
+        duration_ms: int | None = None,
+        fp_id: str | None = None,
+        orig_tags_hash: str | None = None,
+        created_at: float | None = None,
+    ) -> None:
+        """Upsert file artifact record."""
+        if created_at is None:
+            created_at = time.time()
+
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO file_artifact
+                    (file_id, library_root, relative_path, duration_ms, fp_id,
+                     orig_tags_hash, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(file_id) DO UPDATE SET
+                    library_root = excluded.library_root,
+                    relative_path = excluded.relative_path,
+                    duration_ms = excluded.duration_ms,
+                    fp_id = excluded.fp_id,
+                    orig_tags_hash = excluded.orig_tags_hash
+                """,
+                (file_id, library_root, relative_path, duration_ms, fp_id, orig_tags_hash, created_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_file_artifact(self, file_id: str) -> dict[str, Any] | None:
+        """Get file artifact by ID."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM file_artifact WHERE file_id = ?", (file_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def upsert_decision(
+        self,
+        file_id: str,
+        work_key: str,
+        mb_rg_id: str,
+        mb_release_id: str,
+        mb_recording_id: str | None,
+        ruleset_version: str,
+        config_snapshot: dict[str, Any],
+        evidence_hash: str,
+        trace_compact: str,
+        state: DecisionState = DecisionState.DECIDED,
+        pinned: bool = False,
+        decision_id: str | None = None,
+    ) -> str:
+        """
+        Upsert decision record.
+
+        If decision exists for this file_id, archives the old one to history
+        and creates a new decision.
+
+        Returns decision_id (new or existing).
+        """
+        if decision_id is None:
+            decision_id = str(uuid.uuid4())
+
+        config_json = json.dumps(config_snapshot, sort_keys=True)
+        now = time.time()
+
+        conn = self._get_connection()
+        try:
+            # Check if decision exists
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM decision WHERE file_id = ?",
+                (file_id,),
+            )
+            existing = cursor.fetchone()
+
+            if existing:
+                # Archive existing decision to history
+                conn.execute(
+                    """
+                    INSERT INTO decision_history
+                        (decision_id, file_id, work_key, mb_rg_id, mb_release_id,
+                         mb_recording_id, ruleset_version, config_snapshot_json,
+                         evidence_hash, trace_compact, state, pinned,
+                         created_at, updated_at, superseded_at, superseded_reason)
+                    SELECT decision_id, file_id, work_key, mb_rg_id, mb_release_id,
+                           mb_recording_id, ruleset_version, config_snapshot_json,
+                           evidence_hash, trace_compact, state, pinned,
+                           created_at, updated_at, ?, ?
+                    FROM decision
+                    WHERE file_id = ?
+                    """,
+                    (now, SupersededReason.REFRESH, file_id),
+                )
+
+                # Update existing decision
+                conn.execute(
+                    """
+                    UPDATE decision SET
+                        decision_id = ?,
+                        work_key = ?,
+                        mb_rg_id = ?,
+                        mb_release_id = ?,
+                        mb_recording_id = ?,
+                        ruleset_version = ?,
+                        config_snapshot_json = ?,
+                        evidence_hash = ?,
+                        trace_compact = ?,
+                        state = ?,
+                        pinned = ?,
+                        updated_at = ?
+                    WHERE file_id = ?
+                    """,
+                    (
+                        decision_id,
+                        work_key,
+                        mb_rg_id,
+                        mb_release_id,
+                        mb_recording_id,
+                        ruleset_version,
+                        config_json,
+                        evidence_hash,
+                        trace_compact,
+                        state,
+                        1 if pinned else 0,
+                        now,
+                        file_id,
+                    ),
+                )
+            else:
+                # Insert new decision
+                conn.execute(
+                    """
+                    INSERT INTO decision
+                        (decision_id, file_id, work_key, mb_rg_id, mb_release_id,
+                         mb_recording_id, ruleset_version, config_snapshot_json,
+                         evidence_hash, trace_compact, state, pinned,
+                         created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        decision_id,
+                        file_id,
+                        work_key,
+                        mb_rg_id,
+                        mb_release_id,
+                        mb_recording_id,
+                        ruleset_version,
+                        config_json,
+                        evidence_hash,
+                        trace_compact,
+                        state,
+                        1 if pinned else 0,
+                        now,
+                        now,
+                    ),
+                )
+
+            conn.commit()
+            return decision_id
+        finally:
+            conn.close()
+
+    def get_decision(self, file_id: str) -> dict[str, Any] | None:
+        """Get current decision for file."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM decision WHERE file_id = ?", (file_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_stale_decisions(self) -> list[dict[str, Any]]:
+        """Get all decisions in STALE-* states."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM decision
+                WHERE state LIKE 'stale_%' OR state = 'indeterminate'
+                ORDER BY updated_at DESC
+                """
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_decision_history(self, file_id: str) -> list[dict[str, Any]]:
+        """Get decision history for a file."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM decision_history
+                WHERE file_id = ?
+                ORDER BY superseded_at DESC
+                """,
+                (file_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def update_decision_state(self, file_id: str, new_state: DecisionState) -> None:
+        """Update decision state (for drift detection)."""
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """
+                UPDATE decision
+                SET state = ?, updated_at = ?
+                WHERE file_id = ?
+                """,
+                (new_state, time.time(), file_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+## Tests
+
+
+def test_decisions_db_schema(tmp_path):
+    """Test database schema creation."""
+    db = DecisionsDB(tmp_path / "decisions.sqlite")
+    assert db.db_path.exists()
+
+    # Verify tables exist
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    )
+    tables = {row[0] for row in cursor.fetchall()}
+    conn.close()
+
+    assert "file_artifact" in tables
+    assert "decision" in tables
+    assert "decision_history" in tables
+    assert "override_rule" in tables
+    assert "schema_meta" in tables
+
+
+def test_file_id_generation():
+    """Test file ID generation is deterministic."""
+    path = Path("/music/song.mp3")
+    file_id1 = DecisionsDB.generate_file_id(path, 1024, 1234567890.0)
+    file_id2 = DecisionsDB.generate_file_id(path, 1024, 1234567890.0)
+    assert file_id1 == file_id2
+
+    # Different params = different ID
+    file_id3 = DecisionsDB.generate_file_id(path, 1025, 1234567890.0)
+    assert file_id1 != file_id3
+
+
+def test_file_artifact_crud(tmp_path):
+    """Test file artifact CRUD operations."""
+    db = DecisionsDB(tmp_path / "decisions.sqlite")
+
+    file_id = "test_file_123"
+    db.upsert_file_artifact(
+        file_id=file_id,
+        library_root="/music",
+        relative_path="artist/album/song.mp3",
+        duration_ms=180000,
+    )
+
+    artifact = db.get_file_artifact(file_id)
+    assert artifact is not None
+    assert artifact["file_id"] == file_id
+    assert artifact["library_root"] == "/music"
+    assert artifact["duration_ms"] == 180000
+
+
+def test_decision_crud(tmp_path):
+    """Test decision CRUD operations."""
+    db = DecisionsDB(tmp_path / "decisions.sqlite")
+
+    file_id = "test_file_123"
+    db.upsert_file_artifact(
+        file_id=file_id,
+        library_root="/music",
+        relative_path="song.mp3",
+    )
+
+    decision_id = db.upsert_decision(
+        file_id=file_id,
+        work_key="artist_song",
+        mb_rg_id="rg123",
+        mb_release_id="rel123",
+        mb_recording_id="rec123",
+        ruleset_version="canon-1.0",
+        config_snapshot={"lead_window_days": 90},
+        evidence_hash="abc123",
+        trace_compact="CRG:ALBUM|RR:ORIGIN",
+    )
+
+    assert decision_id is not None
+
+    decision = db.get_decision(file_id)
+    assert decision is not None
+    assert decision["file_id"] == file_id
+    assert decision["mb_rg_id"] == "rg123"
+    assert decision["state"] == DecisionState.DECIDED
+
+
+def test_decision_history(tmp_path):
+    """Test decision archival to history."""
+    db = DecisionsDB(tmp_path / "decisions.sqlite")
+
+    file_id = "test_file_123"
+    db.upsert_file_artifact(file_id=file_id, library_root="/music", relative_path="song.mp3")
+
+    # Create initial decision
+    db.upsert_decision(
+        file_id=file_id,
+        work_key="artist_song",
+        mb_rg_id="rg123",
+        mb_release_id="rel123",
+        mb_recording_id="rec123",
+        ruleset_version="canon-1.0",
+        config_snapshot={},
+        evidence_hash="abc123",
+        trace_compact="TRACE1",
+    )
+
+    # Update decision (should archive previous)
+    db.upsert_decision(
+        file_id=file_id,
+        work_key="artist_song",
+        mb_rg_id="rg456",  # Changed
+        mb_release_id="rel456",
+        mb_recording_id="rec123",
+        ruleset_version="canon-1.0",
+        config_snapshot={},
+        evidence_hash="def456",
+        trace_compact="TRACE2",
+    )
+
+    # Check current decision is updated
+    decision = db.get_decision(file_id)
+    assert decision["mb_rg_id"] == "rg456"
+
+    # Check history has old decision
+    history = db.get_decision_history(file_id)
+    assert len(history) == 1
+    assert history[0]["mb_rg_id"] == "rg123"
+    assert history[0]["superseded_reason"] == SupersededReason.REFRESH

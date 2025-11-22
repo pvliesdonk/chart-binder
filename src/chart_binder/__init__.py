@@ -3,6 +3,8 @@ __all__ = (
     "Config",
     "HttpCache",
     "MusicGraphDB",
+    "DecisionsDB",
+    "DriftDetector",
     "UnifiedFetcher",
     "MusicBrainzClient",
     "AcoustIDClient",
@@ -14,7 +16,9 @@ __all__ = (
 from chart_binder.acoustid import AcoustIDClient
 from chart_binder.cli import main
 from chart_binder.config import Config
+from chart_binder.decisions_db import DecisionsDB
 from chart_binder.discogs import DiscogsClient
+from chart_binder.drift import DriftDetector
 from chart_binder.fetcher import UnifiedFetcher
 from chart_binder.http_cache import HttpCache
 from chart_binder.musicbrainz import MusicBrainzClient
