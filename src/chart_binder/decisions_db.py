@@ -12,6 +12,8 @@ import json
 import sqlite3
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -26,6 +28,7 @@ class DecisionState(StrEnum):
     STALE_EVIDENCE = "stale_evidence"
     STALE_RULES = "stale_rules"
     STALE_BOTH = "stale_both"
+    STALE_NONDETERMINISTIC = "stale_nondeterministic"
     INDETERMINATE = "indeterminate"
 
 
@@ -115,6 +118,25 @@ class DecisionsDB:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
         return conn
+
+    @contextmanager
+    def _db_connection(self, exclusive: bool = False) -> Iterator[sqlite3.Connection]:
+        """
+        Context manager for database connections.
+
+        Automatically handles connection lifecycle and ensures cleanup.
+
+        Args:
+            exclusive: If True, sets isolation level to EXCLUSIVE for
+                      atomic operations that prevent race conditions.
+        """
+        conn = self._get_connection()
+        if exclusive:
+            conn.isolation_level = "EXCLUSIVE"
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         """Initialize database schema."""
@@ -231,8 +253,7 @@ class DecisionsDB:
         if created_at is None:
             created_at = time.time()
 
-        conn = self._get_connection()
-        try:
+        with self._db_connection() as conn:
             conn.execute(
                 """
                 INSERT INTO file_artifact
@@ -249,20 +270,15 @@ class DecisionsDB:
                 (file_id, library_root, relative_path, duration_ms, fp_id, orig_tags_hash, created_at),
             )
             conn.commit()
-        finally:
-            conn.close()
 
     def get_file_artifact(self, file_id: str) -> dict[str, Any] | None:
         """Get file artifact by ID."""
-        conn = self._get_connection()
-        try:
+        with self._db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM file_artifact WHERE file_id = ?", (file_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def upsert_decision(
         self,
@@ -286,6 +302,9 @@ class DecisionsDB:
         and creates a new decision.
 
         Returns decision_id (new or existing).
+
+        Uses exclusive transaction to prevent race conditions when concurrent
+        processes attempt to upsert decisions for the same file_id.
         """
         if decision_id is None:
             decision_id = str(uuid.uuid4())
@@ -293,8 +312,7 @@ class DecisionsDB:
         config_json = json.dumps(config_snapshot, sort_keys=True)
         now = time.time()
 
-        conn = self._get_connection()
-        try:
+        with self._db_connection(exclusive=True) as conn:
             # Check if decision exists
             cursor = conn.cursor()
             cursor.execute(
@@ -387,25 +405,19 @@ class DecisionsDB:
 
             conn.commit()
             return decision_id
-        finally:
-            conn.close()
 
     def get_decision(self, file_id: str) -> dict[str, Any] | None:
         """Get current decision for file."""
-        conn = self._get_connection()
-        try:
+        with self._db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM decision WHERE file_id = ?", (file_id,))
             row = cursor.fetchone()
             return dict(row) if row else None
-        finally:
-            conn.close()
 
     def get_stale_decisions(self) -> list[dict[str, Any]]:
         """Get all decisions in STALE-* states."""
-        conn = self._get_connection()
-        try:
+        with self._db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -416,13 +428,10 @@ class DecisionsDB:
                 """
             )
             return [dict(row) for row in cursor.fetchall()]
-        finally:
-            conn.close()
 
     def get_decision_history(self, file_id: str) -> list[dict[str, Any]]:
         """Get decision history for a file."""
-        conn = self._get_connection()
-        try:
+        with self._db_connection() as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -434,13 +443,10 @@ class DecisionsDB:
                 (file_id,),
             )
             return [dict(row) for row in cursor.fetchall()]
-        finally:
-            conn.close()
 
     def update_decision_state(self, file_id: str, new_state: DecisionState) -> None:
         """Update decision state (for drift detection)."""
-        conn = self._get_connection()
-        try:
+        with self._db_connection() as conn:
             conn.execute(
                 """
                 UPDATE decision
@@ -450,8 +456,6 @@ class DecisionsDB:
                 (new_state, time.time(), file_id),
             )
             conn.commit()
-        finally:
-            conn.close()
 
 
 ## Tests
@@ -576,6 +580,7 @@ def test_decision_history(tmp_path):
 
     # Check current decision is updated
     decision = db.get_decision(file_id)
+    assert decision is not None
     assert decision["mb_rg_id"] == "rg456"
 
     # Check history has old decision

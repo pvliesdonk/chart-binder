@@ -11,12 +11,16 @@ Per Epic 6 - Decision Store & Drift.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from chart_binder.decisions_db import DecisionsDB, DecisionState
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -36,6 +40,20 @@ class DriftResult:
     old_rr: str
     new_rr: str
     drift_category: str | None = None  # STALE-EVIDENCE | STALE-RULES | STALE-BOTH
+
+
+@dataclass
+class StaleDecisionSummary:
+    """Summary of a stale decision requiring review (no recomputation)."""
+
+    file_id: str
+    state: DecisionState
+    evidence_hash: str
+    ruleset_version: str
+    mb_rg_id: str
+    mb_release_id: str
+    work_key: str
+    updated_at: float
 
 
 class DriftDetector:
@@ -58,8 +76,6 @@ class DriftDetector:
         for canonical JSON representation.
         """
         # Deep copy to avoid modifying original
-        import copy
-
         bundle = copy.deepcopy(evidence_bundle)
 
         # Remove volatile fields
@@ -168,10 +184,20 @@ class DriftDetector:
             drift_category = "STALE-RULES"
             new_state = DecisionState.STALE_RULES
         else:
-            # This shouldn't happen - decision changed but nothing else did
-            # Could be due to non-determinism in resolver
-            drift_category = "STALE-EVIDENCE"
-            new_state = DecisionState.STALE_EVIDENCE
+            # Decision changed but neither evidence nor rules changed
+            # This indicates non-determinism in the resolver logic
+            drift_category = "STALE-NONDETERMINISTIC"
+            new_state = DecisionState.STALE_NONDETERMINISTIC
+            logger.warning(
+                "Non-deterministic resolver behavior detected for file_id=%s: "
+                "decision changed from (CRG=%s, RR=%s) to (CRG=%s, RR=%s) "
+                "with identical evidence hash and ruleset version",
+                file_id,
+                old_crg,
+                old_rr,
+                new_crg,
+                new_rr,
+            )
 
         return DriftResult(
             file_id=file_id,
@@ -189,37 +215,32 @@ class DriftDetector:
             drift_category=drift_category,
         )
 
-    def review_drift(self) -> list[DriftResult]:
+    def review_drift(self) -> list[StaleDecisionSummary]:
         """
         Review all decisions for drift.
 
-        Returns list of DriftResult for decisions in STALE-* or INDETERMINATE states.
+        Returns list of StaleDecisionSummary for decisions in STALE-* or
+        INDETERMINATE states that require review.
+
+        Note: This method does NOT recompute decisions. It only returns
+        summaries of existing stale decisions. To detect drift with actual
+        before/after comparison, use detect_drift() with recomputed evidence.
         """
         stale_decisions = self.db.get_stale_decisions()
 
-        # For now, just return basic drift results for stale decisions
-        # Full drift detection would require recomputing decisions
-        results = []
-        for decision in stale_decisions:
-            results.append(
-                DriftResult(
-                    file_id=decision["file_id"],
-                    has_drift=True,
-                    old_state=DecisionState(decision["state"]),
-                    new_state=DecisionState(decision["state"]),
-                    old_evidence_hash=decision["evidence_hash"],
-                    new_evidence_hash=decision["evidence_hash"],
-                    old_ruleset_version=decision["ruleset_version"],
-                    new_ruleset_version=decision["ruleset_version"],
-                    old_crg=decision["mb_rg_id"],
-                    new_crg=decision["mb_rg_id"],
-                    old_rr=decision["mb_release_id"],
-                    new_rr=decision["mb_release_id"],
-                    drift_category=decision["state"],
-                )
+        return [
+            StaleDecisionSummary(
+                file_id=decision["file_id"],
+                state=DecisionState(decision["state"]),
+                evidence_hash=decision["evidence_hash"],
+                ruleset_version=decision["ruleset_version"],
+                mb_rg_id=decision["mb_rg_id"],
+                mb_release_id=decision["mb_release_id"],
+                work_key=decision["work_key"],
+                updated_at=decision["updated_at"],
             )
-
-        return results
+            for decision in stale_decisions
+        ]
 
 
 ## Tests
