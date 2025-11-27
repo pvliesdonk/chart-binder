@@ -13,16 +13,6 @@ from pathlib import Path
 from typing import Any
 
 
-class AudioFormat(StrEnum):
-    """Supported audio file formats."""
-
-    MP3 = "mp3"
-    FLAC = "flac"
-    OGG = "ogg"
-    MP4 = "mp4"
-    M4A = "m4a"
-
-
 class ReleaseType(StrEnum):
     """Canonical release type values."""
 
@@ -328,8 +318,11 @@ class ID3TagWriter(TagWriter):
                 if not dry_run:
                     tags.delall("TDOR")
                     tags.add(TDOR(encoding=3, text=[tagset.original_year]))
-                # Also mirror to TXXX for ID3v2.3 compatibility
-                write_txxx("ORIGINALYEAR", tagset.original_year, "original_year_compat")
+                    # Also mirror to TXXX for ID3v2.3 compatibility (no report entry)
+                    txxx_frames = [f for f in tags.getall("TXXX") if f.desc == "ORIGINALYEAR"]
+                    for _ in txxx_frames:
+                        tags.delall("TXXX:ORIGINALYEAR")
+                    tags.add(TXXX(encoding=3, desc="ORIGINALYEAR", text=[tagset.original_year]))
                 report.fields_written.append("original_year")
             else:
                 report.fields_skipped.append("original_year")
@@ -516,6 +509,7 @@ class VorbisTagWriter(TagWriter):
                     try:
                         result[field_name] = int(values[0])
                     except (ValueError, IndexError):
+                        # If conversion fails, leave value as-is (string or list).
                         pass
 
         return result
@@ -936,7 +930,11 @@ def assemble_tags(
     Assemble canonical tagset from decision.
 
     Args:
-        decision: CanonicalDecision from resolver
+        decision: CanonicalDecision from resolver. Expected to have:
+            - release_group_mbid: str | None
+            - release_mbid: str | None
+            - decision_trace: DecisionTrace | None (with evidence_hash, ruleset_version)
+            - compact_tag: str
         charts_blob: Optional CHARTS JSON blob
         external_ids: Optional dict of external IDs to include
 
@@ -945,15 +943,16 @@ def assemble_tags(
     """
     tagset = TagSet()
 
-    # Set IDs from decision
-    tagset.ids.mb_release_group_id = decision.release_group_mbid
-    tagset.ids.mb_release_id = decision.release_mbid
+    # Set IDs from decision (with safe attribute access)
+    tagset.ids.mb_release_group_id = getattr(decision, "release_group_mbid", None)
+    tagset.ids.mb_release_id = getattr(decision, "release_mbid", None)
 
     # Set compact fields from decision trace
-    if decision.decision_trace:
-        tagset.compact.decision_trace = decision.compact_tag
-        tagset.compact.evidence_hash = decision.decision_trace.evidence_hash
-        tagset.compact.ruleset_version = decision.decision_trace.ruleset_version
+    decision_trace = getattr(decision, "decision_trace", None)
+    if decision_trace:
+        tagset.compact.decision_trace = getattr(decision, "compact_tag", None)
+        tagset.compact.evidence_hash = getattr(decision_trace, "evidence_hash", None)
+        tagset.compact.ruleset_version = getattr(decision_trace, "ruleset_version", None)
 
     # Set CHARTS blob if provided
     if charts_blob:
@@ -1029,6 +1028,7 @@ def verify(file_path: Path) -> TagSet:
         try:
             tagset.release_type = ReleaseType(tags["release_type"])
         except ValueError:
+            # Ignore invalid release_type values; leave tagset.release_type unset.
             pass
 
     # Canonical IDs

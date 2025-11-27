@@ -191,11 +191,12 @@ class ChartsExporter:
                 # Store position details
                 freq = self.CHART_FREQUENCIES.get(chart_id, "y")
                 if freq == "y":
-                    # Yearly: {"YYYY": rank}
+                    # Yearly charts: {"YYYY": rank}
                     year = period.split("-")[0] if "-" in period else period
                     chart_data[chart_id]["positions"][year] = rank
                 else:
-                    # Weekly: {"YYYY": {"W": rank}}
+                    # Weekly charts: {"YYYY": {"WW": rank}} where WW is the week number as string
+                    # Example: period "1999-W25" becomes {"1999": {"25": 4}}
                     if "-W" in period:
                         year, week = period.split("-W")
                         if year not in chart_data[chart_id]["positions"]:
