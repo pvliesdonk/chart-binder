@@ -328,8 +328,8 @@ class ID3TagWriter(TagWriter):
                 if not dry_run:
                     tags.delall("TDOR")
                     tags.add(TDOR(encoding=3, text=[tagset.original_year]))
-                    # Also mirror to TXXX for ID3v2.3 compatibility
-                    write_txxx("ORIGINALYEAR", tagset.original_year, "original_year_compat")
+                # Also mirror to TXXX for ID3v2.3 compatibility
+                write_txxx("ORIGINALYEAR", tagset.original_year, "original_year_compat")
                 report.fields_written.append("original_year")
             else:
                 report.fields_skipped.append("original_year")
