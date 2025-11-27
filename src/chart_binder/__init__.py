@@ -45,6 +45,7 @@ __all__ = (
     "DecisionTrace",
     "CRGRationale",
     "RRRationale",
+    "ConfigSnapshot",
     "explain",
 )
 
@@ -70,6 +71,7 @@ from chart_binder.musicbrainz import MusicBrainzClient
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.resolver import (
     CanonicalDecision,
+    ConfigSnapshot,
     CRGRationale,
     DecisionTrace,
     Resolver,

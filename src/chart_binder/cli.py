@@ -11,6 +11,9 @@ import click
 
 from chart_binder.config import Config
 
+# Supported audio file extensions
+AUDIO_EXTENSIONS = ("*.mp3", "*.flac", "*.ogg", "*.m4a")
+
 
 class OutputFormat(StrEnum):
     """Output format for CLI commands."""
@@ -25,6 +28,29 @@ class ExitCode:
     SUCCESS = 0
     ERROR = 1
     NO_RESULTS = 2
+
+
+def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
+    """
+    Collect audio files from paths (files or directories).
+
+    Recursively searches directories for supported audio formats.
+    """
+    audio_files: list[Path] = []
+    for path in paths:
+        if path.is_dir():
+            for ext in AUDIO_EXTENSIONS:
+                audio_files.extend(path.rglob(ext))
+        else:
+            audio_files.append(path)
+    return audio_files
+
+
+def _get_rationale_value(rationale: Any) -> str | None:
+    """Safely extract rationale value from enum or string."""
+    if rationale is None:
+        return None
+    return rationale.value if hasattr(rationale, "value") else str(rationale)
 
 
 def _output_result(
@@ -98,48 +124,42 @@ def scan(ctx: click.Context, paths: tuple[Path, ...]) -> None:
 
     output_format = ctx.obj["output"]
     results = []
+    audio_files = _collect_audio_files(paths)
 
-    for path in paths:
-        if path.is_dir():
-            audio_files = list(path.rglob("*.mp3")) + list(path.rglob("*.flac"))
-            audio_files += list(path.rglob("*.ogg")) + list(path.rglob("*.m4a"))
-        else:
-            audio_files = [path]
+    for audio_file in audio_files:
+        try:
+            tagset = verify(audio_file)
+            result = {
+                "file": str(audio_file),
+                "title": tagset.title,
+                "artist": tagset.artist,
+                "album": tagset.album,
+                "original_year": tagset.original_year,
+                "track_number": tagset.track_number,
+                "disc_number": tagset.disc_number,
+                "mb_recording_id": tagset.ids.mb_recording_id,
+                "mb_release_group_id": tagset.ids.mb_release_group_id,
+                "mb_release_id": tagset.ids.mb_release_id,
+                "charts_blob": tagset.compact.charts_blob,
+                "decision_trace": tagset.compact.decision_trace,
+            }
+            results.append(result)
 
-        for audio_file in audio_files:
-            try:
-                tagset = verify(audio_file)
-                result = {
-                    "file": str(audio_file),
-                    "title": tagset.title,
-                    "artist": tagset.artist,
-                    "album": tagset.album,
-                    "original_year": tagset.original_year,
-                    "track_number": tagset.track_number,
-                    "disc_number": tagset.disc_number,
-                    "mb_recording_id": tagset.ids.mb_recording_id,
-                    "mb_release_group_id": tagset.ids.mb_release_group_id,
-                    "mb_release_id": tagset.ids.mb_release_id,
-                    "charts_blob": tagset.compact.charts_blob,
-                    "decision_trace": tagset.compact.decision_trace,
-                }
-                results.append(result)
+            if output_format == OutputFormat.TEXT:
+                click.echo(f"\n✔︎ {audio_file}")
+                click.echo(f"  Title: {tagset.title or '(none)'}")
+                click.echo(f"  Artist: {tagset.artist or '(none)'}")
+                click.echo(f"  Album: {tagset.album or '(none)'}")
+                click.echo(f"  Year: {tagset.original_year or '(none)'}")
+                if tagset.ids.mb_release_group_id:
+                    click.echo(f"  MB RG: {tagset.ids.mb_release_group_id}")
+                if tagset.compact.decision_trace:
+                    click.echo(f"  Trace: {tagset.compact.decision_trace}")
 
-                if output_format == OutputFormat.TEXT:
-                    click.echo(f"\n✔︎ {audio_file}")
-                    click.echo(f"  Title: {tagset.title or '(none)'}")
-                    click.echo(f"  Artist: {tagset.artist or '(none)'}")
-                    click.echo(f"  Album: {tagset.album or '(none)'}")
-                    click.echo(f"  Year: {tagset.original_year or '(none)'}")
-                    if tagset.ids.mb_release_group_id:
-                        click.echo(f"  MB RG: {tagset.ids.mb_release_group_id}")
-                    if tagset.compact.decision_trace:
-                        click.echo(f"  Trace: {tagset.compact.decision_trace}")
-
-            except ValueError as e:
-                if output_format == OutputFormat.TEXT:
-                    click.echo(f"\n✘ {audio_file}: {e}", err=True)
-                results.append({"file": str(audio_file), "error": str(e)})
+        except ValueError as e:
+            if output_format == OutputFormat.TEXT:
+                click.echo(f"\n✘ {audio_file}: {e}", err=True)
+            results.append({"file": str(audio_file), "error": str(e)})
 
     if output_format == OutputFormat.JSON:
         click.echo(json.dumps(results, indent=2))
@@ -170,105 +190,97 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
         reissue_long_gap_years=10,
     )
     resolver = Resolver(resolver_config)
+    audio_files = _collect_audio_files(paths)
 
-    for path in paths:
-        if path.is_dir():
-            audio_files = list(path.rglob("*.mp3")) + list(path.rglob("*.flac"))
-            audio_files += list(path.rglob("*.ogg")) + list(path.rglob("*.m4a"))
-        else:
-            audio_files = [path]
+    for audio_file in audio_files:
+        try:
+            tagset = verify(audio_file)
 
-        for audio_file in audio_files:
-            try:
-                tagset = verify(audio_file)
+            # Build minimal evidence bundle from existing tags
+            evidence_bundle: dict[str, Any] = {
+                "artifact": {
+                    "file_path": str(audio_file),
+                },
+                "artist": {
+                    "name": tagset.artist or "Unknown",
+                    "mb_artist_id": None,
+                },
+                "recording_candidates": [],
+                "timeline_facts": {},
+                "provenance": {
+                    "sources_used": ["local_tags"],
+                },
+            }
 
-                # Build minimal evidence bundle from existing tags
-                evidence_bundle = {
-                    "artifact": {
-                        "file_path": str(audio_file),
-                    },
-                    "artist": {
-                        "name": tagset.artist or "Unknown",
-                        "mb_artist_id": None,
-                    },
-                    "recording_candidates": [],
-                    "timeline_facts": {},
-                    "provenance": {
-                        "sources_used": ["local_tags"],
-                    },
-                }
-
-                # If MB IDs exist, build candidate structure
-                if tagset.ids.mb_release_group_id:
-                    evidence_bundle["recording_candidates"] = [
-                        {
-                            "mb_recording_id": tagset.ids.mb_recording_id,
-                            "title": tagset.title,
-                            "rg_candidates": [
-                                {
-                                    "mb_rg_id": tagset.ids.mb_release_group_id,
-                                    "title": tagset.album,
-                                    "primary_type": "Album",
-                                    "first_release_date": tagset.original_year,
-                                    "releases": [
-                                        {
-                                            "mb_release_id": tagset.ids.mb_release_id or "unknown",
-                                            "date": tagset.original_year,
-                                            "country": tagset.country,
-                                            "label": tagset.label,
-                                            "title": tagset.album,
-                                            "flags": {"is_official": True},
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    ]
-
-                decision = resolver.resolve(evidence_bundle)
-
-                result = {
-                    "file": str(audio_file),
-                    "state": decision.state.value,
-                    "crg_mbid": decision.release_group_mbid,
-                    "rr_mbid": decision.release_mbid,
-                    "crg_rationale": decision.crg_rationale.value
-                    if decision.crg_rationale
-                    else None,
-                    "rr_rationale": decision.rr_rationale.value if decision.rr_rationale else None,
-                    "compact_tag": decision.compact_tag,
-                }
-
-                if explain:
-                    trace_dict: dict[str, Any] = {
-                        "evidence_hash": decision.decision_trace.evidence_hash,
-                        "considered_candidates": decision.decision_trace.considered_candidates,
-                        "crg_selection": decision.decision_trace.crg_selection,
-                        "rr_selection": decision.decision_trace.rr_selection,
-                        "missing_facts": decision.decision_trace.missing_facts,
+            # If MB IDs exist, build candidate structure
+            if tagset.ids.mb_release_group_id:
+                evidence_bundle["recording_candidates"] = [
+                    {
+                        "mb_recording_id": tagset.ids.mb_recording_id,
+                        "title": tagset.title,
+                        "rg_candidates": [
+                            {
+                                "mb_rg_id": tagset.ids.mb_release_group_id,
+                                "title": tagset.album,
+                                "primary_type": "Album",
+                                "first_release_date": tagset.original_year,
+                                "releases": [
+                                    {
+                                        "mb_release_id": tagset.ids.mb_release_id or "unknown",
+                                        "date": tagset.original_year,
+                                        "country": tagset.country,
+                                        "label": tagset.label,
+                                        "title": tagset.album,
+                                        "flags": {"is_official": True},
+                                    }
+                                ],
+                            }
+                        ],
                     }
-                    result["trace"] = json.dumps(trace_dict)
+                ]
 
-                results.append(result)
+            decision = resolver.resolve(evidence_bundle)
 
-                if output_format == OutputFormat.TEXT:
-                    state_icon = "✔︎" if decision.state.value == "decided" else "∆"
-                    click.echo(f"\n{state_icon} {audio_file}")
-                    click.echo(f"  State: {decision.state.value}")
-                    if decision.release_group_mbid:
-                        click.echo(f"  CRG: {decision.release_group_mbid}")
-                        click.echo(f"       ({decision.crg_rationale})")
-                    if decision.release_mbid:
-                        click.echo(f"  RR:  {decision.release_mbid}")
-                        click.echo(f"       ({decision.rr_rationale})")
-                    if explain and decision.decision_trace.missing_facts:
-                        click.echo(f"  Missing: {decision.decision_trace.missing_facts}")
-                    click.echo(f"  Trace: {decision.compact_tag}")
+            result = {
+                "file": str(audio_file),
+                "state": decision.state.value,
+                "crg_mbid": decision.release_group_mbid,
+                "rr_mbid": decision.release_mbid,
+                "crg_rationale": _get_rationale_value(decision.crg_rationale),
+                "rr_rationale": _get_rationale_value(decision.rr_rationale),
+                "compact_tag": decision.compact_tag,
+            }
 
-            except ValueError as e:
-                if output_format == OutputFormat.TEXT:
-                    click.echo(f"\n✘ {audio_file}: {e}", err=True)
-                results.append({"file": str(audio_file), "error": str(e)})
+            if explain:
+                trace_dict: dict[str, Any] = {
+                    "evidence_hash": decision.decision_trace.evidence_hash,
+                    "considered_candidates": decision.decision_trace.considered_candidates,
+                    "crg_selection": decision.decision_trace.crg_selection,
+                    "rr_selection": decision.decision_trace.rr_selection,
+                    "missing_facts": decision.decision_trace.missing_facts,
+                }
+                result["trace"] = json.dumps(trace_dict)
+
+            results.append(result)
+
+            if output_format == OutputFormat.TEXT:
+                state_icon = "✔︎" if decision.state.value == "decided" else "∆"
+                click.echo(f"\n{state_icon} {audio_file}")
+                click.echo(f"  State: {decision.state.value}")
+                if decision.release_group_mbid:
+                    click.echo(f"  CRG: {decision.release_group_mbid}")
+                    click.echo(f"       ({decision.crg_rationale})")
+                if decision.release_mbid:
+                    click.echo(f"  RR:  {decision.release_mbid}")
+                    click.echo(f"       ({decision.rr_rationale})")
+                if explain and decision.decision_trace.missing_facts:
+                    click.echo(f"  Missing: {decision.decision_trace.missing_facts}")
+                click.echo(f"  Trace: {decision.compact_tag}")
+
+        except ValueError as e:
+            if output_format == OutputFormat.TEXT:
+                click.echo(f"\n✘ {audio_file}: {e}", err=True)
+            results.append({"file": str(audio_file), "error": str(e)})
 
     if output_format == OutputFormat.JSON:
         click.echo(json.dumps(results, indent=2))
@@ -303,58 +315,53 @@ def write(ctx: click.Context, paths: tuple[Path, ...], dry_run: bool, apply: boo
         click.echo("Error: Use --dry-run to preview or --apply to write changes.", err=True)
         sys.exit(ExitCode.ERROR)
 
-    for path in paths:
-        if path.is_dir():
-            audio_files = list(path.rglob("*.mp3")) + list(path.rglob("*.flac"))
-            audio_files += list(path.rglob("*.ogg")) + list(path.rglob("*.m4a"))
-        else:
-            audio_files = [path]
+    audio_files = _collect_audio_files(paths)
 
-        for audio_file in audio_files:
-            try:
-                # For now, create a minimal tagset for demonstration
-                # In full implementation, this would come from decide()
-                tagset = TagSet(
-                    ids=CanonicalIDs(),
-                    compact=CompactFields(
-                        ruleset_version="canon-1.0",
-                    ),
-                )
+    for audio_file in audio_files:
+        try:
+            # For now, create a minimal tagset for demonstration
+            # In full implementation, this would come from decide()
+            tagset = TagSet(
+                ids=CanonicalIDs(),
+                compact=CompactFields(
+                    ruleset_version="canon-1.0",
+                ),
+            )
 
-                report = write_tags(
-                    audio_file,
-                    tagset,
-                    authoritative=False,  # Augment-only mode
-                    dry_run=dry_run,
-                )
+            report = write_tags(
+                audio_file,
+                tagset,
+                authoritative=False,  # Augment-only mode
+                dry_run=dry_run,
+            )
 
-                result = {
-                    "file": str(audio_file),
-                    "dry_run": report.dry_run,
-                    "fields_written": report.fields_written,
-                    "fields_skipped": report.fields_skipped,
-                    "originals_stashed": report.originals_stashed,
-                    "errors": report.errors,
-                }
-                results.append(result)
+            result = {
+                "file": str(audio_file),
+                "dry_run": report.dry_run,
+                "fields_written": report.fields_written,
+                "fields_skipped": report.fields_skipped,
+                "originals_stashed": report.originals_stashed,
+                "errors": report.errors,
+            }
+            results.append(result)
 
-                if output_format == OutputFormat.TEXT:
-                    mode = "(dry run)" if dry_run else ""
-                    if report.errors:
-                        click.echo(f"\n✘ {audio_file} {mode}")
-                        for error in report.errors:
-                            click.echo(f"  Error: {error}")
-                    else:
-                        click.echo(f"\n✔︎ {audio_file} {mode}")
-                        if report.fields_written:
-                            click.echo(f"  Written: {', '.join(report.fields_written)}")
-                        if report.originals_stashed:
-                            click.echo(f"  Stashed: {', '.join(report.originals_stashed)}")
+            if output_format == OutputFormat.TEXT:
+                mode = "(dry run)" if dry_run else ""
+                if report.errors:
+                    click.echo(f"\n✘ {audio_file} {mode}")
+                    for error in report.errors:
+                        click.echo(f"  Error: {error}")
+                else:
+                    click.echo(f"\n✔︎ {audio_file} {mode}")
+                    if report.fields_written:
+                        click.echo(f"  Written: {', '.join(report.fields_written)}")
+                    if report.originals_stashed:
+                        click.echo(f"  Stashed: {', '.join(report.originals_stashed)}")
 
-            except ValueError as e:
-                if output_format == OutputFormat.TEXT:
-                    click.echo(f"\n✘ {audio_file}: {e}", err=True)
-                results.append({"file": str(audio_file), "error": str(e)})
+        except ValueError as e:
+            if output_format == OutputFormat.TEXT:
+                click.echo(f"\n✘ {audio_file}: {e}", err=True)
+            results.append({"file": str(audio_file), "error": str(e)})
 
     if output_format == OutputFormat.JSON:
         click.echo(json.dumps(results, indent=2))
