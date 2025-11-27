@@ -267,7 +267,15 @@ class DecisionsDB:
                     fp_id = excluded.fp_id,
                     orig_tags_hash = excluded.orig_tags_hash
                 """,
-                (file_id, library_root, relative_path, duration_ms, fp_id, orig_tags_hash, created_at),
+                (
+                    file_id,
+                    library_root,
+                    relative_path,
+                    duration_ms,
+                    fp_id,
+                    orig_tags_hash,
+                    created_at,
+                ),
             )
             conn.commit()
 
@@ -469,9 +477,7 @@ def test_decisions_db_schema(tmp_path):
     # Verify tables exist
     conn = db._get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = {row[0] for row in cursor.fetchall()}
     conn.close()
 

@@ -101,6 +101,7 @@ class WikidataClient:
 
         # Check cache - use query as cache key for correctness
         import hashlib
+
         query_hash = hashlib.sha256(query.encode()).hexdigest()[:16]
         cache_key = f"{self.SPARQL_ENDPOINT}?qhash={query_hash}"
         if self.cache:
