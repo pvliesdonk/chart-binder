@@ -87,7 +87,9 @@ class Normalizer:
         r"\s*[\(\[]\s*(re-recorded|taylor\'?s\s+version|new\s+recording)\s*[\)\]]$"
     )
     PATTERN_MEDLEY = r"\s*[\(\[]\s*medley\s*[\)\]]$"
-    PATTERN_KARAOKE = r"\s*[\(\[]\s*(?:originally\s+performed\s+by\s+[^\)\]]+)\s*[\)\]]$"
+    PATTERN_KARAOKE = (
+        r"\s*[\(\[]\s*(?:originally\s+performed\s+by\s+[^\)\]]+|karaoke(?:\s+version)?)\s*[\)\]]$"
+    )
     PATTERN_SESSION = r"\s*[\(\[]\s*(peel)\s+session\s*[\)\]]$"
     PATTERN_DASH_SUFFIX = (
         r"\s*-\s*(remaster(?:ed)?\s+\d{4}|live\s+at\s+.+|radio\s+edit|single\s+version)$"
