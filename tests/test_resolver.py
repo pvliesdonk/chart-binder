@@ -750,3 +750,53 @@ def test_partial_date_parsing(resolver):
     assert decision.state == DecisionState.DECIDED
     # Should deterministically select "rg-year-only" (1965-01-01 < 1965-06-01)
     assert decision.release_group_mbid == "rg-year-only"
+
+
+def test_human_readable_trace(resolver):
+    """Test human-readable trace generation for explainability."""
+    evidence_bundle = {
+        "artist": {
+            "mb_artist_id": "artist-1",
+            "name": "Test Artist",
+            "begin_area_country": "UK",
+        },
+        "recording_candidates": [
+            {
+                "mb_recording_id": "rec-1",
+                "title": "Song",
+                "rg_candidates": [
+                    {
+                        "mb_rg_id": "rg-album",
+                        "title": "Test Album",
+                        "primary_type": "Album",
+                        "first_release_date": "1985-03-01",
+                        "releases": [
+                            {
+                                "mb_release_id": "rel-uk",
+                                "date": "1985-03-01",
+                                "country": "UK",
+                                "label": "UK Records",
+                                "flags": {"is_official": True},
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        "timeline_facts": {"earliest_album_date": "1985-03-01"},
+        "provenance": {"sources_used": ["MB"]},
+    }
+
+    decision = resolver.resolve(evidence_bundle)
+    trace_str = decision.decision_trace.to_human_readable()
+
+    # Should contain key sections
+    assert "Decision Trace" in trace_str
+    assert "Ruleset Version: 1.0" in trace_str
+    assert "Evidence Hash:" in trace_str
+    assert "Artist Origin Country: UK" in trace_str
+    assert "CRG Selection:" in trace_str
+    assert "RR Selection:" in trace_str
+    assert "Config:" in trace_str
+    assert "Lead Window: 90 days" in trace_str
+    assert "Reissue Gap: 10 years" in trace_str

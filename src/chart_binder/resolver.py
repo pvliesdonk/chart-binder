@@ -115,6 +115,71 @@ class DecisionTrace:
 
         return f"evh={evh_short};crg={crg_code};rr={rr_code};src={sources_str};cfg={cfg_str}"
 
+    def to_human_readable(self) -> str:
+        """
+        Generate human-readable explanation of the decision.
+
+        Used for CLI --explain output and audit trails.
+        """
+        lines = []
+        lines.append("Decision Trace")
+        lines.append("=" * 50)
+
+        lines.append(f"Ruleset Version: {self.ruleset_version}")
+        lines.append(f"Evidence Hash: {self.evidence_hash[:16]}...")
+
+        if self.artist_origin_country:
+            lines.append(f"Artist Origin Country: {self.artist_origin_country}")
+
+        # CRG selection explanation
+        lines.append("\nCRG Selection:")
+        if self.crg_selection:
+            rule = self.crg_selection.get("rule", "unknown")
+            lines.append(f"  Rule Applied: {rule}")
+
+            if "first_release_date" in self.crg_selection:
+                lines.append(f"  First Release Date: {self.crg_selection['first_release_date']}")
+            if "delta_days" in self.crg_selection:
+                lines.append(f"  Lead Window Delta: {self.crg_selection['delta_days']} days")
+            if "tie_breaker" in self.crg_selection:
+                lines.append(f"  Tie-breaker: {self.crg_selection['tie_breaker']}")
+
+        # RR selection explanation
+        lines.append("\nRR Selection:")
+        if self.rr_selection:
+            rule = self.rr_selection.get("rule", "unknown")
+            lines.append(f"  Rule Applied: {rule}")
+
+            release = self.rr_selection.get("release", {})
+            if release:
+                if release.get("date"):
+                    lines.append(f"  Release Date: {release['date']}")
+                if release.get("country"):
+                    lines.append(f"  Country: {release['country']}")
+                if release.get("label"):
+                    lines.append(f"  Label: {release['label']}")
+
+        # Candidates considered
+        if self.considered_candidates:
+            lines.append(f"\nCandidates Considered: {len(self.considered_candidates)}")
+            for i, cand in enumerate(self.considered_candidates[:5]):  # Show first 5
+                lines.append(f"  {i + 1}. {cand.get('type', '?')} RG {cand.get('rg', '?')[:8]}...")
+                if cand.get("first_date"):
+                    lines.append(f"      First date: {cand['first_date']}")
+
+        # Missing facts
+        if self.missing_facts:
+            lines.append("\nMissing Facts:")
+            for fact in self.missing_facts:
+                lines.append(f"  - {fact}")
+
+        # Config
+        lines.append("\nConfig:")
+        lines.append(f"  Lead Window: {self.config_snapshot.lead_window_days} days")
+        lines.append(f"  Reissue Gap: {self.config_snapshot.reissue_long_gap_years} years")
+
+        return "\n".join(lines)
+
 
 @dataclass
 class CanonicalDecision:
