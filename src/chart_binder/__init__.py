@@ -27,9 +27,31 @@ __all__ = (
     "write_tags",
     "verify",
     "get_writer_for_file",
+    # Charts ETL (Epic 8)
+    "ChartsDB",
+    "ChartsETL",
+    "ChartEntry",
+    "ChartLink",
+    "CoverageReport",
+    "EntryUnit",
+    "LinkMethod",
+    # Charts Export (Epic 9)
+    "ChartsBlob",
+    "ChartScore",
+    "ChartsExporter",
 )
 
 from chart_binder.acoustid import AcoustIDClient
+from chart_binder.charts_db import (
+    ChartEntry,
+    ChartLink,
+    ChartsDB,
+    ChartsETL,
+    CoverageReport,
+    EntryUnit,
+    LinkMethod,
+)
+from chart_binder.charts_export import ChartsBlob, ChartScore, ChartsExporter
 from chart_binder.cli import main
 from chart_binder.config import Config
 from chart_binder.decisions_db import DecisionsDB
