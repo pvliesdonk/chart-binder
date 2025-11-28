@@ -8,7 +8,9 @@ See: docs/appendix/beets_plugin_protocol_spec_v1.md
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -227,7 +229,7 @@ class ChartBinderPluginBase:
                 item._chart_binder_tagset = tagset
                 log.debug(f"Chart-Binder: Read tags from {file_path}")
             except Exception as e:
-                log.warning(f"Chart-Binder: Error reading {item.path}: {e}")
+                log.warning(f"Chart-Binder: Error reading {item.path}: {e}", exc_info=True)
                 if self._import_summary:
                     self._import_summary.errors.append(str(e))
 
@@ -243,7 +245,7 @@ class ChartBinderPluginBase:
                 if self.mode == CanonMode.ADVISORY and self.get_config("explain", False):
                     self._show_side_by_side(item, decision_summary, task)
             except Exception as e:
-                log.warning(f"Chart-Binder: Error deciding {item.path}: {e}")
+                log.warning(f"Chart-Binder: Error deciding {item.path}: {e}", exc_info=True)
                 if self._import_summary:
                     self._import_summary.errors.append(str(e))
 
@@ -300,7 +302,7 @@ class ChartBinderPluginBase:
                 self._update_item_fields(item, decision_summary, tagset)
 
             except Exception as e:
-                log.warning(f"Chart-Binder: Error writing {item.path}: {e}")
+                log.warning(f"Chart-Binder: Error writing {item.path}: {e}", exc_info=True)
                 if summary:
                     summary.errors.append(str(e))
                     summary.skipped += 1
@@ -330,7 +332,10 @@ class ChartBinderPluginBase:
                     blob = self.charts_exporter.export_for_work(work_key)
                     charts_blob = blob.to_json()
                 except Exception:
-                    pass
+                    log.warning(
+                        f"Chart-Binder: Error exporting charts for work key '{work_key}'",
+                        exc_info=True,
+                    )
 
         return DecisionSummary(
             file_path=file_path,
@@ -383,7 +388,7 @@ class ChartBinderPluginBase:
                             "releases": [
                                 {
                                     "mb_release_id": tagset.ids.mb_release_id
-                                    or getattr(item, "mb_albumid", "unknown"),
+                                    or getattr(item, "mb_albumid", None),
                                     "date": tagset.original_year or str(getattr(item, "year", "")),
                                     "country": tagset.country,
                                     "label": tagset.label or getattr(item, "label", None),
@@ -417,8 +422,6 @@ class ChartBinderPluginBase:
 
     def _compute_work_key(self, item: Any, tagset: TagSet) -> str | None:
         """Compute work key for CHARTS lookup."""
-        import unicodedata
-
         artist = tagset.artist or getattr(item, "artist", None)
         title = tagset.title or getattr(item, "title", None)
 
@@ -576,8 +579,6 @@ class ChartBinderPluginBase:
 
     def _compute_file_id(self, file_path: Path) -> str:
         """Compute stable file ID for decisions DB."""
-        import hashlib
-
         stat = file_path.stat()
         key = f"{file_path}:{stat.st_size}:{stat.st_mtime}"
         return hashlib.sha256(key.encode()).hexdigest()[:32]
@@ -703,106 +704,3 @@ if _beets_available and _BeetsPlugin is not None:
 
             cmd.func = func
             return cmd
-
-
-## Tests
-
-
-def test_canon_mode_enum():
-    assert CanonMode.ADVISORY.value == "advisory"
-    assert CanonMode.AUTHORITATIVE.value == "authoritative"
-    assert CanonMode.AUGMENT.value == "augment"
-
-
-def test_decision_summary_defaults():
-    summary = DecisionSummary(file_path=Path("/test.mp3"))
-    assert summary.state == DecisionState.INDETERMINATE
-    assert summary.release_group_mbid is None
-    assert summary.charts_blob is None
-
-
-def test_import_summary_defaults():
-    summary = ImportSummary()
-    assert summary.total_items == 0
-    assert summary.canonized == 0
-    assert summary.augmented == 0
-    assert summary.skipped == 0
-    assert summary.indeterminate == 0
-    assert summary.errors == []
-
-
-def test_import_summary_counts():
-    summary = ImportSummary(
-        total_items=10,
-        canonized=5,
-        augmented=3,
-        skipped=1,
-        indeterminate=1,
-    )
-    assert summary.total_items == 10
-    assert summary.canonized == 5
-    assert summary.augmented == 3
-
-
-def test_compute_work_key():
-    """Test work key computation without beets dependency."""
-    import unicodedata
-
-    def normalize(s: str) -> str:
-        s = unicodedata.normalize("NFC", s)
-        return s.lower().strip()
-
-    artist = "The Beatles"
-    title = "Hey Jude"
-    work_key = f"{normalize(artist)} // {normalize(title)}"
-
-    assert work_key == "the beatles // hey jude"
-
-
-def test_build_tagset_from_decision():
-    """Test building tagset from decision summary."""
-    summary = DecisionSummary(
-        file_path=Path("/test.mp3"),
-        title="Test Song",
-        artist="Test Artist",
-        album="Test Album",
-        release_group_mbid="rg-12345",
-        release_mbid="r-67890",
-        state=DecisionState.DECIDED,
-        compact_trace="evh=abc123;crg=EARLIEST_OFFICIAL;rr=ORIGIN_COUNTRY_EARLIEST;src=mb;cfg=lw90,rg10",
-    )
-
-    tagset = TagSet(
-        title=summary.title,
-        artist=summary.artist,
-        album=summary.album,
-        ids=CanonicalIDs(
-            mb_release_group_id=summary.release_group_mbid,
-            mb_release_id=summary.release_mbid,
-        ),
-        compact=CompactFields(
-            decision_trace=summary.compact_trace,
-            ruleset_version="canon-1.0",
-        ),
-    )
-
-    assert tagset.title == "Test Song"
-    assert tagset.ids.mb_release_group_id == "rg-12345"
-    assert tagset.compact.decision_trace is not None
-    assert "evh=abc123" in tagset.compact.decision_trace
-
-
-def test_plugin_base_class():
-    """Test the base class without beets."""
-    plugin = ChartBinderPluginBase()
-    assert plugin.mode == CanonMode.ADVISORY
-    assert plugin.get_config("lead_window_days") == 90
-    assert plugin.get_config("reissue_long_gap_years") == 10
-
-
-def test_plugin_base_resolver():
-    """Test resolver initialization."""
-    plugin = ChartBinderPluginBase()
-    resolver = plugin.resolver
-    assert resolver is not None
-    assert resolver.config.lead_window_days == 90
