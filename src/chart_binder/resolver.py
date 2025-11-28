@@ -163,7 +163,9 @@ class DecisionTrace:
         if self.considered_candidates:
             lines.append(f"\nCandidates Considered: {len(self.considered_candidates)}")
             for i, cand in enumerate(self.considered_candidates[:5]):  # Show first 5
-                lines.append(f"  {i + 1}. {cand.get('type', '?')} RG {cand.get('rg', '?')[:8]}...")
+                rg_id = cand.get("rg")
+                rg_display = rg_id[:8] if isinstance(rg_id, str) and rg_id else "?"
+                lines.append(f"  {i + 1}. {cand.get('type', '?')} RG {rg_display}...")
                 if cand.get("first_date"):
                     lines.append(f"      First date: {cand['first_date']}")
 

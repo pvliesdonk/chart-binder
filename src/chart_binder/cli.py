@@ -53,20 +53,6 @@ def _get_rationale_value(rationale: Any) -> str | None:
     return rationale.value if hasattr(rationale, "value") else str(rationale)
 
 
-def _output_result(
-    data: dict[str, Any] | list[dict[str, Any]],
-    output_format: OutputFormat,
-    text_formatter: Any | None = None,
-) -> None:
-    """Output result in specified format."""
-    if output_format == OutputFormat.JSON:
-        click.echo(json.dumps(data, indent=2, default=str))
-    elif text_formatter:
-        text_formatter(data)
-    else:
-        click.echo(data)
-
-
 @click.group()
 @click.option(
     "--config",
@@ -156,7 +142,7 @@ def scan(ctx: click.Context, paths: tuple[Path, ...]) -> None:
                 if tagset.compact.decision_trace:
                     click.echo(f"  Trace: {tagset.compact.decision_trace}")
 
-        except ValueError as e:
+        except Exception as e:
             if output_format == OutputFormat.TEXT:
                 click.echo(f"\n✘ {audio_file}: {e}", err=True)
             results.append({"file": str(audio_file), "error": str(e)})
@@ -273,11 +259,11 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
                 if decision.release_mbid:
                     click.echo(f"  RR:  {decision.release_mbid}")
                     click.echo(f"       ({decision.rr_rationale})")
-                if explain and decision.decision_trace.missing_facts:
-                    click.echo(f"  Missing: {decision.decision_trace.missing_facts}")
                 click.echo(f"  Trace: {decision.compact_tag}")
+                if explain:
+                    click.echo("\n" + decision.decision_trace.to_human_readable())
 
-        except ValueError as e:
+        except Exception as e:
             if output_format == OutputFormat.TEXT:
                 click.echo(f"\n✘ {audio_file}: {e}", err=True)
             results.append({"file": str(audio_file), "error": str(e)})
@@ -358,7 +344,7 @@ def write(ctx: click.Context, paths: tuple[Path, ...], dry_run: bool, apply: boo
                     if report.originals_stashed:
                         click.echo(f"  Stashed: {', '.join(report.originals_stashed)}")
 
-        except ValueError as e:
+        except Exception as e:
             if output_format == OutputFormat.TEXT:
                 click.echo(f"\n✘ {audio_file}: {e}", err=True)
             results.append({"file": str(audio_file), "error": str(e)})
@@ -403,16 +389,16 @@ def status(ctx: click.Context) -> None:
     if cache_db.exists():
         import time
 
-        conn = sqlite3.connect(cache_db)
-        cursor = conn.cursor()
+        with sqlite3.connect(cache_db) as conn:
+            cursor = conn.cursor()
 
-        cursor.execute("SELECT COUNT(*) FROM cache_entries")
-        result["entries"] = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM cache_entries")
+            result["entries"] = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM cache_entries WHERE expires_at <= ?", (time.time(),))
-        result["expired_entries"] = cursor.fetchone()[0]
-
-        conn.close()
+            cursor.execute(
+                "SELECT COUNT(*) FROM cache_entries WHERE expires_at <= ?", (time.time(),)
+            )
+            result["expired_entries"] = cursor.fetchone()[0]
 
         # Calculate total size of cached files
         total_size = sum(f.stat().st_size for f in cache_dir.glob("*.cache") if f.is_file())
@@ -484,9 +470,8 @@ def coverage() -> None:
 @coverage.command("chart")
 @click.argument("chart_id")
 @click.argument("period")
-@click.option("--threshold", default=0.60, help="Minimum confidence threshold")
 @click.pass_context
-def coverage_chart(ctx: click.Context, chart_id: str, period: str, threshold: float) -> None:
+def coverage_chart(ctx: click.Context, chart_id: str, period: str) -> None:
     """Show coverage report for a chart run."""
     from chart_binder.charts_db import ChartsDB
 
@@ -764,7 +749,7 @@ def review(ctx: click.Context) -> None:
                 click.echo(f"  RR: {d.mb_release_id}")
                 click.echo(f"  Ruleset: {d.ruleset_version}")
 
-    sys.exit(ExitCode.SUCCESS if not stale_decisions else ExitCode.NO_RESULTS)
+    sys.exit(ExitCode.ERROR if stale_decisions else ExitCode.SUCCESS)
 
 
 def main() -> None:
