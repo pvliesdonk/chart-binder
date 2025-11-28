@@ -465,6 +465,58 @@ class DecisionsDB:
             )
             conn.commit()
 
+    def set_pinned(self, decision_id: str, pinned: bool) -> None:
+        """Set the pinned status of a decision."""
+        with self._db_connection() as conn:
+            conn.execute(
+                """
+                UPDATE decision
+                SET pinned = ?, updated_at = ?
+                WHERE decision_id = ?
+                """,
+                (1 if pinned else 0, time.time(), decision_id),
+            )
+            conn.commit()
+
+    def create_override_rule(
+        self,
+        scope: str,
+        scope_id: str,
+        directive: str,
+        note: str | None = None,
+        created_by: str | None = None,
+    ) -> str:
+        """Create an override rule."""
+        override_id = str(uuid.uuid4())
+        now = time.time()
+
+        with self._db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO override_rule
+                    (override_id, scope, scope_id, directive, note, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (override_id, scope, scope_id, directive, note, created_by, now),
+            )
+            conn.commit()
+            return override_id
+
+    def get_override_rules(self, scope: str, scope_id: str) -> list[dict[str, Any]]:
+        """Get override rules for a given scope."""
+        with self._db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT * FROM override_rule
+                WHERE scope = ? AND scope_id = ?
+                ORDER BY created_at DESC
+                """,
+                (scope, scope_id),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
 
 ## Tests
 

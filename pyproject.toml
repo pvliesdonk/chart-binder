@@ -45,6 +45,14 @@ dependencies = [
 ]
 
 
+# ---- Optional dependencies ----
+
+[project.optional-dependencies]
+beets = [
+    "beets>=2.0.0",
+]
+
+
 # ---- Dev dependencies ----
 
 [dependency-groups]
@@ -86,7 +94,7 @@ bump = true
 
 [tool.hatch.build.targets.wheel]
 # The source location for the package.
-packages = ["src/chart_binder"]
+packages = ["src/chart_binder", "src/beetsplug"]
 
 
 # ---- Settings ----
