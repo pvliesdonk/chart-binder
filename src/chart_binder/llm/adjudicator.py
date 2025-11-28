@@ -13,7 +13,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from chart_binder.llm.providers import (
     LLMMessage,
@@ -23,6 +23,9 @@ from chart_binder.llm.providers import (
     ProviderRegistry,
 )
 from chart_binder.llm.search_tool import SearchTool
+
+if TYPE_CHECKING:
+    from chart_binder.config import LLMConfig
 
 log = logging.getLogger(__name__)
 
@@ -82,24 +85,6 @@ You must respond in valid JSON format with these exact fields:
 If you cannot determine the canonical release with reasonable confidence, set confidence below 0.60 and explain why."""
 
 
-@dataclass
-class AdjudicationConfig:
-    """Configuration for LLM adjudication."""
-
-    enabled: bool = False
-    provider: str = "ollama"
-    model_id: str = "llama3.2"
-    timeout_s: float = 30.0
-    max_tokens: int = 1024
-    temperature: float = 0.0
-    auto_accept_threshold: float = 0.85
-    review_threshold: float = 0.60
-    prompt_template_version: str = "v1"
-    # Provider-specific config
-    ollama_base_url: str = "http://localhost:11434"
-    api_key_env: str = "OPENAI_API_KEY"
-
-
 class LLMAdjudicator:
     """LLM-based adjudicator for INDETERMINATE decisions.
 
@@ -109,11 +94,15 @@ class LLMAdjudicator:
 
     def __init__(
         self,
-        config: AdjudicationConfig | None = None,
+        config: LLMConfig | None = None,
         provider: LLMProvider | None = None,
         search_tool: SearchTool | None = None,
     ):
-        self.config = config or AdjudicationConfig()
+        if config is None:
+            from chart_binder.config import LLMConfig
+
+            config = LLMConfig()
+        self.config = config
         self._provider = provider
         self._search_tool = search_tool
         self._registry = ProviderRegistry()
@@ -124,7 +113,7 @@ class LLMAdjudicator:
         if self._provider is None:
             self._provider = self._registry.create_from_config(
                 {
-                    "provider": self.config.provider,
+                    "provider": str(self.config.provider),
                     "model_id": self.config.model_id,
                     "ollama_base_url": self.config.ollama_base_url,
                     "api_key_env": self.config.api_key_env,
@@ -369,9 +358,11 @@ class LLMAdjudicator:
 ## Tests
 
 
-def test_adjudication_config_defaults():
-    """Test AdjudicationConfig defaults."""
-    config = AdjudicationConfig()
+def test_llm_config_defaults():
+    """Test LLMConfig defaults."""
+    from chart_binder.config import LLMConfig
+
+    config = LLMConfig()
     assert config.enabled is False
     assert config.provider == "ollama"
     assert config.auto_accept_threshold == 0.85
@@ -388,7 +379,9 @@ def test_adjudication_result_defaults():
 
 def test_adjudicator_disabled():
     """Test adjudicator returns error when disabled."""
-    config = AdjudicationConfig(enabled=False)
+    from chart_binder.config import LLMConfig
+
+    config = LLMConfig(enabled=False)
     adjudicator = LLMAdjudicator(config=config)
     result = adjudicator.adjudicate({})
     assert result.outcome == AdjudicationOutcome.ERROR
@@ -453,7 +446,9 @@ def test_parse_response_valid():
 
 def test_parse_response_low_confidence():
     """Test parsing response with low confidence."""
-    config = AdjudicationConfig(auto_accept_threshold=0.85, review_threshold=0.60)
+    from chart_binder.config import LLMConfig
+
+    config = LLMConfig(auto_accept_threshold=0.85, review_threshold=0.60)
     adjudicator = LLMAdjudicator(config=config)
     evidence = {
         "recording_candidates": [

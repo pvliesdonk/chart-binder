@@ -812,7 +812,8 @@ def llm_status(ctx: click.Context) -> None:
 def llm_adjudicate(ctx: click.Context, file_id: str, force: bool) -> None:
     """Run LLM adjudication on a specific INDETERMINATE decision."""
     from chart_binder.decisions_db import DecisionsDB
-    from chart_binder.llm import AdjudicationConfig, LLMAdjudicator
+    from chart_binder.llm import LLMAdjudicator
+    from chart_binder.musicgraph import MusicGraphDB
 
     config: Config = ctx.obj["config"]
     output_format: OutputFormat = ctx.obj["output"]
@@ -829,28 +830,77 @@ def llm_adjudicate(ctx: click.Context, file_id: str, force: bool) -> None:
         click.echo(f"No decision found for file_id: {file_id}", err=True)
         sys.exit(ExitCode.NO_RESULTS)
 
-    # Create adjudicator
-    adj_config = AdjudicationConfig(
-        enabled=True,
-        provider=config.llm.provider,
-        model_id=config.llm.model_id,
-        timeout_s=config.llm.timeout_s,
-        max_tokens=config.llm.max_tokens,
-        auto_accept_threshold=config.llm.auto_accept_threshold,
-        review_threshold=config.llm.review_threshold,
-        ollama_base_url=config.llm.ollama_base_url,
-        api_key_env=config.llm.api_key_env,
-    )
-    adjudicator = LLMAdjudicator(config=adj_config)
+    # Create adjudicator with config.llm directly (LLMConfig model)
+    adjudicator = LLMAdjudicator(config=config.llm)
 
-    # Build minimal evidence bundle from decision
+    # Build evidence bundle from decision and music graph data
     evidence_bundle: dict[str, Any] = {
         "artist": {"name": "Unknown"},
         "recording_candidates": [],
         "provenance": {"sources_used": ["decisions_db"]},
     }
 
-    result = adjudicator.adjudicate(evidence_bundle)
+    # Extract work_key parts (typically "artist // title" format)
+    work_key = decision.get("work_key", "")
+    if " // " in work_key:
+        parts = work_key.split(" // ", 1)
+        evidence_bundle["artist"] = {"name": parts[0]}
+        if len(parts) > 1:
+            evidence_bundle["recording_title"] = parts[1]
+    else:
+        evidence_bundle["work_key_raw"] = work_key
+
+    # Include decision trace info if available
+    trace_compact = decision.get("trace_compact", "")
+    if trace_compact:
+        evidence_bundle["decision_trace_compact"] = trace_compact
+
+    # Include config snapshot from decision
+    config_json = decision.get("config_snapshot_json", "{}")
+    try:
+        evidence_bundle["config_snapshot"] = json.loads(config_json)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to enrich evidence from music graph if available
+    music_graph_db = MusicGraphDB(config.database.music_graph_path)
+
+    # If we have mb_recording_id, try to get recording info
+    mb_recording_id = decision.get("mb_recording_id")
+    if mb_recording_id:
+        recording = music_graph_db.get_recording(mb_recording_id)
+        if recording:
+            evidence_bundle["recording_candidates"] = [
+                {
+                    "title": recording.get("title", ""),
+                    "mb_recording_id": mb_recording_id,
+                    "rg_candidates": [],
+                }
+            ]
+            # If we have artist info, get it
+            artist_mbid = recording.get("artist_mbid")
+            if artist_mbid:
+                artist = music_graph_db.get_artist(artist_mbid)
+                if artist:
+                    evidence_bundle["artist"] = {
+                        "name": artist.get("name", "Unknown"),
+                        "mb_artist_id": artist_mbid,
+                        "begin_area_country": artist.get("begin_area_country"),
+                    }
+
+    # Include existing decision info for context
+    evidence_bundle["existing_decision"] = {
+        "mb_rg_id": decision.get("mb_rg_id"),
+        "mb_release_id": decision.get("mb_release_id"),
+        "state": decision.get("state"),
+    }
+
+    # Build decision trace dict from compact string
+    decision_trace: dict[str, Any] | None = None
+    if trace_compact:
+        decision_trace = {"trace_compact": trace_compact}
+
+    result = adjudicator.adjudicate(evidence_bundle, decision_trace)
 
     result_dict = {
         "outcome": result.outcome.value,

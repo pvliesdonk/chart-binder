@@ -11,7 +11,6 @@ This module provides:
 from __future__ import annotations
 
 from chart_binder.llm.adjudicator import (
-    AdjudicationConfig,
     AdjudicationOutcome,
     AdjudicationResult,
     LLMAdjudicator,
@@ -33,7 +32,6 @@ __all__ = [
     "OpenAIProvider",
     # Adjudication
     "LLMAdjudicator",
-    "AdjudicationConfig",
     "AdjudicationResult",
     "AdjudicationOutcome",
     # Search tool

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tomllib
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -45,6 +46,13 @@ class LiveSourcesConfig(BaseModel):
     cache_ttl_acoustid: int = Field(default=86400, ge=0)  # 24 hours
 
 
+class LLMProviderType(StrEnum):
+    """Supported LLM provider types."""
+
+    OLLAMA = "ollama"
+    OPENAI = "openai"
+
+
 class LLMConfig(BaseModel):
     """LLM adjudication configuration (Epic 13)."""
 
@@ -52,7 +60,7 @@ class LLMConfig(BaseModel):
     enabled: bool = Field(default=False)
 
     # Provider: "ollama" (local) or "openai"
-    provider: str = Field(default="ollama")
+    provider: LLMProviderType = Field(default=LLMProviderType.OLLAMA)
 
     # Model ID (provider-specific)
     # Ollama: llama3.2, mistral, phi3, etc.
