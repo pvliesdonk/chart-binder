@@ -202,7 +202,7 @@ class BatchProcessor:
 
             return bundle
 
-        return process_batch(files, identify_one, self._config_with_size("identify"))
+        return process_batch(files, identify_one, self._get_batch_config())
 
     def decide_batch(
         self,
@@ -223,7 +223,7 @@ class BatchProcessor:
         def decide_one(bundle: dict[str, Any]) -> Any:
             return resolver.resolve(bundle)
 
-        return process_batch(evidence_bundles, decide_one, self._config_with_size("decide"))
+        return process_batch(evidence_bundles, decide_one, self._get_batch_config())
 
     def write_batch(
         self,
@@ -247,14 +247,13 @@ class BatchProcessor:
             file_path, tagset = pair
             return write_tags(file_path, tagset, authoritative=authoritative, dry_run=dry_run)
 
-        return process_batch(file_tagset_pairs, write_one, self._config_with_size("write"))
+        return process_batch(file_tagset_pairs, write_one, self._get_batch_config())
 
-    def _config_with_size(self, operation: str) -> BatchConfig:
-        """Get config with appropriate batch size for operation.
+    def _get_batch_config(self) -> BatchConfig:
+        """Get a copy of the batch config for processing.
 
-        This creates a new BatchConfig that inherits error handling and
-        progress callback from the parent config while preserving all
-        operation-specific batch sizes.
+        This creates a new BatchConfig that inherits all settings from
+        the parent config including error handling and progress callback.
         """
         return BatchConfig(
             identify_batch_size=self.config.identify_batch_size,

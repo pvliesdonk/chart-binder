@@ -46,39 +46,31 @@ class TokenBucket:
 
         Args:
             tokens: Number of tokens to acquire
-            blocking: If True, wait until tokens are available
+            blocking: If True, wait and retry until tokens are acquired
 
         Returns:
-            True if tokens were acquired, False if non-blocking and tokens unavailable
+            True if tokens were acquired, False if non-blocking and tokens unavailable.
+            When blocking=True, this method always returns True (loops until success).
         """
-        with self._lock:
-            self._refill()
-
-            if self._tokens >= tokens:
-                self._tokens -= tokens
-                return True
-
-            if not blocking:
+        if not blocking:
+            with self._lock:
+                self._refill()
+                if self._tokens >= tokens:
+                    self._tokens -= tokens
+                    return True
                 return False
 
-            # Calculate wait time outside critical section
-            deficit = tokens - self._tokens
-            wait_time = deficit / self.refill_rate
-
-        # Wait outside lock to allow other callers to proceed.
-        # After waiting, we re-acquire the lock and check again.
-        # In high contention, another thread may have consumed tokens,
-        # so we verify availability after the wait.
-        time.sleep(wait_time)
-
-        with self._lock:
-            self._refill()
-            if self._tokens >= tokens:
-                self._tokens -= tokens
-                return True
-            # Another caller consumed tokens - return False
-            # Caller may retry or use exponential backoff
-            return False
+        # blocking=True: loop until tokens are acquired
+        while True:
+            with self._lock:
+                self._refill()
+                if self._tokens >= tokens:
+                    self._tokens -= tokens
+                    return True
+                deficit = tokens - self._tokens
+                wait_time = deficit / self.refill_rate
+            # Wait outside lock to allow other callers to proceed
+            time.sleep(wait_time)
 
     def try_acquire(self, tokens: float = 1.0) -> bool:
         """Try to acquire tokens without blocking.

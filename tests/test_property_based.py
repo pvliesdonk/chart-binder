@@ -82,7 +82,12 @@ def test_normalize_title_lowercase(text: str):
 )
 @settings(max_examples=20)
 def test_resolver_never_crashes(random_dict: dict[str, Any]):
-    """Property: Resolver should never crash, even with random input."""
+    """Property: Resolver should handle random artist dict input gracefully.
+
+    The resolver is designed to handle incomplete or malformed evidence bundles
+    by returning an INDETERMINATE state rather than crashing. This test verifies
+    that behavior by providing random data in the artist field.
+    """
     resolver = Resolver()
     # Wrap in evidence bundle structure
     evidence_bundle = {
@@ -90,14 +95,10 @@ def test_resolver_never_crashes(random_dict: dict[str, Any]):
         "recording_candidates": [],
         "provenance": {"sources_used": []},
     }
-    try:
-        decision = resolver.resolve(evidence_bundle)
-        # Should always return a decision object
-        assert hasattr(decision, "state")
-    except Exception as e:
-        # Only allow specific expected exceptions
-        if not isinstance(e, (TypeError, KeyError)):
-            raise
+    # Resolver should always return a valid decision, never crash
+    decision = resolver.resolve(evidence_bundle)
+    # Should always return a decision object with a state
+    assert hasattr(decision, "state")
 
 
 @given(st.text(min_size=0, max_size=50), st.text(min_size=0, max_size=50))

@@ -209,6 +209,10 @@ class SafeLogFormatter(logging.Formatter):
         self._library_root = _get_library_root()
 
     def format(self, record: logging.LogRecord) -> str:
+        # Create a copy of the record to avoid mutating the original,
+        # which could cause issues with multiple handlers
+        record = logging.makeLogRecord(record.__dict__)
+
         # Sanitize the message
         if self.sanitize_messages:
             record.msg = sanitize_message(str(record.msg))
@@ -238,6 +242,7 @@ class SafeLogFormatter(logging.Formatter):
                 if path.suffix:
                     return safe_path(path, self._library_root, use_hash=self.hash_paths)
             except (OSError, ValueError):
+                # String cannot be parsed as a valid path; treat as non-path value
                 pass
         return value
 
