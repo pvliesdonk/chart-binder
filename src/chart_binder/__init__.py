@@ -35,6 +35,11 @@ __all__ = (
     "CoverageReport",
     "EntryUnit",
     "LinkMethod",
+    # Chart Scrapers (Epic 8)
+    "ChartScraper",
+    "Top40Scraper",
+    "Top2000Scraper",
+    "ZwaarsteScraper",
     # Charts Export (Epic 9)
     "ChartsBlob",
     "ChartScore",
@@ -145,6 +150,12 @@ from chart_binder.safe_logging import (
     relativize_path,
     safe_path,
     sanitize_message,
+)
+from chart_binder.scrapers import (
+    ChartScraper,
+    Top40Scraper,
+    Top2000Scraper,
+    ZwaarsteScraper,
 )
 from chart_binder.spotify import SpotifyClient
 from chart_binder.tagging import (
