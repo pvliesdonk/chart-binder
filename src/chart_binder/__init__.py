@@ -47,6 +47,19 @@ __all__ = (
     "RRRationale",
     "ConfigSnapshot",
     "explain",
+    # LLM Adjudication (Epic 13)
+    "LLMAdjudicator",
+    "AdjudicationResult",
+    "AdjudicationOutcome",
+    "LLMProvider",
+    "ProviderRegistry",
+    "OllamaProvider",
+    "OpenAIProvider",
+    "SearchTool",
+    "SearchResult",
+    "ReviewQueue",
+    "ReviewItem",
+    "ReviewAction",
 )
 
 from chart_binder.acoustid import AcoustIDClient
@@ -67,6 +80,20 @@ from chart_binder.discogs import DiscogsClient
 from chart_binder.drift import DriftDetector, DriftResult, StaleDecisionSummary
 from chart_binder.fetcher import UnifiedFetcher
 from chart_binder.http_cache import HttpCache
+from chart_binder.llm import (
+    AdjudicationOutcome,
+    AdjudicationResult,
+    LLMAdjudicator,
+    LLMProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    ProviderRegistry,
+    ReviewAction,
+    ReviewItem,
+    ReviewQueue,
+    SearchResult,
+    SearchTool,
+)
 from chart_binder.musicbrainz import MusicBrainzClient
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.resolver import (

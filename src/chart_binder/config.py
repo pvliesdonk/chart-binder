@@ -45,6 +45,41 @@ class LiveSourcesConfig(BaseModel):
     cache_ttl_acoustid: int = Field(default=86400, ge=0)  # 24 hours
 
 
+class LLMConfig(BaseModel):
+    """LLM adjudication configuration (Epic 13)."""
+
+    # Enable/disable LLM adjudication
+    enabled: bool = Field(default=False)
+
+    # Provider: "ollama" (local) or "openai"
+    provider: str = Field(default="ollama")
+
+    # Model ID (provider-specific)
+    # Ollama: llama3.2, mistral, phi3, etc.
+    # OpenAI: gpt-4o, gpt-4o-mini, etc.
+    model_id: str = Field(default="llama3.2")
+
+    # API configuration
+    api_key_env: str = Field(default="OPENAI_API_KEY")
+    ollama_base_url: str = Field(default="http://localhost:11434")
+    openai_base_url: str = Field(default="https://api.openai.com/v1")
+
+    # Request settings
+    timeout_s: float = Field(default=30.0, ge=1.0)
+    max_tokens: int = Field(default=1024, ge=1)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+
+    # Confidence thresholds
+    auto_accept_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+    review_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
+
+    # Prompt versioning for A/B testing
+    prompt_template_version: str = Field(default="v1")
+
+    # Review queue database path
+    review_queue_path: Path = Field(default=Path("review_queue.sqlite"))
+
+
 class Config(BaseModel):
     """
     Main configuration for chart-binder.
@@ -55,6 +90,7 @@ class Config(BaseModel):
     http_cache: HttpCacheConfig = Field(default_factory=HttpCacheConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     live_sources: LiveSourcesConfig = Field(default_factory=LiveSourcesConfig)
+    llm: LLMConfig = Field(default_factory=LLMConfig)
     offline_mode: bool = Field(default=False)
 
     @classmethod
@@ -140,6 +176,31 @@ class Config(BaseModel):
         if discogs_rate := os.getenv(f"{env_prefix}LIVE_SOURCES_DISCOGS_RATE_LIMIT"):
             live_sources["discogs_rate_limit"] = discogs_rate
 
+        # LLM config
+        llm = config_dict.setdefault("llm", {})
+        if not isinstance(llm, dict):
+            llm = {}
+            config_dict["llm"] = llm
+
+        if llm_enabled := os.getenv(f"{env_prefix}LLM_ENABLED"):
+            llm["enabled"] = llm_enabled.lower() in ("true", "1", "yes")
+        if llm_provider := os.getenv(f"{env_prefix}LLM_PROVIDER"):
+            llm["provider"] = llm_provider
+        if llm_model := os.getenv(f"{env_prefix}LLM_MODEL_ID"):
+            llm["model_id"] = llm_model
+        if llm_api_key_env := os.getenv(f"{env_prefix}LLM_API_KEY_ENV"):
+            llm["api_key_env"] = llm_api_key_env
+        if llm_ollama_url := os.getenv(f"{env_prefix}LLM_OLLAMA_BASE_URL"):
+            llm["ollama_base_url"] = llm_ollama_url
+        if llm_timeout := os.getenv(f"{env_prefix}LLM_TIMEOUT_S"):
+            llm["timeout_s"] = llm_timeout
+        if llm_max_tokens := os.getenv(f"{env_prefix}LLM_MAX_TOKENS"):
+            llm["max_tokens"] = llm_max_tokens
+        if llm_auto_accept := os.getenv(f"{env_prefix}LLM_AUTO_ACCEPT_THRESHOLD"):
+            llm["auto_accept_threshold"] = llm_auto_accept
+        if llm_review := os.getenv(f"{env_prefix}LLM_REVIEW_THRESHOLD"):
+            llm["review_threshold"] = llm_review
+
         return config_dict
 
 
@@ -191,3 +252,45 @@ def test_config_load_nonexistent_file():
     config = Config.load(Path("/nonexistent/config.toml"))
     assert config.offline_mode is False
     assert config.http_cache.ttl_seconds == 86400
+
+
+def test_config_llm_defaults():
+    """Test LLM configuration defaults."""
+    config = Config()
+    assert config.llm.enabled is False
+    assert config.llm.provider == "ollama"
+    assert config.llm.model_id == "llama3.2"
+    assert config.llm.auto_accept_threshold == 0.85
+    assert config.llm.review_threshold == 0.60
+
+
+def test_config_llm_from_dict():
+    """Test LLM configuration from dict."""
+    config = Config.model_validate(
+        {
+            "llm": {
+                "enabled": True,
+                "provider": "openai",
+                "model_id": "gpt-4o-mini",
+                "auto_accept_threshold": 0.90,
+            }
+        }
+    )
+    assert config.llm.enabled is True
+    assert config.llm.provider == "openai"
+    assert config.llm.model_id == "gpt-4o-mini"
+    assert config.llm.auto_accept_threshold == 0.90
+
+
+def test_config_llm_env_overrides(
+    monkeypatch,  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+):
+    """Test LLM configuration from environment variables."""
+    monkeypatch.setenv("CHART_BINDER_LLM_ENABLED", "true")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_PROVIDER", "openai")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_MODEL_ID", "gpt-4o")  # pyright: ignore[reportUnknownMemberType]
+
+    config = Config.load()
+    assert config.llm.enabled is True
+    assert config.llm.provider == "openai"
+    assert config.llm.model_id == "gpt-4o"
