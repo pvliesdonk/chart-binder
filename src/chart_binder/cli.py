@@ -708,7 +708,7 @@ def drift() -> None:
 
 @drift.command()
 @click.pass_context
-def review(ctx: click.Context) -> None:
+def drift_review(ctx: click.Context) -> None:
     """Review decisions that have drifted."""
     from chart_binder.decisions_db import DecisionsDB
     from chart_binder.drift import DriftDetector
@@ -750,6 +750,407 @@ def review(ctx: click.Context) -> None:
                 click.echo(f"  Ruleset: {d.ruleset_version}")
 
     sys.exit(ExitCode.ERROR if stale_decisions else ExitCode.SUCCESS)
+
+
+@canon.group()
+def llm() -> None:
+    """LLM adjudication commands (Epic 13)."""
+    pass
+
+
+@llm.command("status")
+@click.pass_context
+def llm_status(ctx: click.Context) -> None:
+    """Show LLM configuration and provider status."""
+    from chart_binder.llm import ProviderRegistry
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    registry = ProviderRegistry()
+    provider_config = {
+        "provider": config.llm.provider,
+        "model_id": config.llm.model_id,
+        "ollama_base_url": config.llm.ollama_base_url,
+        "api_key_env": config.llm.api_key_env,
+    }
+    provider = registry.create_from_config(provider_config)
+
+    result = {
+        "enabled": config.llm.enabled,
+        "provider": config.llm.provider,
+        "model_id": config.llm.model_id,
+        "provider_available": provider.is_available(),
+        "auto_accept_threshold": config.llm.auto_accept_threshold,
+        "review_threshold": config.llm.review_threshold,
+        "timeout_s": config.llm.timeout_s,
+        "max_tokens": config.llm.max_tokens,
+    }
+
+    if output_format == OutputFormat.JSON:
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo("LLM Configuration Status")
+        click.echo("=" * 40)
+        click.echo(f"  Enabled: {result['enabled']}")
+        click.echo(f"  Provider: {result['provider']}")
+        click.echo(f"  Model: {result['model_id']}")
+        status_icon = "✔︎" if result["provider_available"] else "✘"
+        click.echo(f"  Provider Available: {status_icon}")
+        click.echo(f"  Auto-accept Threshold: {result['auto_accept_threshold']}")
+        click.echo(f"  Review Threshold: {result['review_threshold']}")
+        click.echo(f"  Timeout: {result['timeout_s']}s")
+        click.echo(f"  Max Tokens: {result['max_tokens']}")
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@llm.command("adjudicate")
+@click.argument("file_id")
+@click.option("--force", is_flag=True, help="Adjudicate even if LLM is disabled in config")
+@click.pass_context
+def llm_adjudicate(ctx: click.Context, file_id: str, force: bool) -> None:
+    """Run LLM adjudication on a specific INDETERMINATE decision."""
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.llm import LLMAdjudicator
+    from chart_binder.musicgraph import MusicGraphDB
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    if not config.llm.enabled and not force:
+        click.echo("LLM adjudication is disabled. Use --force to override.", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    # Load decision
+    decisions_db = DecisionsDB(config.database.decisions_path)
+    decision = decisions_db.get_decision(file_id)
+
+    if not decision:
+        click.echo(f"No decision found for file_id: {file_id}", err=True)
+        sys.exit(ExitCode.NO_RESULTS)
+
+    # Create adjudicator with config.llm directly (LLMConfig model)
+    adjudicator = LLMAdjudicator(config=config.llm)
+
+    # Build evidence bundle from decision and music graph data
+    evidence_bundle: dict[str, Any] = {
+        "artist": {"name": "Unknown"},
+        "recording_candidates": [],
+        "provenance": {"sources_used": ["decisions_db"]},
+    }
+
+    # Extract work_key parts (typically "artist // title" format)
+    work_key = decision.get("work_key", "")
+    if " // " in work_key:
+        parts = work_key.split(" // ", 1)
+        evidence_bundle["artist"] = {"name": parts[0]}
+        if len(parts) > 1:
+            evidence_bundle["recording_title"] = parts[1]
+    else:
+        evidence_bundle["work_key_raw"] = work_key
+
+    # Include decision trace info if available
+    trace_compact = decision.get("trace_compact", "")
+    if trace_compact:
+        evidence_bundle["decision_trace_compact"] = trace_compact
+
+    # Include config snapshot from decision
+    config_json = decision.get("config_snapshot_json", "{}")
+    try:
+        evidence_bundle["config_snapshot"] = json.loads(config_json)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to enrich evidence from music graph if available
+    music_graph_db = MusicGraphDB(config.database.music_graph_path)
+
+    # If we have mb_recording_id, try to get recording info
+    mb_recording_id = decision.get("mb_recording_id")
+    if mb_recording_id:
+        recording = music_graph_db.get_recording(mb_recording_id)
+        if recording:
+            evidence_bundle["recording_candidates"] = [
+                {
+                    "title": recording.get("title", ""),
+                    "mb_recording_id": mb_recording_id,
+                    "rg_candidates": [],
+                }
+            ]
+            # If we have artist info, get it
+            artist_mbid = recording.get("artist_mbid")
+            if artist_mbid:
+                artist = music_graph_db.get_artist(artist_mbid)
+                if artist:
+                    evidence_bundle["artist"] = {
+                        "name": artist.get("name", "Unknown"),
+                        "mb_artist_id": artist_mbid,
+                        "begin_area_country": artist.get("begin_area_country"),
+                    }
+
+    # Include existing decision info for context
+    evidence_bundle["existing_decision"] = {
+        "mb_rg_id": decision.get("mb_rg_id"),
+        "mb_release_id": decision.get("mb_release_id"),
+        "state": decision.get("state"),
+    }
+
+    # Build decision trace dict from compact string
+    decision_trace: dict[str, Any] | None = None
+    if trace_compact:
+        decision_trace = {"trace_compact": trace_compact}
+
+    result = adjudicator.adjudicate(evidence_bundle, decision_trace)
+
+    result_dict = {
+        "outcome": result.outcome.value,
+        "crg_mbid": result.crg_mbid,
+        "rr_mbid": result.rr_mbid,
+        "confidence": result.confidence,
+        "rationale": result.rationale,
+        "model_id": result.model_id,
+        "error": result.error_message,
+    }
+
+    if output_format == OutputFormat.JSON:
+        click.echo(json.dumps(result_dict, indent=2))
+    else:
+        click.echo("LLM Adjudication Result")
+        click.echo("=" * 40)
+        click.echo(f"  Outcome: {result.outcome.value}")
+        if result.crg_mbid:
+            click.echo(f"  CRG: {result.crg_mbid}")
+        if result.rr_mbid:
+            click.echo(f"  RR: {result.rr_mbid}")
+        click.echo(f"  Confidence: {result.confidence:.2f}")
+        if result.rationale:
+            click.echo(f"  Rationale: {result.rationale}")
+        if result.error_message:
+            click.echo(f"  Error: {result.error_message}")
+
+    sys.exit(ExitCode.SUCCESS if result.outcome != "error" else ExitCode.ERROR)
+
+
+@canon.group()
+def review() -> None:
+    """Human review queue commands (Epic 13)."""
+    pass
+
+
+@review.command("list")
+@click.option("--source", type=click.Choice(["indeterminate", "llm_review", "conflict"]))
+@click.option("--limit", default=20, help="Maximum items to show")
+@click.pass_context
+def review_list(ctx: click.Context, source: str | None, limit: int) -> None:
+    """List pending review items."""
+    from chart_binder.llm import ReviewQueue, ReviewSource
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    queue = ReviewQueue(config.llm.review_queue_path)
+    source_filter = ReviewSource(source) if source else None
+    items = queue.get_pending(source=source_filter, limit=limit)
+
+    if output_format == OutputFormat.JSON:
+        results = [
+            {
+                "review_id": item.review_id,
+                "file_id": item.file_id,
+                "work_key": item.work_key,
+                "source": item.source.value,
+                "created_at": item.created_at,
+            }
+            for item in items
+        ]
+        click.echo(json.dumps(results, indent=2))
+    else:
+        if not items:
+            click.echo("✔︎ No pending review items")
+        else:
+            click.echo(f"Pending Review Items ({len(items)}):")
+            click.echo("=" * 50)
+            for item in items:
+                click.echo(f"\n  ID: {item.review_id[:8]}...")
+                click.echo(f"  Work: {item.work_key}")
+                click.echo(f"  Source: {item.source.value}")
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@review.command("show")
+@click.argument("review_id")
+@click.pass_context
+def review_show(ctx: click.Context, review_id: str) -> None:
+    """Show details of a review item."""
+    from chart_binder.llm import ReviewQueue
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    queue = ReviewQueue(config.llm.review_queue_path)
+    item = queue.get_item(review_id)
+
+    if not item:
+        click.echo(f"Review item not found: {review_id}", err=True)
+        sys.exit(ExitCode.NO_RESULTS)
+
+    if output_format == OutputFormat.JSON:
+        result = {
+            "review_id": item.review_id,
+            "file_id": item.file_id,
+            "work_key": item.work_key,
+            "source": item.source.value,
+            "evidence_bundle": item.evidence_bundle,
+            "decision_trace": item.decision_trace,
+            "llm_suggestion": item.llm_suggestion,
+            "created_at": item.created_at,
+        }
+        click.echo(json.dumps(result, indent=2))
+    else:
+        click.echo(item.to_display())
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@review.command("accept")
+@click.argument("review_id")
+@click.option("--crg", "crg_mbid", required=True, help="CRG MBID to accept")
+@click.option("--rr", "rr_mbid", help="RR MBID to accept")
+@click.option("--notes", help="Review notes")
+@click.pass_context
+def review_accept(
+    ctx: click.Context,
+    review_id: str,
+    crg_mbid: str,
+    rr_mbid: str | None,
+    notes: str | None,
+) -> None:
+    """Accept a review with specific CRG/RR selection."""
+    from chart_binder.llm import ReviewAction, ReviewQueue
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    queue = ReviewQueue(config.llm.review_queue_path)
+    success = queue.complete_review(
+        review_id,
+        action=ReviewAction.ACCEPT,
+        action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
+        reviewed_by="cli_user",
+        notes=notes,
+    )
+
+    if not success:
+        click.echo(f"Failed to complete review: {review_id}", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        click.echo(json.dumps({"status": "accepted", "review_id": review_id}))
+    else:
+        click.echo(f"✔︎ Accepted review {review_id[:8]}... with CRG {crg_mbid}")
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@review.command("accept-llm")
+@click.argument("review_id")
+@click.option("--notes", help="Review notes")
+@click.pass_context
+def review_accept_llm(ctx: click.Context, review_id: str, notes: str | None) -> None:
+    """Accept LLM suggestion for a review item."""
+    from chart_binder.llm import ReviewAction, ReviewQueue
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    queue = ReviewQueue(config.llm.review_queue_path)
+    item = queue.get_item(review_id)
+
+    if not item or not item.llm_suggestion:
+        click.echo(f"No LLM suggestion for review: {review_id}", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    success = queue.complete_review(
+        review_id,
+        action=ReviewAction.ACCEPT_LLM,
+        action_data=item.llm_suggestion,
+        reviewed_by="cli_user",
+        notes=notes,
+    )
+
+    if not success:
+        click.echo(f"Failed to complete review: {review_id}", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        click.echo(json.dumps({"status": "accepted_llm", "review_id": review_id}))
+    else:
+        click.echo(f"✔︎ Accepted LLM suggestion for review {review_id[:8]}...")
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@review.command("skip")
+@click.argument("review_id")
+@click.option("--notes", help="Reason for skipping")
+@click.pass_context
+def review_skip(ctx: click.Context, review_id: str, notes: str | None) -> None:
+    """Skip a review item."""
+    from chart_binder.llm import ReviewAction, ReviewQueue
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    queue = ReviewQueue(config.llm.review_queue_path)
+    success = queue.complete_review(
+        review_id,
+        action=ReviewAction.SKIP,
+        reviewed_by="cli_user",
+        notes=notes,
+    )
+
+    if not success:
+        click.echo(f"Failed to skip review: {review_id}", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        click.echo(json.dumps({"status": "skipped", "review_id": review_id}))
+    else:
+        click.echo(f"✔︎ Skipped review {review_id[:8]}...")
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@review.command("stats")
+@click.pass_context
+def review_stats(ctx: click.Context) -> None:
+    """Show review queue statistics."""
+    from chart_binder.llm import ReviewQueue
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    queue = ReviewQueue(config.llm.review_queue_path)
+    stats = queue.get_stats()
+
+    if output_format == OutputFormat.JSON:
+        click.echo(json.dumps(stats, indent=2))
+    else:
+        click.echo("Review Queue Statistics")
+        click.echo("=" * 40)
+        click.echo(f"  Pending: {stats['pending']}")
+        if stats.get("pending_by_source"):
+            click.echo("  By Source:")
+            for source, count in stats["pending_by_source"].items():
+                click.echo(f"    {source}: {count}")
+        click.echo(f"  Completed: {stats['completed']}")
+        if stats.get("completed_by_action"):
+            click.echo("  By Action:")
+            for action, count in stats["completed_by_action"].items():
+                click.echo(f"    {action}: {count}")
+
+    sys.exit(ExitCode.SUCCESS)
 
 
 def main() -> None:
