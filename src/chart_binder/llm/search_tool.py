@@ -166,7 +166,7 @@ class SearchTool:
         *,
         by_mbid: bool = False,
         by_isrc: bool = False,
-        artist: str | None = None,  # pyright: ignore[reportUnusedParameter]
+        artist: str | None = None,
     ) -> SearchResponse:
         """Search for recordings by title, MBID, or ISRC.
 
@@ -174,7 +174,7 @@ class SearchTool:
             query: Recording title, MBID, or ISRC
             by_mbid: Search by exact MBID
             by_isrc: Search by ISRC code
-            artist: Optional artist name filter
+            artist: Optional artist name filter (used with text search)
 
         Returns:
             SearchResponse with matching recordings
@@ -215,14 +215,14 @@ class SearchTool:
         query: str,
         *,
         by_mbid: bool = False,
-        artist: str | None = None,  # pyright: ignore[reportUnusedParameter]
+        artist: str | None = None,
     ) -> SearchResponse:
         """Search for release groups by title or MBID.
 
         Args:
             query: Release group title or MBID
             by_mbid: Search by exact MBID
-            artist: Optional artist name filter
+            artist: Optional artist name filter (used with text search)
 
         Returns:
             SearchResponse with matching release groups
@@ -258,7 +258,7 @@ class SearchTool:
         by_mbid: bool = False,
         by_barcode: bool = False,
         by_catno: bool = False,
-        release_group_mbid: str | None = None,  # pyright: ignore[reportUnusedParameter]
+        release_group_mbid: str | None = None,
     ) -> SearchResponse:
         """Search for releases by title, MBID, barcode, or catalog number.
 
@@ -267,7 +267,7 @@ class SearchTool:
             by_mbid: Search by exact MBID
             by_barcode: Search by barcode
             by_catno: Search by catalog number
-            release_group_mbid: Filter by release group
+            release_group_mbid: Filter by release group (used with text search)
 
         Returns:
             SearchResponse with matching releases
