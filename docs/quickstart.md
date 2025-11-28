@@ -46,13 +46,13 @@ Let's start by scanning an audio file to see what metadata it contains:
 
 ```bash
 # Scan a single file
-canon scan path/to/your/song.mp3
+canon scan path/to/song.mp3
 ```
 
 Example output:
 
 ```
-✔︎ path/to/your/song.mp3
+✔︎ path/to/song.mp3
   Title: Bad Guy
   Artist: Billie Eilish
   Album: WHEN WE ALL FALL ASLEEP, WHERE DO WE GO?
@@ -76,16 +76,16 @@ The `decide` command analyzes your files and determines the canonical release gr
 
 ```bash
 # Basic decision
-canon decide path/to/your/song.mp3
+canon decide path/to/song.mp3
 
 # With detailed explanation
-canon decide --explain path/to/your/song.mp3
+canon decide --explain path/to/song.mp3
 ```
 
 Example output:
 
 ```
-✔︎ path/to/your/song.mp3
+✔︎ path/to/song.mp3
   State: decided
   CRG: b8aef8f3-8e47-4e9e-b9a6-2d6c9e3a7c1d
        (album_with_chart_entry)
@@ -108,16 +108,16 @@ After making decisions, you can write the canonical tags to your files:
 
 ```bash
 # Preview changes without writing (always do this first!)
-canon write --dry-run path/to/your/song.mp3
+canon write --dry-run path/to/song.mp3
 
 # Actually write the changes
-canon write --apply path/to/your/song.mp3
+canon write --apply path/to/song.mp3
 ```
 
 Example dry-run output:
 
 ```
-✔︎ path/to/your/song.mp3 (dry run)
+✔︎ path/to/song.mp3 (dry run)
   Written: CANON_CRG_MBID, CANON_RR_MBID, CANON_TRACE
   Stashed: none
 

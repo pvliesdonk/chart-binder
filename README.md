@@ -111,7 +111,7 @@ canon charts link nl_top40 2024-W01
 canon coverage chart nl_top40 2024-W01
 
 # Export chart blob for a work
-canon charts export "artist_name // song_title"
+canon charts export "Artist Name // Song Title"
 ```
 
 ## CLI Reference

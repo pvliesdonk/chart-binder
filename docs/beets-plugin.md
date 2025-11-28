@@ -48,7 +48,9 @@ chart_binder:
   accept_threshold: 0.85
   
   # CRG selection parameters
+  # Lead window: days to consider for lead single vs album decision
   lead_window_days: 90
+  # Reissue gap: years after which a release is considered a reissue
   reissue_long_gap_years: 10
   
   # Enable CHARTS blob attachment
