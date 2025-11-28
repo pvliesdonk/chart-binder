@@ -69,6 +69,10 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Chart-binder SQLite databases (runtime artifacts)
+*.sqlite
+.cache/
+
 # Flask stuff:
 instance/
 .webassets-cache

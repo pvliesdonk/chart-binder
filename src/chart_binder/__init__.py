@@ -39,6 +39,14 @@ __all__ = (
     "ChartsBlob",
     "ChartScore",
     "ChartsExporter",
+    # Resolver (Epic 5 + 11)
+    "Resolver",
+    "CanonicalDecision",
+    "DecisionTrace",
+    "CRGRationale",
+    "RRRationale",
+    "ConfigSnapshot",
+    "explain",
 )
 
 from chart_binder.acoustid import AcoustIDClient
@@ -61,6 +69,14 @@ from chart_binder.fetcher import UnifiedFetcher
 from chart_binder.http_cache import HttpCache
 from chart_binder.musicbrainz import MusicBrainzClient
 from chart_binder.musicgraph import MusicGraphDB
+from chart_binder.resolver import (
+    CanonicalDecision,
+    ConfigSnapshot,
+    CRGRationale,
+    DecisionTrace,
+    Resolver,
+    RRRationale,
+)
 from chart_binder.spotify import SpotifyClient
 from chart_binder.tagging import (
     CanonicalIDs,
@@ -78,3 +94,18 @@ from chart_binder.tagging import (
     write_tags,
 )
 from chart_binder.wikidata import WikidataClient
+
+
+def explain(target: CanonicalDecision) -> str:
+    """
+    Generate human-readable trace for a decision.
+
+    This is the public API function for explainability (Epic 11).
+
+    Args:
+        target: CanonicalDecision to explain
+
+    Returns:
+        Human-readable explanation string
+    """
+    return target.decision_trace.to_human_readable()
