@@ -8,6 +8,7 @@ Run before finalizing scraper implementations to confirm URL patterns and CSS se
 
 from __future__ import annotations
 
+import re
 import sys
 from textwrap import dedent
 
@@ -81,8 +82,6 @@ def check_top40_split() -> bool:
         if resp.status_code == 200:
             html = resp.text
 
-            import re
-
             strawberry_matches = list(re.finditer(r"strawberry.{0,100}field", html, re.IGNORECASE))
             print(f"\n'Strawberry Fields' matches: {len(strawberry_matches)}")
             for i, m in enumerate(strawberry_matches[:3]):
@@ -136,8 +135,6 @@ def check_zwaarste_lijst() -> bool:
 
         if resp.status_code == 200:
             html = resp.text
-
-            import re
 
             ol_matches = list(re.finditer(r"<ol[^>]*>", html, re.IGNORECASE))
             print(f"\n<ol> tags found: {len(ol_matches)}")

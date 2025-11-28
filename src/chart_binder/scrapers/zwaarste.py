@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping
+from html.parser import HTMLParser
 
 from chart_binder.http_cache import HttpCache
 from chart_binder.scrapers.base import ChartScraper
@@ -80,7 +81,6 @@ class ZwaarsteScraper(ChartScraper):
 
     def _try_parse_ordered_list(self, html: str) -> list[tuple[int, str, str]]:
         """Try parsing as ordered list (<ol> with <li> items)."""
-        from html.parser import HTMLParser
 
         class OLParser(HTMLParser):
             def __init__(self):
@@ -130,7 +130,6 @@ class ZwaarsteScraper(ChartScraper):
 
     def _try_parse_table(self, html: str) -> list[tuple[int, str, str]]:
         """Try parsing as table."""
-        from html.parser import HTMLParser
 
         class TableParser(HTMLParser):
             def __init__(self):
@@ -186,7 +185,6 @@ class ZwaarsteScraper(ChartScraper):
 
     def _try_parse_text_lines(self, html: str) -> list[tuple[int, str, str]]:
         """Try parsing raw text lines with regex."""
-        from html.parser import HTMLParser
 
         class TextExtractor(HTMLParser):
             def __init__(self):

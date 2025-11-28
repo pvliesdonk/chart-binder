@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from html.parser import HTMLParser
 from typing import Any
 
 from chart_binder.http_cache import HttpCache
@@ -145,8 +147,6 @@ class Top2000Scraper(ChartScraper):
         entries: list[tuple[int, str, str]] = []
 
         try:
-            import re
-            from html.parser import HTMLParser
 
             class WikiTableParser(HTMLParser):
                 def __init__(self):
