@@ -65,6 +65,7 @@ dev = [
     "basedpyright>=1.29.1",
     "funlog>=0.2.1",
     "freezegun>=1.5.5",
+    "hypothesis>=6.148.3",
 ]
 
 [project.scripts]

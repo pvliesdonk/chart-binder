@@ -60,9 +60,36 @@ __all__ = (
     "ReviewQueue",
     "ReviewItem",
     "ReviewAction",
+    # Rate Limiting & Batch Processing (Epic 14)
+    "TokenBucket",
+    "RateLimiterRegistry",
+    "get_rate_limiter_registry",
+    "rate_limit",
+    "BatchConfig",
+    "BatchResult",
+    "BatchProcessor",
+    "batch_iter",
+    "process_batch",
+    "collect_audio_files",
+    # PII-safe Logging (Epic 14)
+    "hash_path",
+    "relativize_path",
+    "safe_path",
+    "redact_dict",
+    "sanitize_message",
+    "SafeLogFormatter",
+    "configure_safe_logging",
 )
 
 from chart_binder.acoustid import AcoustIDClient
+from chart_binder.batch import (
+    BatchConfig,
+    BatchProcessor,
+    BatchResult,
+    batch_iter,
+    collect_audio_files,
+    process_batch,
+)
 from chart_binder.charts_db import (
     ChartEntry,
     ChartLink,
@@ -96,6 +123,12 @@ from chart_binder.llm import (
 )
 from chart_binder.musicbrainz import MusicBrainzClient
 from chart_binder.musicgraph import MusicGraphDB
+from chart_binder.rate_limiter import (
+    RateLimiterRegistry,
+    TokenBucket,
+    get_rate_limiter_registry,
+    rate_limit,
+)
 from chart_binder.resolver import (
     CanonicalDecision,
     ConfigSnapshot,
@@ -103,6 +136,15 @@ from chart_binder.resolver import (
     DecisionTrace,
     Resolver,
     RRRationale,
+)
+from chart_binder.safe_logging import (
+    SafeLogFormatter,
+    configure_safe_logging,
+    hash_path,
+    redact_dict,
+    relativize_path,
+    safe_path,
+    sanitize_message,
 )
 from chart_binder.spotify import SpotifyClient
 from chart_binder.tagging import (
