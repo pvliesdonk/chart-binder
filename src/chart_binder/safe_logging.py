@@ -142,8 +142,10 @@ def redact_dict(
     for key, value in data.items():
         key_lower = key.lower()
 
-        # Check if this field should be redacted
-        should_redact = any(field in key_lower for field in redact_fields)
+        # Efficient check: exact match first, then substring as fallback
+        should_redact = key_lower in redact_fields or any(
+            field in key_lower for field in redact_fields
+        )
 
         if should_redact and isinstance(value, str):
             result[key] = redact_value(value)
@@ -228,10 +230,12 @@ class SafeLogFormatter(logging.Formatter):
         if isinstance(value, Path):
             return safe_path(value, self._library_root, use_hash=self.hash_paths)
         if isinstance(value, str) and "/" in value and not value.startswith("http"):
-            # Might be a path
+            # Check for path-like pattern before expensive Path operations
+            # Paths typically have file extensions or multiple slashes
             try:
                 path = Path(value)
-                if path.exists() or path.suffix:
+                # Check suffix first (no I/O), only check exists() if has extension
+                if path.suffix:
                     return safe_path(path, self._library_root, use_hash=self.hash_paths)
             except (OSError, ValueError):
                 pass

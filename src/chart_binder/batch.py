@@ -250,18 +250,17 @@ class BatchProcessor:
         return process_batch(file_tagset_pairs, write_one, self._config_with_size("write"))
 
     def _config_with_size(self, operation: str) -> BatchConfig:
-        """Get config with appropriate batch size for operation."""
-        size_map = {
-            "identify": self.config.identify_batch_size,
-            "decide": self.config.decide_batch_size,
-            "write": self.config.write_batch_size,
-            "verify": self.config.verify_batch_size,
-        }
+        """Get config with appropriate batch size for operation.
+
+        This creates a new BatchConfig that inherits error handling and
+        progress callback from the parent config while preserving all
+        operation-specific batch sizes.
+        """
         return BatchConfig(
-            identify_batch_size=size_map.get(operation, 50),
-            decide_batch_size=size_map.get(operation, 50),
-            write_batch_size=size_map.get(operation, 20),
-            verify_batch_size=size_map.get(operation, 20),
+            identify_batch_size=self.config.identify_batch_size,
+            decide_batch_size=self.config.decide_batch_size,
+            write_batch_size=self.config.write_batch_size,
+            verify_batch_size=self.config.verify_batch_size,
             continue_on_error=self.config.continue_on_error,
             progress_callback=self.config.progress_callback,
         )

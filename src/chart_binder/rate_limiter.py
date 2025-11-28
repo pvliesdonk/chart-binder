@@ -61,11 +61,14 @@ class TokenBucket:
             if not blocking:
                 return False
 
-            # Calculate wait time
+            # Calculate wait time outside critical section
             deficit = tokens - self._tokens
             wait_time = deficit / self.refill_rate
 
-        # Wait outside lock to avoid blocking other callers
+        # Wait outside lock to allow other callers to proceed.
+        # After waiting, we re-acquire the lock and check again.
+        # In high contention, another thread may have consumed tokens,
+        # so we verify availability after the wait.
         time.sleep(wait_time)
 
         with self._lock:
@@ -73,6 +76,8 @@ class TokenBucket:
             if self._tokens >= tokens:
                 self._tokens -= tokens
                 return True
+            # Another caller consumed tokens - return False
+            # Caller may retry or use exponential backoff
             return False
 
     def try_acquire(self, tokens: float = 1.0) -> bool:
