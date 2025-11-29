@@ -155,6 +155,16 @@ class LLMAdjudicator:
             indent=2,
         )
 
+        # Log the full prompt at DEBUG level
+        log.debug("LLM Adjudication Prompt:")
+        log.debug("=" * 70)
+        log.debug("SYSTEM PROMPT:")
+        log.debug(SYSTEM_PROMPT_V1)
+        log.debug("=" * 70)
+        log.debug("USER PROMPT:")
+        log.debug(prompt)
+        log.debug("=" * 70)
+
         # Call the LLM
         messages = [
             LLMMessage(role="system", content=SYSTEM_PROMPT_V1),
@@ -176,6 +186,12 @@ class LLMAdjudicator:
                 error_message=str(e),
                 prompt_json=prompt_json,
             )
+
+        # Log the raw response at DEBUG level
+        log.debug("Raw LLM Response:")
+        log.debug("=" * 70)
+        log.debug(json.dumps(response.raw_response, indent=2))
+        log.debug("=" * 70)
 
         # Parse the response
         result = self._parse_response(response, evidence_bundle)
