@@ -36,6 +36,18 @@ CONFIDENCE_TEXT_SEARCH_DISCOGS = 0.65  # Discogs text search less canonical than
 CONFIDENCE_BOOST_MULTI_SOURCE = 0.10  # Boost when found in 2+ sources
 CONFIDENCE_BOOST_THREE_SOURCES = 0.15  # Boost when found in 3+ sources
 
+# Popularity-based confidence adjustments
+CONFIDENCE_BOOST_VERY_POPULAR = 0.05  # Spotify popularity >= 70
+CONFIDENCE_BOOST_POPULAR = 0.03  # Spotify popularity >= 50
+CONFIDENCE_BOOST_MODERATE = 0.01  # Spotify popularity >= 30
+
+# Date validation thresholds
+DATE_MISMATCH_PENALTY = 0.10  # Penalty when dates differ by > 1 year
+DATE_MATCH_BOOST = 0.05  # Boost when dates match closely (same year)
+
+# Label/format validation
+LABEL_MATCH_BOOST = 0.03  # Boost when labels match across sources
+
 
 class FetchMode(Enum):
     """Fetch mode for controlling network access."""
@@ -193,7 +205,6 @@ class UnifiedFetcher:
             first_artist = data["artist-credit"][0]
             if "artist" in first_artist:
                 artist_mbid = first_artist["artist"].get("id")
-                artist_name = first_artist["artist"].get("name")
                 if artist_mbid:
                     # Fetch full artist data
                     artist = self.mb_client.get_artist(artist_mbid)
@@ -273,13 +284,13 @@ class UnifiedFetcher:
         - Artist: discogs-artist-{name_normalized}
 
         Args:
-            discogs_release_id: Discogs release ID
+            discogs_release_id: Discogs release ID (as string)
 
         Returns:
             Dict with release data
         """
-        # Fetch full release data from Discogs
-        release = self.discogs_client.get_release(discogs_release_id)
+        # Fetch full release data from Discogs (convert ID to int)
+        release = self.discogs_client.get_release(int(discogs_release_id))
 
         # Create synthetic IDs for Discogs-only entities
         synthetic_release_id = f"discogs-release-{release.id}"
@@ -426,6 +437,173 @@ class UnifiedFetcher:
             },
         }
 
+    def _apply_popularity_boost(self, result: dict[str, Any], track_data: Any) -> None:
+        """
+        Apply confidence boost based on Spotify popularity score.
+
+        High popularity indicates widespread recognition and validation,
+        which can help disambiguate between originals and covers.
+
+        Args:
+            result: Result dict to modify
+            track_data: SpotifyTrack object with popularity field
+        """
+        popularity = getattr(track_data, "popularity", None)
+        if popularity is None:
+            return
+
+        if popularity >= 70:
+            result["confidence"] = min(
+                0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_VERY_POPULAR
+            )
+            result["popularity_tier"] = "very_popular"
+        elif popularity >= 50:
+            result["confidence"] = min(
+                0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_POPULAR
+            )
+            result["popularity_tier"] = "popular"
+        elif popularity >= 30:
+            result["confidence"] = min(
+                0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_MODERATE
+            )
+            result["popularity_tier"] = "moderate"
+
+        result["popularity"] = popularity
+
+    def _extract_year(self, date_str: str | None) -> int | None:
+        """Extract year from various date formats."""
+        if not date_str:
+            return None
+
+        # Handle formats: YYYY, YYYY-MM, YYYY-MM-DD
+        parts = str(date_str).split("-")
+        if parts and parts[0].isdigit():
+            return int(parts[0])
+
+        return None
+
+    def _apply_date_validation(self, results: list[dict[str, Any]]) -> None:
+        """
+        Cross-reference release dates across sources.
+
+        When dates match closely (same year), boost confidence.
+        When dates differ significantly (>1 year), penalize confidence.
+
+        Args:
+            results: List of results to validate
+        """
+        from collections import defaultdict
+
+        # Group by normalized title+artist to compare dates across sources
+        def normalize_key(result: dict[str, Any]) -> str:
+            title = result.get("title", "").lower().strip()
+            artist = result.get("artist_name", "").lower().strip()
+            return f"{artist}|{title}"
+
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for result in results:
+            key = normalize_key(result)
+            if key and key != "|":
+                groups[key].append(result)
+
+        # For each group, extract dates and validate
+        for group_results in groups.values():
+            if len(group_results) < 2:
+                continue
+
+            # Extract years from various sources
+            years = []
+            for result in group_results:
+                year = result.get("year") or result.get("release_date")
+                if year:
+                    extracted = self._extract_year(str(year))
+                    if extracted:
+                        years.append(extracted)
+
+            if not years:
+                continue
+
+            # Check for consensus or conflict
+            min_year = min(years)
+            max_year = max(years)
+
+            if max_year - min_year <= 1:
+                # Dates match closely - boost confidence
+                for result in group_results:
+                    result["confidence"] = min(
+                        0.99, result.get("confidence", 0.0) + DATE_MATCH_BOOST
+                    )
+                    result["date_validated"] = True
+            elif max_year - min_year > 1:
+                # Significant date mismatch - penalize confidence
+                for result in group_results:
+                    result["confidence"] = max(
+                        0.0, result.get("confidence", 0.0) - DATE_MISMATCH_PENALTY
+                    )
+                    result["date_conflict"] = True
+                    result["date_range"] = f"{min_year}-{max_year}"
+
+    def _apply_label_validation(self, results: list[dict[str, Any]]) -> None:
+        """
+        Compare label names across sources for consistency.
+
+        Matching labels boost confidence. Uses fuzzy matching to handle
+        label name variations.
+
+        Args:
+            results: List of results to validate
+        """
+        from collections import defaultdict
+
+        def normalize_key(result: dict[str, Any]) -> str:
+            title = result.get("title", "").lower().strip()
+            artist = result.get("artist_name", "").lower().strip()
+            return f"{artist}|{title}"
+
+        def normalize_label(label: str | None) -> str:
+            """Normalize label name for comparison."""
+            if not label:
+                return ""
+
+            # Remove common suffixes and normalize spacing
+            normalized = label.lower().strip()
+            for suffix in [" records", " music", " entertainment", " inc.", " ltd."]:
+                normalized = normalized.replace(suffix, "")
+            return normalized.strip()
+
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for result in results:
+            key = normalize_key(result)
+            if key and key != "|":
+                groups[key].append(result)
+
+        # For each group, compare labels
+        for group_results in groups.values():
+            if len(group_results) < 2:
+                continue
+
+            # Extract normalized labels from all results
+            labels_by_source = {}
+            for result in group_results:
+                label = result.get("label")
+                if label:
+                    source = result.get("source", "").split("_")[0]
+                    labels_by_source[source] = normalize_label(label)
+
+            if len(labels_by_source) < 2:
+                continue
+
+            # Check if labels match across sources
+            unique_labels = set(labels_by_source.values())
+            if len(unique_labels) == 1:
+                # All labels match - boost confidence
+                for result in group_results:
+                    if result.get("label"):
+                        result["confidence"] = min(
+                            0.99, result.get("confidence", 0.0) + LABEL_MATCH_BOOST
+                        )
+                        result["label_validated"] = True
+
     def search_recordings(
         self,
         isrc: str | None = None,
@@ -540,12 +718,24 @@ class UnifiedFetcher:
                         result_data = {
                             "discogs_release_id": str(result["id"]),
                             "title": result.get("title", ""),
-                            "artist_name": result.get("artist", "") if isinstance(result.get("artist"), str) else "",
+                            "artist_name": result.get("artist", "")
+                            if isinstance(result.get("artist"), str)
+                            else "",
                             "source": "discogs_search",
                             "confidence": CONFIDENCE_TEXT_SEARCH_DISCOGS,
                         }
                         if result.get("master_id"):
                             result_data["discogs_master_id"] = str(result["master_id"])
+                        if result.get("year"):
+                            result_data["year"] = result["year"]
+                        if (
+                            result.get("label")
+                            and isinstance(result.get("label"), list)
+                            and result["label"]
+                        ):
+                            result_data["label"] = result["label"][0]  # Take first label
+                        elif result.get("label") and isinstance(result.get("label"), str):
+                            result_data["label"] = result["label"]
                         results.append(result_data)
 
             # Also try Spotify title + artist search
@@ -566,10 +756,46 @@ class UnifiedFetcher:
                             result_data["isrc"] = track.isrc
                         if track.album_id:
                             result_data["spotify_album_id"] = track.album_id
+
+                        # Apply popularity-weighted confidence boost
+                        self._apply_popularity_boost(result_data, track)
+
                         results.append(result_data)
+
+                        # ISRC cross-linking: If Spotify track has ISRC, search MB for it
+                        if track.isrc and not any(
+                            r.get("isrc") == track.isrc
+                            and r.get("source", "").startswith("musicbrainz")
+                            for r in results
+                        ):
+                            # Search MusicBrainz by this ISRC to create cross-link
+                            try:
+                                mb_isrc_results = self.mb_client.search_recordings(
+                                    isrc=track.isrc, limit=1
+                                )
+                                if mb_isrc_results:
+                                    mb_rec = mb_isrc_results[0]
+                                    results.append(
+                                        {
+                                            "recording_mbid": mb_rec.mbid,
+                                            "title": mb_rec.title,
+                                            "artist_name": mb_rec.artist_name,
+                                            "source": "musicbrainz_isrc_from_spotify",
+                                            "confidence": CONFIDENCE_ISRC_MUSICBRAINZ,
+                                            "isrc": track.isrc,
+                                            "cross_linked": True,
+                                        }
+                                    )
+                            except Exception:
+                                # ISRC lookup can fail, skip silently
+                                pass
                 except Exception:
                     # Spotify search can fail due to missing credentials, skip silently
                     pass
+
+        # Apply enhanced cross-source intelligence validations
+        self._apply_date_validation(results)
+        self._apply_label_validation(results)
 
         # Apply cross-source confidence boosts
         # Group results by normalized title+artist to identify multi-source entities
@@ -589,8 +815,10 @@ class UnifiedFetcher:
                 groups[key].append(result)
 
         # Count unique sources per group and apply boosts
-        for key, group_results in groups.items():
-            sources = {r.get("source", "").split("_")[0] for r in group_results}  # e.g., "musicbrainz_search" → "musicbrainz"
+        for _key, group_results in groups.items():
+            sources = {
+                r.get("source", "").split("_")[0] for r in group_results
+            }  # e.g., "musicbrainz_search" → "musicbrainz"
             source_count = len(sources)
 
             if source_count >= 3:

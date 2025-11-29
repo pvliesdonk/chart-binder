@@ -645,7 +645,9 @@ class VorbisTagWriter(TagWriter):
         write_field("CHART_BINDER_FINGERPRINT", tagset.compact.fingerprint, "fingerprint")
         write_field(
             "CHART_BINDER_FINGERPRINT_DURATION",
-            str(tagset.compact.fingerprint_duration) if tagset.compact.fingerprint_duration else None,
+            str(tagset.compact.fingerprint_duration)
+            if tagset.compact.fingerprint_duration
+            else None,
             "fingerprint_duration",
         )
 
@@ -909,7 +911,9 @@ class MP4TagWriter(TagWriter):
         write_custom("CHART_BINDER_FINGERPRINT", tagset.compact.fingerprint, "fingerprint")
         write_custom(
             "CHART_BINDER_FINGERPRINT_DURATION",
-            str(tagset.compact.fingerprint_duration) if tagset.compact.fingerprint_duration else None,
+            str(tagset.compact.fingerprint_duration)
+            if tagset.compact.fingerprint_duration
+            else None,
             "fingerprint_duration",
         )
 

@@ -147,7 +147,9 @@ def _convert_evidence_bundle(
         "artist": {
             "name": bundle.artist.get("name") if bundle.artist else tagset.artist or "Unknown",
             "mb_artist_id": bundle.artist.get("mbid") if bundle.artist else None,
-            "begin_area_country": bundle.artist.get("begin_area_country") if bundle.artist else None,
+            "begin_area_country": bundle.artist.get("begin_area_country")
+            if bundle.artist
+            else None,
             "wikidata_qid": bundle.artist.get("wikidata_qid") if bundle.artist else None,
         },
         "recording_candidates": recording_candidates,
@@ -463,7 +465,9 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
 
                 # Source 1: Existing MB IDs from tags (as evidence, not gospel)
                 if tagset.ids.mb_recording_id:
-                    logger.debug(f"Fetching existing MB recording from tags: {tagset.ids.mb_recording_id}")
+                    logger.debug(
+                        f"Fetching existing MB recording from tags: {tagset.ids.mb_recording_id}"
+                    )
                     try:
                         fetcher.fetch_recording(tagset.ids.mb_recording_id)
                     except Exception as e:
@@ -758,10 +762,7 @@ def write(ctx: click.Context, paths: tuple[Path, ...], dry_run: bool, apply: boo
             duration_sec: int | None = None
 
             # Trust-on-read: check if fingerprint is already in tags
-            if (
-                existing_tagset.compact.fingerprint
-                and existing_tagset.compact.fingerprint_duration
-            ):
+            if existing_tagset.compact.fingerprint and existing_tagset.compact.fingerprint_duration:
                 fingerprint = existing_tagset.compact.fingerprint
                 duration_sec = existing_tagset.compact.fingerprint_duration
                 logger.debug(f"Using cached fingerprint from tags for {audio_file}")
