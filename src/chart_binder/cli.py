@@ -106,6 +106,7 @@ def _convert_evidence_bundle(
                         "label": rel.get("label"),
                         "format": rel.get("format"),
                         "barcode": rel.get("barcode"),
+                        "discogs_release_id": rel.get("discogs_release_id"),
                         "flags": flags,
                     }
                 )
@@ -123,6 +124,7 @@ def _convert_evidence_bundle(
                     "primary_type": rg.get("type"),
                     "secondary_types": rg.get("secondary_types", []),
                     "first_release_date": rg.get("first_release_date"),
+                    "discogs_master_id": rg.get("discogs_master_id"),
                     "releases": releases_data,
                 }
             )
@@ -540,6 +542,8 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                 recording_title = None
                 release_group_title = None
                 selected_release_title = None
+                discogs_master_id = None
+                discogs_release_id = None
 
                 if evidence_bundle.get("recording_candidates"):
                     rec = evidence_bundle["recording_candidates"][0]
@@ -548,11 +552,13 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                     if rec.get("rg_candidates"):
                         rg = rec["rg_candidates"][0]
                         release_group_title = rg.get("title")
+                        discogs_master_id = rg.get("discogs_master_id")
 
-                # Extract selected release title from decision trace
+                # Extract selected release title and Discogs ID from decision trace
                 if decision.decision_trace.rr_selection:
                     release_data = decision.decision_trace.rr_selection.get("release", {})
                     selected_release_title = release_data.get("title")
+                    discogs_release_id = release_data.get("discogs_release_id")
 
                 # Persist decision to database if fingerprint available
                 if decisions_db and fingerprint and duration_sec:
@@ -608,6 +614,8 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                     "selected_release_title": selected_release_title,
                     "crg_mbid": decision.release_group_mbid,
                     "rr_mbid": decision.release_mbid,
+                    "discogs_master_id": discogs_master_id,
+                    "discogs_release_id": discogs_release_id,
                     "crg_rationale": _get_rationale_value(decision.crg_rationale),
                     "rr_rationale": _get_rationale_value(decision.rr_rationale),
                     "compact_tag": decision.compact_tag,
@@ -636,11 +644,15 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                         click.echo(f"  CRG: {decision.release_group_mbid}")
                         if release_group_title:
                             click.echo(f"       Title: {release_group_title}")
+                        if discogs_master_id:
+                            click.echo(f"       Discogs Master: {discogs_master_id}")
                         click.echo(f"       ({decision.crg_rationale})")
                     if decision.release_mbid:
                         click.echo(f"  RR:  {decision.release_mbid}")
                         if selected_release_title:
                             click.echo(f"       Title: {selected_release_title}")
+                        if discogs_release_id:
+                            click.echo(f"       Discogs Release: {discogs_release_id}")
                         click.echo(f"       ({decision.rr_rationale})")
                     click.echo(f"  Trace: {decision.compact_tag}")
                     if explain:

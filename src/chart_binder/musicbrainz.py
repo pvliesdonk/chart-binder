@@ -16,6 +16,39 @@ import httpx
 from chart_binder.http_cache import HttpCache
 
 
+def extract_discogs_ids(entity_data: dict[str, Any]) -> tuple[str | None, str | None]:
+    """
+    Extract Discogs master and release IDs from MusicBrainz URL relationships.
+
+    Args:
+        entity_data: MusicBrainz entity dict with URL relationships
+
+    Returns:
+        Tuple of (discogs_master_id, discogs_release_id)
+    """
+    import re
+
+    discogs_master_id = None
+    discogs_release_id = None
+
+    relations = entity_data.get("relations", [])
+    for relation in relations:
+        if relation.get("type") == "discogs":
+            url_resource = relation.get("url", {}).get("resource", "")
+
+            # Extract master ID from URLs like https://www.discogs.com/master/12345
+            master_match = re.search(r"discogs\.com/master/(\d+)", url_resource)
+            if master_match:
+                discogs_master_id = master_match.group(1)
+
+            # Extract release ID from URLs like https://www.discogs.com/release/12345
+            release_match = re.search(r"discogs\.com/release/(\d+)", url_resource)
+            if release_match:
+                discogs_release_id = release_match.group(1)
+
+    return discogs_master_id, discogs_release_id
+
+
 @dataclass
 class MusicBrainzRecording:
     """MusicBrainz recording entity."""
@@ -199,8 +232,9 @@ class MusicBrainzClient:
         Get recording with all releases and release groups.
 
         Returns raw API response dict for full hydration.
+        Includes URL relationships to extract Discogs IDs.
         """
-        params = {"inc": "artists+isrcs+releases+release-groups"}
+        params = {"inc": "artists+isrcs+releases+release-groups+url-rels"}
         return self._request(f"recording/{mbid}", params)
 
     def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:

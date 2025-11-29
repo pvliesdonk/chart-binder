@@ -16,7 +16,7 @@ from typing import Any
 from chart_binder.acoustid import AcoustIDClient
 from chart_binder.discogs import DiscogsClient
 from chart_binder.http_cache import HttpCache
-from chart_binder.musicbrainz import MusicBrainzClient
+from chart_binder.musicbrainz import MusicBrainzClient, extract_discogs_ids
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.spotify import SpotifyClient
 from chart_binder.wikidata import WikidataClient
@@ -224,6 +224,9 @@ class UnifiedFetcher:
             rg_mbid = rg.get("id")
 
             if rg_mbid:
+                # Extract Discogs IDs from release group URL relationships
+                rg_discogs_master, _ = extract_discogs_ids(rg)
+
                 # Hydrate release group
                 self.db.upsert_release_group(
                     mbid=rg_mbid,
@@ -232,7 +235,11 @@ class UnifiedFetcher:
                     type=rg.get("primary-type"),
                     first_release_date=rg.get("first-release-date"),
                     secondary_types_json=json.dumps(rg.get("secondary-types", [])),
+                    discogs_master_id=rg_discogs_master,
                 )
+
+            # Extract Discogs IDs from release URL relationships
+            _, release_discogs_id = extract_discogs_ids(release)
 
             # Hydrate release
             self.db.upsert_release(
@@ -241,6 +248,7 @@ class UnifiedFetcher:
                 release_group_mbid=rg_mbid,
                 date=release.get("date"),
                 country=release.get("country"),
+                discogs_release_id=release_discogs_id,
             )
 
             # Link recording to release
