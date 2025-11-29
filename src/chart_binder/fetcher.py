@@ -206,14 +206,52 @@ class UnifiedFetcher:
             if "artist" in first_artist:
                 artist_mbid = first_artist["artist"].get("id")
                 if artist_mbid:
-                    # Fetch full artist data
-                    artist = self.mb_client.get_artist(artist_mbid)
+                    # Fetch full artist data with URL relationships
+                    params = {"inc": "area-rels+url-rels"}
+                    artist_data = self.mb_client._request(f"artist/{artist_mbid}", params)
+
+                    # Extract Wikidata QID from URL relationships
+                    wikidata_qid = self._extract_wikidata_qid(artist_data)
+
+                    # Extract begin area country
+                    begin_area_country = None
+                    if "begin-area" in artist_data and artist_data["begin-area"]:
+                        if "country" in artist_data["begin-area"]:
+                            begin_area_country = artist_data["begin-area"]["country"]
+                        elif "iso-3166-1-codes" in artist_data["begin-area"]:
+                            codes = artist_data["begin-area"]["iso-3166-1-codes"]
+                            if codes:
+                                begin_area_country = codes[0]
+
+                    # Enrich with Wikidata country if available and MB doesn't have it
+                    if wikidata_qid and not begin_area_country:
+                        # Use Wikidata to find artist country if MB doesn't have it
+                        try:
+                            countries = self.wikidata_client.get_artist_countries(wikidata_qid)
+                            if countries:
+                                # Prefer P27 (citizenship), then P740 (formation), then P495 (origin)
+                                for country in countries:
+                                    if country.property_type == "P27":
+                                        begin_area_country = country.country_code
+                                        break
+                                if not begin_area_country:
+                                    for country in countries:
+                                        if country.property_type == "P740":
+                                            begin_area_country = country.country_code
+                                            break
+                                if not begin_area_country and countries:
+                                    begin_area_country = countries[0].country_code
+                        except Exception:
+                            # Wikidata lookup can fail, skip silently
+                            pass
+
                     self.db.upsert_artist(
-                        mbid=artist.mbid,
-                        name=artist.name,
-                        sort_name=artist.sort_name,
-                        begin_area_country=artist.begin_area_country,
-                        disambiguation=artist.disambiguation,
+                        mbid=artist_data["id"],
+                        name=artist_data.get("name", ""),
+                        sort_name=artist_data.get("sort-name"),
+                        begin_area_country=begin_area_country,
+                        wikidata_qid=wikidata_qid,
+                        disambiguation=artist_data.get("disambiguation"),
                     )
 
         # Extract ISRCs
@@ -436,6 +474,30 @@ class UnifiedFetcher:
                 "artist": synthetic_artist_id,
             },
         }
+
+    def _extract_wikidata_qid(self, entity_data: dict[str, Any]) -> str | None:
+        """
+        Extract Wikidata QID from MusicBrainz entity URL relationships.
+
+        Args:
+            entity_data: MusicBrainz entity data with relations
+
+        Returns:
+            Wikidata QID (e.g., "Q1299") or None
+        """
+        import re
+
+        relations = entity_data.get("relations", [])
+        for relation in relations:
+            if relation.get("type") == "wikidata":
+                url_resource = relation.get("url", {}).get("resource", "")
+
+                # Match wikidata.org/wiki/Q12345
+                match = re.search(r"wikidata\.org/wiki/(Q\d+)", url_resource)
+                if match:
+                    return match.group(1)
+
+        return None
 
     def _apply_popularity_boost(self, result: dict[str, Any], track_data: Any) -> None:
         """
