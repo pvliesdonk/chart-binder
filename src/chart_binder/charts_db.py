@@ -29,19 +29,24 @@ class LinkMethod(StrEnum):
     TITLE_ARTIST_YEAR = "title_artist_year"
     BUNDLE_RELEASE = "bundle_release"
     MANUAL = "manual"
+    AUTO = "auto"  # Automatic normalization match
+    ALIAS = "alias"  # Matched via alias_norm
 
 
 @dataclass
 class ChartEntry:
-    """A single entry in a chart run."""
+    """A single entry in a chart run (Layer 1: RAW)."""
 
     rank: int
     artist_raw: str
     title_raw: str
     entry_unit: EntryUnit = EntryUnit.RECORDING
     extra_raw: str | None = None
+    previous_position: int | None = None
+    weeks_on_chart: int | None = None
+    entry_id: str | None = None  # Deterministic ID (hash of run_id + rank)
 
-    # Normalized fields (computed)
+    # Normalized fields (computed, for legacy compatibility)
     artist_normalized: str = ""
     title_normalized: str = ""
     title_tags: list[dict[str, Any]] = field(default_factory=list)
@@ -71,6 +76,34 @@ class CoverageReport:
     coverage_pct: float
     by_method: dict[str, int] = field(default_factory=dict)
     by_confidence: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass
+class Song:
+    """Canonical song entity (Layer 3: SONG)."""
+
+    song_id: str
+    artist_canonical: str
+    title_canonical: str
+    artist_sort: str | None = None
+    work_key: str | None = None
+    recording_mbid: str | None = None
+    release_group_mbid: str | None = None
+    spotify_id: str | None = None
+    isrc: str | None = None
+    created_at: float | None = None
+
+
+@dataclass
+class ChartEntrySong:
+    """Link between chart entry and song (Layer 2: LINK)."""
+
+    id: str
+    entry_id: str
+    song_idx: int
+    song_id: str
+    link_method: LinkMethod | None = None
+    link_confidence: float | None = None
 
 
 class ChartsDB:
@@ -117,19 +150,48 @@ class ChartsDB:
                 UNIQUE(chart_id, period)
             );
 
+            -- Layer 1: RAW - immutable after scrape
             CREATE TABLE IF NOT EXISTS chart_entry (
+                entry_id TEXT PRIMARY KEY,
                 run_id TEXT NOT NULL REFERENCES chart_run(run_id),
                 rank INTEGER NOT NULL,
                 artist_raw TEXT NOT NULL,
                 title_raw TEXT NOT NULL,
+                previous_position INTEGER,
+                weeks_on_chart INTEGER,
                 entry_unit TEXT NOT NULL,
                 extra_raw TEXT,
-                artist_normalized TEXT,
-                title_normalized TEXT,
-                title_tags_json TEXT,
-                PRIMARY KEY (run_id, rank)
+                scraped_at REAL NOT NULL,
+                UNIQUE(run_id, rank)
             );
 
+            -- Layer 3: SONG - canonical registry, stored ONCE
+            CREATE TABLE IF NOT EXISTS song (
+                song_id TEXT PRIMARY KEY,
+                artist_canonical TEXT NOT NULL,
+                title_canonical TEXT NOT NULL,
+                artist_sort TEXT,
+                work_key TEXT,
+                recording_mbid TEXT,
+                release_group_mbid TEXT,
+                spotify_id TEXT,
+                isrc TEXT,
+                created_at REAL NOT NULL,
+                UNIQUE(artist_canonical, title_canonical)
+            );
+
+            -- Layer 2: LINK - editable join table (no text duplication)
+            CREATE TABLE IF NOT EXISTS chart_entry_song (
+                id TEXT PRIMARY KEY,
+                entry_id TEXT NOT NULL REFERENCES chart_entry(entry_id),
+                song_idx INTEGER NOT NULL,
+                song_id TEXT NOT NULL REFERENCES song(song_id),
+                link_method TEXT,
+                link_confidence REAL,
+                UNIQUE(entry_id, song_idx)
+            );
+
+            -- Legacy compatibility table
             CREATE TABLE IF NOT EXISTS chart_link (
                 run_id TEXT NOT NULL,
                 rank INTEGER NOT NULL,
@@ -138,8 +200,7 @@ class ChartsDB:
                 confidence REAL NOT NULL,
                 release_anchor_id TEXT,
                 side_designation TEXT,
-                PRIMARY KEY (run_id, rank),
-                FOREIGN KEY (run_id, rank) REFERENCES chart_entry(run_id, rank)
+                PRIMARY KEY (run_id, rank)
             );
 
             CREATE TABLE IF NOT EXISTS alias_norm (
@@ -153,10 +214,15 @@ class ChartsDB:
 
             CREATE INDEX IF NOT EXISTS idx_alias_type_raw ON alias_norm(type, raw);
             CREATE INDEX IF NOT EXISTS idx_alias_normalized ON alias_norm(normalized);
+            CREATE INDEX IF NOT EXISTS idx_entry_run ON chart_entry(run_id);
             CREATE INDEX IF NOT EXISTS idx_entry_artist_title ON chart_entry(artist_raw, title_raw);
             CREATE INDEX IF NOT EXISTS idx_link_work ON chart_link(work_key);
             CREATE INDEX IF NOT EXISTS idx_link_confidence ON chart_link(confidence);
             CREATE INDEX IF NOT EXISTS idx_run_chart ON chart_run(chart_id);
+            CREATE INDEX IF NOT EXISTS idx_song_canonical ON song(artist_canonical, title_canonical);
+            CREATE INDEX IF NOT EXISTS idx_song_mbid ON song(recording_mbid);
+            CREATE INDEX IF NOT EXISTS idx_entry_song_song ON chart_entry_song(song_id);
+            CREATE INDEX IF NOT EXISTS idx_entry_song_entry ON chart_entry_song(entry_id);
             """
         )
 
@@ -290,6 +356,12 @@ class ChartsDB:
 
     # Chart entry management
 
+    @staticmethod
+    def generate_entry_id(run_id: str, rank: int) -> str:
+        """Generate deterministic entry ID from run_id and rank."""
+        combined = f"{run_id}:{rank}"
+        return hashlib.sha256(combined.encode()).hexdigest()[:16]
+
     def add_entry(
         self,
         run_id: str,
@@ -298,77 +370,94 @@ class ChartsDB:
         title_raw: str,
         entry_unit: EntryUnit = EntryUnit.RECORDING,
         extra_raw: str | None = None,
-        artist_normalized: str | None = None,
-        title_normalized: str | None = None,
-        title_tags_json: str | None = None,
-    ) -> None:
-        """Add a chart entry to a run."""
+        previous_position: int | None = None,
+        weeks_on_chart: int | None = None,
+        scraped_at: float | None = None,
+    ) -> str:
+        """
+        Add a chart entry to a run (Layer 1: RAW).
+
+        Returns the entry_id.
+        """
+        entry_id = self.generate_entry_id(run_id, rank)
+        if scraped_at is None:
+            scraped_at = time.time()
+
         conn = self._get_connection()
         try:
             conn.execute(
                 """
-                INSERT INTO chart_entry (run_id, rank, artist_raw, title_raw, entry_unit,
-                    extra_raw, artist_normalized, title_normalized, title_tags_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id, rank) DO UPDATE SET
+                INSERT INTO chart_entry (entry_id, run_id, rank, artist_raw, title_raw,
+                    previous_position, weeks_on_chart, entry_unit, extra_raw, scraped_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id) DO UPDATE SET
                     artist_raw = excluded.artist_raw,
                     title_raw = excluded.title_raw,
+                    previous_position = excluded.previous_position,
+                    weeks_on_chart = excluded.weeks_on_chart,
                     entry_unit = excluded.entry_unit,
-                    extra_raw = excluded.extra_raw,
-                    artist_normalized = excluded.artist_normalized,
-                    title_normalized = excluded.title_normalized,
-                    title_tags_json = excluded.title_tags_json
+                    extra_raw = excluded.extra_raw
                 """,
                 (
+                    entry_id,
                     run_id,
                     rank,
                     artist_raw,
                     title_raw,
+                    previous_position,
+                    weeks_on_chart,
                     entry_unit.value,
                     extra_raw,
-                    artist_normalized,
-                    title_normalized,
-                    title_tags_json,
+                    scraped_at,
                 ),
             )
             conn.commit()
+            return entry_id
         finally:
             conn.close()
 
-    def add_entries_batch(self, run_id: str, entries: list[ChartEntry]) -> None:
-        """Add multiple chart entries in a single transaction."""
+    def add_entries_batch(self, run_id: str, entries: list[ChartEntry]) -> list[str]:
+        """
+        Add multiple chart entries in a single transaction (Layer 1: RAW).
+
+        Returns list of entry_ids.
+        """
         conn = self._get_connection()
+        entry_ids = []
+        scraped_at = time.time()
         try:
             cursor = conn.cursor()
             for entry in entries:
-                tags_json = json.dumps(entry.title_tags) if entry.title_tags else None
+                entry_id = self.generate_entry_id(run_id, entry.rank)
+                entry_ids.append(entry_id)
                 cursor.execute(
                     """
-                    INSERT INTO chart_entry (run_id, rank, artist_raw, title_raw, entry_unit,
-                        extra_raw, artist_normalized, title_normalized, title_tags_json)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(run_id, rank) DO UPDATE SET
+                    INSERT INTO chart_entry (entry_id, run_id, rank, artist_raw, title_raw,
+                        previous_position, weeks_on_chart, entry_unit, extra_raw, scraped_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(entry_id) DO UPDATE SET
                         artist_raw = excluded.artist_raw,
                         title_raw = excluded.title_raw,
+                        previous_position = excluded.previous_position,
+                        weeks_on_chart = excluded.weeks_on_chart,
                         entry_unit = excluded.entry_unit,
-                        extra_raw = excluded.extra_raw,
-                        artist_normalized = excluded.artist_normalized,
-                        title_normalized = excluded.title_normalized,
-                        title_tags_json = excluded.title_tags_json
+                        extra_raw = excluded.extra_raw
                     """,
                     (
+                        entry_id,
                         run_id,
                         entry.rank,
                         entry.artist_raw,
                         entry.title_raw,
+                        entry.previous_position,
+                        entry.weeks_on_chart,
                         entry.entry_unit.value,
                         entry.extra_raw,
-                        entry.artist_normalized,
-                        entry.title_normalized,
-                        tags_json,
+                        scraped_at,
                     ),
                 )
             conn.commit()
+            return entry_ids
         finally:
             conn.close()
 
@@ -397,9 +486,7 @@ class ChartsDB:
         finally:
             conn.close()
 
-    def get_entries_by_period(
-        self, chart_id: str, period: str
-    ) -> list[tuple[str, str]] | None:
+    def get_entries_by_period(self, chart_id: str, period: str) -> list[tuple[str, str]] | None:
         """
         Get entries for a chart by period.
 
@@ -429,7 +516,10 @@ class ChartsDB:
         entries = self.list_entries(run["run_id"])
         # Return dict keyed by (artist, title) normalized for matching
         return {
-            (self._normalize_for_match(e["artist_raw"]), self._normalize_for_match(e["title_raw"])): e["rank"]
+            (
+                self._normalize_for_match(e["artist_raw"]),
+                self._normalize_for_match(e["title_raw"]),
+            ): e["rank"]
             for e in entries
         }
 
@@ -438,9 +528,7 @@ class ChartsDB:
         """Normalize text for matching (lowercase, strip whitespace)."""
         return text.lower().strip()
 
-    def get_adjacent_period(
-        self, chart_id: str, period: str, direction: int = -1
-    ) -> str | None:
+    def get_adjacent_period(self, chart_id: str, period: str, direction: int = -1) -> str | None:
         """
         Get the adjacent existing period (previous or next).
 
@@ -705,12 +793,361 @@ class ChartsDB:
         finally:
             conn.close()
 
+    # Song registry management (Layer 3)
+
+    def get_or_create_song(
+        self,
+        artist_canonical: str,
+        title_canonical: str,
+        artist_sort: str | None = None,
+        work_key: str | None = None,
+    ) -> str:
+        """
+        Get existing song or create new one.
+
+        Returns song_id (existing or new).
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Try to find existing song
+            cursor.execute(
+                "SELECT song_id FROM song WHERE artist_canonical = ? AND title_canonical = ?",
+                (artist_canonical, title_canonical),
+            )
+            row = cursor.fetchone()
+            if row:
+                return row["song_id"]
+
+            # Create new song
+            song_id = str(uuid.uuid4())
+            cursor.execute(
+                """
+                INSERT INTO song (song_id, artist_canonical, title_canonical, artist_sort, work_key, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (song_id, artist_canonical, title_canonical, artist_sort, work_key, time.time()),
+            )
+            conn.commit()
+            return song_id
+        finally:
+            conn.close()
+
+    def get_song(self, song_id: str) -> Song | None:
+        """Get song by ID."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM song WHERE song_id = ?", (song_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return Song(
+                song_id=row["song_id"],
+                artist_canonical=row["artist_canonical"],
+                title_canonical=row["title_canonical"],
+                artist_sort=row["artist_sort"],
+                work_key=row["work_key"],
+                recording_mbid=row["recording_mbid"],
+                release_group_mbid=row["release_group_mbid"],
+                spotify_id=row["spotify_id"],
+                isrc=row["isrc"],
+                created_at=row["created_at"],
+            )
+        finally:
+            conn.close()
+
+    def get_song_by_canonical(self, artist_canonical: str, title_canonical: str) -> Song | None:
+        """Get song by canonical artist and title."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM song WHERE artist_canonical = ? AND title_canonical = ?",
+                (artist_canonical, title_canonical),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return Song(
+                song_id=row["song_id"],
+                artist_canonical=row["artist_canonical"],
+                title_canonical=row["title_canonical"],
+                artist_sort=row["artist_sort"],
+                work_key=row["work_key"],
+                recording_mbid=row["recording_mbid"],
+                release_group_mbid=row["release_group_mbid"],
+                spotify_id=row["spotify_id"],
+                isrc=row["isrc"],
+                created_at=row["created_at"],
+            )
+        finally:
+            conn.close()
+
+    def update_song(
+        self,
+        song_id: str,
+        recording_mbid: str | None = None,
+        release_group_mbid: str | None = None,
+        spotify_id: str | None = None,
+        isrc: str | None = None,
+    ) -> None:
+        """Update song with external IDs."""
+        conn = self._get_connection()
+        try:
+            updates = []
+            params = []
+            if recording_mbid is not None:
+                updates.append("recording_mbid = ?")
+                params.append(recording_mbid)
+            if release_group_mbid is not None:
+                updates.append("release_group_mbid = ?")
+                params.append(release_group_mbid)
+            if spotify_id is not None:
+                updates.append("spotify_id = ?")
+                params.append(spotify_id)
+            if isrc is not None:
+                updates.append("isrc = ?")
+                params.append(isrc)
+
+            if not updates:
+                return
+
+            params.append(song_id)
+            conn.execute(
+                f"UPDATE song SET {', '.join(updates)} WHERE song_id = ?",
+                params,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # Chart entry-song linking (Layer 2)
+
+    def link_entry_to_song(
+        self,
+        entry_id: str,
+        song_id: str,
+        song_idx: int = 0,
+        link_method: LinkMethod | None = None,
+        link_confidence: float | None = None,
+    ) -> str:
+        """
+        Link a chart entry to a song.
+
+        Args:
+            entry_id: Chart entry ID
+            song_id: Song ID
+            song_idx: Index for multi-song entries (0 for first/only, 1 for second, etc.)
+            link_method: How the link was made
+            link_confidence: Confidence score
+
+        Returns:
+            Link ID
+        """
+        link_id = str(uuid.uuid4())
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO chart_entry_song (id, entry_id, song_idx, song_id, link_method, link_confidence)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(entry_id, song_idx) DO UPDATE SET
+                    song_id = excluded.song_id,
+                    link_method = excluded.link_method,
+                    link_confidence = excluded.link_confidence
+                """,
+                (
+                    link_id,
+                    entry_id,
+                    song_idx,
+                    song_id,
+                    link_method.value if link_method else None,
+                    link_confidence,
+                ),
+            )
+            conn.commit()
+            return link_id
+        finally:
+            conn.close()
+
+    def get_songs_for_entry(self, entry_id: str) -> list[tuple[Song, ChartEntrySong]]:
+        """Get all songs linked to a chart entry."""
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT s.*, es.id as link_id, es.entry_id, es.song_idx, es.link_method, es.link_confidence
+                FROM song s
+                JOIN chart_entry_song es ON s.song_id = es.song_id
+                WHERE es.entry_id = ?
+                ORDER BY es.song_idx
+                """,
+                (entry_id,),
+            )
+            results = []
+            for row in cursor.fetchall():
+                song = Song(
+                    song_id=row["song_id"],
+                    artist_canonical=row["artist_canonical"],
+                    title_canonical=row["title_canonical"],
+                    artist_sort=row["artist_sort"],
+                    work_key=row["work_key"],
+                    recording_mbid=row["recording_mbid"],
+                    release_group_mbid=row["release_group_mbid"],
+                    spotify_id=row["spotify_id"],
+                    isrc=row["isrc"],
+                    created_at=row["created_at"],
+                )
+                link = ChartEntrySong(
+                    id=row["link_id"],
+                    entry_id=row["entry_id"],
+                    song_idx=row["song_idx"],
+                    song_id=row["song_id"],
+                    link_method=LinkMethod(row["link_method"]) if row["link_method"] else None,
+                    link_confidence=row["link_confidence"],
+                )
+                results.append((song, link))
+            return results
+        finally:
+            conn.close()
+
+    # Reverse query: chart history for a song
+
+    def get_chart_history(self, song_id: str) -> list[dict[str, Any]]:
+        """
+        Get all chart appearances for a song (reverse query).
+
+        This is the key query for beets tagging - given a song,
+        find all its chart positions across all charts and periods.
+
+        Returns list of dicts with:
+            - chart_id, chart_name
+            - period
+            - rank
+            - previous_position
+            - weeks_on_chart
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    c.chart_id,
+                    c.name as chart_name,
+                    r.period,
+                    e.rank,
+                    e.previous_position,
+                    e.weeks_on_chart,
+                    r.scraped_at
+                FROM song s
+                JOIN chart_entry_song es ON s.song_id = es.song_id
+                JOIN chart_entry e ON es.entry_id = e.entry_id
+                JOIN chart_run r ON e.run_id = r.run_id
+                JOIN chart c ON r.chart_id = c.chart_id
+                WHERE s.song_id = ?
+                ORDER BY c.chart_id, r.period
+                """,
+                (song_id,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_chart_history_by_mbid(self, recording_mbid: str) -> list[dict[str, Any]]:
+        """
+        Get chart history by MusicBrainz recording ID.
+
+        Useful for beets plugin integration.
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT
+                    c.chart_id,
+                    c.name as chart_name,
+                    r.period,
+                    e.rank,
+                    e.previous_position,
+                    e.weeks_on_chart,
+                    s.song_id,
+                    s.artist_canonical,
+                    s.title_canonical
+                FROM song s
+                JOIN chart_entry_song es ON s.song_id = es.song_id
+                JOIN chart_entry e ON es.entry_id = e.entry_id
+                JOIN chart_run r ON e.run_id = r.run_id
+                JOIN chart c ON r.chart_id = c.chart_id
+                WHERE s.recording_mbid = ?
+                ORDER BY c.chart_id, r.period
+                """,
+                (recording_mbid,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_unlinked_entries(self, run_id: str | None = None) -> list[dict[str, Any]]:
+        """
+        Get chart entries not yet linked to songs.
+
+        Args:
+            run_id: Optional run_id to filter by
+
+        Returns:
+            List of entries without song links
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if run_id:
+                cursor.execute(
+                    """
+                    SELECT e.*, r.chart_id, r.period
+                    FROM chart_entry e
+                    JOIN chart_run r ON e.run_id = r.run_id
+                    LEFT JOIN chart_entry_song es ON e.entry_id = es.entry_id
+                    WHERE e.run_id = ? AND es.id IS NULL
+                    ORDER BY e.rank
+                    """,
+                    (run_id,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT e.*, r.chart_id, r.period
+                    FROM chart_entry e
+                    JOIN chart_run r ON e.run_id = r.run_id
+                    LEFT JOIN chart_entry_song es ON e.entry_id = es.entry_id
+                    WHERE es.id IS NULL
+                    ORDER BY r.period DESC, e.rank
+                    """
+                )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
 
 class ChartsETL:
     """
     Charts ETL pipeline for ingesting, normalizing, and linking chart data.
 
-    Implements the Charts ETL Core from Epic 8.
+    Implements the three-layer data model:
+    - Layer 1: RAW (chart_entry) - immutable scrape data
+    - Layer 2: LINK (chart_entry_song) - editable join table
+    - Layer 3: SONG (song) - canonical registry
     """
 
     # Auto-link confidence threshold
@@ -728,6 +1165,7 @@ class ChartsETL:
         entries: list[tuple[int, str, str]],  # (rank, artist, title)
         entry_unit: EntryUnit = EntryUnit.RECORDING,
         notes: str | None = None,
+        link_songs: bool = True,
     ) -> str:
         """
         Ingest chart data from fixture/scraped entries.
@@ -738,6 +1176,7 @@ class ChartsETL:
             entries: List of (rank, artist_raw, title_raw) tuples
             entry_unit: Default entry unit type
             notes: Optional notes about the run
+            link_songs: If True, also link entries to songs
 
         Returns:
             run_id of the created chart run
@@ -749,20 +1188,107 @@ class ChartsETL:
         # Create the run
         run_id = self.db.create_run(chart_id, period, source_hash, notes)
 
-        # Normalize and add entries
-        normalized_entries = []
+        # Create raw entries (Layer 1)
+        chart_entries = []
         for rank, artist_raw, title_raw in entries:
-            entry = self._normalize_entry(rank, artist_raw, title_raw, entry_unit)
-            normalized_entries.append(entry)
+            entry = ChartEntry(
+                rank=rank,
+                artist_raw=artist_raw,
+                title_raw=title_raw,
+                entry_unit=entry_unit,
+            )
+            chart_entries.append(entry)
 
-        self.db.add_entries_batch(run_id, normalized_entries)
+        self.db.add_entries_batch(run_id, chart_entries)
+
+        # Link to songs (Layer 2 + 3)
+        if link_songs:
+            self.link_to_songs(run_id)
 
         return run_id
+
+    def link_to_songs(self, run_id: str) -> int:
+        """
+        Link chart entries to songs (Layer 2 + 3).
+
+        For each raw entry:
+        1. Normalize artist and title
+        2. Find or create canonical song
+        3. Link entry to song
+
+        Returns number of entries linked.
+        """
+        entries = self.db.list_entries(run_id)
+        linked_count = 0
+
+        for entry in entries:
+            entry_id = entry["entry_id"]
+            artist_raw = entry["artist_raw"]
+            title_raw = entry["title_raw"]
+
+            # Normalize
+            artist_canonical, title_canonical, link_method = self._normalize_for_song(
+                artist_raw, title_raw
+            )
+
+            # Skip karaoke tracks
+            if self._is_karaoke(title_raw):
+                continue
+
+            # Get or create song (Layer 3)
+            song_id = self.db.get_or_create_song(artist_canonical, title_canonical)
+
+            # Link entry to song (Layer 2)
+            self.db.link_entry_to_song(
+                entry_id=entry_id,
+                song_id=song_id,
+                song_idx=0,
+                link_method=link_method,
+                link_confidence=self.AUTO_THRESHOLD,
+            )
+            linked_count += 1
+
+        return linked_count
+
+    def _normalize_for_song(self, artist_raw: str, title_raw: str) -> tuple[str, str, LinkMethod]:
+        """
+        Normalize artist and title for song matching.
+
+        Returns (artist_canonical, title_canonical, link_method).
+        """
+        # Check for alias overrides first
+        artist_alias = self.db.get_alias("artist", artist_raw)
+        title_alias = self.db.get_alias("title", title_raw)
+
+        if artist_alias:
+            artist_canonical = artist_alias["normalized"]
+            link_method = LinkMethod.ALIAS
+        else:
+            artist_result = self.normalizer.normalize_artist(artist_raw)
+            artist_canonical = artist_result.core
+            link_method = LinkMethod.AUTO
+
+        if title_alias:
+            title_canonical = title_alias["normalized"]
+            link_method = LinkMethod.ALIAS
+        else:
+            title_result = self.normalizer.normalize_title(title_raw)
+            title_canonical = title_result.core
+
+        return artist_canonical, title_canonical, link_method
+
+    def _is_karaoke(self, title_raw: str) -> bool:
+        """Check if title is a karaoke track."""
+        title_result = self.normalizer.normalize_title(title_raw)
+        for tag in title_result.tags:
+            if tag.kind.value == "karaoke" or tag.sub == "karaoke":
+                return True
+        return False
 
     def _normalize_entry(
         self, rank: int, artist_raw: str, title_raw: str, entry_unit: EntryUnit
     ) -> ChartEntry:
-        """Normalize a single chart entry using alias registry and normalizer."""
+        """Normalize a single chart entry (legacy method for backward compatibility)."""
         # Check for alias overrides first
         artist_alias = self.db.get_alias("artist", artist_raw)
         title_alias = self.db.get_alias("title", title_raw)
@@ -941,11 +1467,18 @@ def test_charts_db_init(tmp_path):
     tables = {row[0] for row in cursor.fetchall()}
     conn.close()
 
+    # Core tables
     assert "chart" in tables
     assert "chart_run" in tables
     assert "chart_entry" in tables
-    assert "chart_link" in tables
     assert "alias_norm" in tables
+
+    # Three-layer model tables
+    assert "song" in tables
+    assert "chart_entry_song" in tables
+
+    # Legacy compatibility
+    assert "chart_link" in tables
 
 
 def test_chart_crud(tmp_path):
@@ -1085,14 +1618,24 @@ def test_charts_etl_ingest(tmp_path):
     db_entries = db.list_entries(run_id)
     assert len(db_entries) == 3
 
-    # Check normalization
+    # Check raw entry stored correctly (Layer 1)
     entry1 = db.get_entry(run_id, 1)
     assert entry1 is not None
-    assert entry1["artist_normalized"] == "queen"
-    assert entry1["title_normalized"] == "bohemian rhapsody"
+    assert entry1["artist_raw"] == "Queen"
+    assert entry1["title_raw"] == "Bohemian Rhapsody"
+    assert entry1["entry_id"] is not None
+
+    # Check song was created (Layer 3)
+    song = db.get_song_by_canonical("queen", "bohemian rhapsody")
+    assert song is not None
+
+    # Check entry is linked to song (Layer 2)
+    songs = db.get_songs_for_entry(entry1["entry_id"])
+    assert len(songs) == 1
+    assert songs[0][0].artist_canonical == "queen"
 
 
-def test_charts_etl_link(tmp_path):
+def test_charts_etl_link_to_songs(tmp_path):
     db = ChartsDB(tmp_path / "charts.sqlite")
     etl = ChartsETL(db)
 
@@ -1103,12 +1646,19 @@ def test_charts_etl_link(tmp_path):
         (2, "Nirvana", "Smells Like Teen Spirit"),
     ]
 
-    run_id = etl.ingest("t2000", "2024", entries)
-    report = etl.link(run_id)
+    # Ingest without linking first
+    run_id = etl.ingest("t2000", "2024", entries, link_songs=False)
 
-    assert report.total_entries == 2
-    assert report.linked_entries == 2
-    assert report.coverage_pct == 100.0
+    # Manually link
+    linked = etl.link_to_songs(run_id)
+    assert linked == 2
+
+    # Check songs were created
+    song1 = db.get_song_by_canonical("queen", "bohemian rhapsody")
+    assert song1 is not None
+
+    song2 = db.get_song_by_canonical("nirvana", "smells like teen spirit")
+    assert song2 is not None
 
 
 def test_charts_etl_karaoke_rejection(tmp_path):
@@ -1123,13 +1673,51 @@ def test_charts_etl_karaoke_rejection(tmp_path):
     ]
 
     run_id = etl.ingest("t40", "1999-W25", entries)
-    report = etl.link(run_id)
 
-    # Only the first entry should be linked
-    assert report.linked_entries == 1
+    # Both entries should be in chart_entry (Layer 1)
+    db_entries = db.list_entries(run_id)
+    assert len(db_entries) == 2
 
-    # Check that karaoke entry was rejected
-    link2 = db.get_link(run_id, 2)
-    assert link2 is not None
-    assert link2["work_key"] is None
-    assert link2["confidence"] == 0.0
+    # Only non-karaoke entry should be linked to song (Layer 2)
+    entry1 = db.get_entry(run_id, 1)
+    entry2 = db.get_entry(run_id, 2)
+    assert entry1 is not None
+    assert entry2 is not None
+
+    songs1 = db.get_songs_for_entry(entry1["entry_id"])
+    songs2 = db.get_songs_for_entry(entry2["entry_id"])
+
+    assert len(songs1) == 1  # Queen linked
+    assert len(songs2) == 0  # Karaoke not linked
+
+
+def test_chart_history_query(tmp_path):
+    """Test reverse query: get all chart appearances for a song."""
+    db = ChartsDB(tmp_path / "charts.sqlite")
+    etl = ChartsETL(db)
+
+    # Create charts
+    db.upsert_chart("t2000", "NPO Radio 2 Top 2000", "y")
+    db.upsert_chart("t40", "Top 40", "w")
+
+    # Song appears in multiple charts/runs
+    entries_t2000_2023 = [(1, "Queen", "Bohemian Rhapsody")]
+    entries_t2000_2024 = [(5, "Queen", "Bohemian Rhapsody")]  # Different position
+    entries_t40 = [(1, "Queen", "Bohemian Rhapsody")]
+
+    etl.ingest("t2000", "2023", entries_t2000_2023)
+    etl.ingest("t2000", "2024", entries_t2000_2024)
+    etl.ingest("t40", "2024-W01", entries_t40)
+
+    # Get the song
+    song = db.get_song_by_canonical("queen", "bohemian rhapsody")
+    assert song is not None
+
+    # Query chart history
+    history = db.get_chart_history(song.song_id)
+    assert len(history) == 3
+
+    # Should have entries from both charts
+    chart_ids = {h["chart_id"] for h in history}
+    assert "t2000" in chart_ids
+    assert "t40" in chart_ids

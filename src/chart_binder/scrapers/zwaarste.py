@@ -71,8 +71,7 @@ class ZwaarsteScraper(ChartScraper):
         """
         entries = self.scrape(period)
         return [
-            ScrapedEntry(rank=rank, artist=artist, title=title)
-            for rank, artist, title in entries
+            ScrapedEntry(rank=rank, artist=artist, title=title) for rank, artist, title in entries
         ]
 
     def _parse_html(self, html: str, year: int) -> list[tuple[int, str, str]]:

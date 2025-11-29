@@ -73,8 +73,7 @@ class Top2000Scraper(ChartScraper):
         # Fallback to basic entries
         basic = self.scrape(period)
         return [
-            ScrapedEntry(rank=rank, artist=artist, title=title)
-            for rank, artist, title in basic
+            ScrapedEntry(rank=rank, artist=artist, title=title) for rank, artist, title in basic
         ]
 
     def _try_api_rich(self, year: int) -> list[ScrapedEntry]:

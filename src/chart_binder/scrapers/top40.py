@@ -266,15 +266,13 @@ class _Top40HTMLParser:
                 self._text_buffer = ""
             # Previous position - various class patterns
             elif any(
-                x in class_attr.lower()
-                for x in ["previous", "vorige", "last-week", "lastweek"]
+                x in class_attr.lower() for x in ["previous", "vorige", "last-week", "lastweek"]
             ):
                 self._in_previous = True
                 self._text_buffer = ""
             # Weeks on chart - various class patterns
             elif any(
-                x in class_attr.lower()
-                for x in ["weeks", "weken", "duration", "chart-weeks"]
+                x in class_attr.lower() for x in ["weeks", "weken", "duration", "chart-weeks"]
             ):
                 self._in_weeks = True
                 self._text_buffer = ""

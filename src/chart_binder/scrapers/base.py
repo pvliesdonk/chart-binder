@@ -43,7 +43,9 @@ class ScrapeResult:
     continuity_overlap: float | None = None  # Overlap % with reference run
     continuity_reference: str | None = None  # Reference period used
     # Cross-reference validation
-    position_mismatches: list[tuple[str, str, int, int]] | None = None  # (artist, title, claimed, actual)
+    position_mismatches: list[tuple[str, str, int, int]] | None = (
+        None  # (artist, title, claimed, actual)
+    )
 
     @property
     def actual_count(self) -> int:
@@ -564,7 +566,9 @@ def test_cross_reference_previous_positions():
     scraped = [
         ScrapedEntry(rank=1, artist="Artist A", title="Song A", previous_position=3),
         ScrapedEntry(rank=2, artist="Artist B", title="Song B", previous_position=1),
-        ScrapedEntry(rank=3, artist="Artist C", title="Song C", previous_position=None),  # New entry
+        ScrapedEntry(
+            rank=3, artist="Artist C", title="Song C", previous_position=None
+        ),  # New entry
         ScrapedEntry(rank=4, artist="Artist D", title="Song D", previous_position=5),
     ]
 
