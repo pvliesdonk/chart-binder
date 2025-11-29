@@ -14,7 +14,7 @@ Chart-Binder uses SQLite databases to store chart data, MusicBrainz entities, an
 
 ## Three-Layer Data Model
 
-Chart entries flow through three layers, preserving raw data while enabling corrections:
+Chart entries flow through three layers, preserving raw data while avoiding duplication:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -23,27 +23,29 @@ Chart entries flow through three layers, preserving raw data while enabling corr
 │   "The Beatles - Penny Lane / Strawberry Fields Forever"        │
 │   rank=1, previous_position=3, weeks_on_chart=5                 │
 └─────────────────────────────────────────────────────────────────┘
-                              ↓ split/normalize
+                              ↓ split/normalize/link
 ┌─────────────────────────────────────────────────────────────────┐
-│ Layer 2: NORMALIZED (chart_entry_song) - editable               │
-│   Split into individual songs, linked to song registry          │
-│   Entry 1: artist="Beatles", title="Penny Lane", song_idx=0     │
-│   Entry 2: artist="Beatles", title="Strawberry Fields", idx=1   │
+│ Layer 2: LINK (chart_entry_song) - editable join table          │
+│   Links raw entries to songs (no text duplication)              │
+│   entry_id=xyz → song_id=abc (song_idx=0)                       │
+│   entry_id=xyz → song_id=def (song_idx=1)  [double A-side]      │
 └─────────────────────────────────────────────────────────────────┘
-                              ↓ match/link
+                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Layer 3: CANONICAL (song) - song registry with external IDs     │
-│   song_id=abc123 → MBID, work_key, Spotify ID, etc.            │
-│   Persists across all chart runs                                │
+│ Layer 3: SONG (song) - canonical registry, stored ONCE          │
+│   song_id=abc: "Beatles" / "Penny Lane" + MBID, Spotify, etc.  │
+│   song_id=def: "Beatles" / "Strawberry Fields Forever"          │
+│   (same song appearing in 500 runs = 1 row, not 500)            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Key benefits:**
 - Raw data never lost - can always re-process or audit
 - Double A-sides properly handled - one raw entry → multiple songs
-- Matching corrections don't touch raw data
+- **No text duplication** - song name stored once, linked many times
 - Song identity persists across all chart runs
 - Reverse query: find all chart appearances for a song
+- Corrections update link table, not raw data
 
 ---
 
@@ -121,18 +123,16 @@ CREATE TABLE chart_entry (
 - `medley`: Multiple songs combined
 - `unknown`: Unclassified
 
-### chart_entry_song (Layer 2: Normalized)
+### chart_entry_song (Layer 2: Link Table)
 
-Normalized/split songs from raw entries - **editable for corrections**.
+Links raw entries to songs - **editable for corrections**. No text duplication.
 
 ```sql
 CREATE TABLE chart_entry_song (
     id TEXT PRIMARY KEY,            -- UUID
     entry_id TEXT NOT NULL,         -- FK to chart_entry (raw)
     song_idx INTEGER NOT NULL,      -- 0, 1, 2... for multi-song entries
-    artist_norm TEXT NOT NULL,      -- Normalized artist name
-    title_norm TEXT NOT NULL,       -- Normalized title
-    song_id TEXT,                   -- FK to song (nullable until linked)
+    song_id TEXT NOT NULL,          -- FK to song (required)
     link_method TEXT,               -- 'auto', 'manual', 'alias'
     link_confidence REAL,           -- 0.0 to 1.0
     FOREIGN KEY (entry_id) REFERENCES chart_entry(entry_id),
@@ -140,6 +140,11 @@ CREATE TABLE chart_entry_song (
     UNIQUE(entry_id, song_idx)
 );
 ```
+
+**Key design:**
+- Song name stored ONCE in `song` table, not repeated here
+- This is a pure link table with metadata about how the link was made
+- One raw entry can link to multiple songs (double A-sides)
 
 **Link methods:**
 - `auto`: Automatically matched by normalization
@@ -388,13 +393,15 @@ GROUP BY e.entry_id
 HAVING COUNT(*) > 1;
 ```
 
-### Find unlinked songs
+### Find raw entries not yet linked to songs
 
 ```sql
-SELECT DISTINCT es.artist_norm, es.title_norm
-FROM chart_entry_song es
-WHERE es.song_id IS NULL
-ORDER BY es.artist_norm, es.title_norm;
+SELECT e.artist_raw, e.title_raw, r.chart_id, r.period
+FROM chart_entry e
+JOIN chart_run r ON r.run_id = e.run_id
+LEFT JOIN chart_entry_song es ON es.entry_id = e.entry_id
+WHERE es.id IS NULL
+ORDER BY r.period DESC;
 ```
 
 ---
