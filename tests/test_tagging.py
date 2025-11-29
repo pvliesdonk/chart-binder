@@ -329,6 +329,67 @@ def test_id3_original_stashing(tmp_path: Path):
     assert read_tags.get("title") == "New Title"
 
 
+def test_id3_original_stashing_non_destructive(tmp_path: Path):
+    """Test ORIG_ tags are never overwritten on consecutive runs.
+
+    This is critical for recovery: even if we botch multiple tagging jobs,
+    we can always find back the ORIGINAL tags from before chart-binder touched the file.
+    """
+    mp3_path = tmp_path / "test.mp3"
+    create_minimal_mp3(mp3_path)
+
+    writer = ID3TagWriter()
+
+    # First write: user's original file with their tags
+    original_tagset = TagSet(title="User Original", artist="User Artist", album="User Album")
+    writer.write_tags(mp3_path, original_tagset, authoritative=True)
+
+    # Second write: first chart-binder tagging (stashes originals)
+    first_cb_tagset = TagSet(
+        title="Chart-Binder V1",
+        artist="CB Artist V1",
+        album="CB Album V1",
+        ids=CanonicalIDs(mb_recording_id="cb-v1"),
+    )
+    report1 = writer.write_tags(mp3_path, first_cb_tagset, authoritative=True)
+
+    assert "title" in report1.originals_stashed
+    read_tags1 = writer.read_tags(mp3_path)
+    assert read_tags1.get("orig_title") == "User Original"
+    assert read_tags1.get("title") == "Chart-Binder V1"
+
+    # Third write: another chart-binder tagging (MUST NOT overwrite ORIG_)
+    second_cb_tagset = TagSet(
+        title="Chart-Binder V2",
+        artist="CB Artist V2",
+        album="CB Album V2",
+        ids=CanonicalIDs(mb_recording_id="cb-v2"),
+    )
+    report2 = writer.write_tags(mp3_path, second_cb_tagset, authoritative=True)
+
+    # ORIG_ tags should NOT be reported as stashed (already existed)
+    assert "title" not in report2.originals_stashed
+    assert "artist" not in report2.originals_stashed
+
+    # Verify ORIG_ still contains USER's original, not "Chart-Binder V1"
+    read_tags2 = writer.read_tags(mp3_path)
+    assert read_tags2.get("orig_title") == "User Original"  # NOT "Chart-Binder V1"
+    assert read_tags2.get("orig_artist") == "User Artist"  # NOT "CB Artist V1"
+    assert read_tags2.get("orig_album") == "User Album"  # NOT "CB Album V1"
+    assert read_tags2.get("title") == "Chart-Binder V2"  # Current title IS updated
+
+    # Fourth write: yet another run (STILL must not overwrite ORIG_)
+    third_cb_tagset = TagSet(
+        title="Chart-Binder V3",
+        artist="CB Artist V3",
+    )
+    writer.write_tags(mp3_path, third_cb_tagset, authoritative=True)
+
+    read_tags3 = writer.read_tags(mp3_path)
+    assert read_tags3.get("orig_title") == "User Original"  # Still the original!
+    assert read_tags3.get("title") == "Chart-Binder V3"
+
+
 # High-level API tests
 
 

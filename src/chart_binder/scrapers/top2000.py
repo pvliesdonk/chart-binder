@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from html.parser import HTMLParser
 from typing import Any
 
@@ -11,18 +12,32 @@ from chart_binder.scrapers.base import ChartScraper, ScrapedEntry
 logger = logging.getLogger(__name__)
 
 
+class Top2000FutureYearError(ValueError):
+    """Raised when attempting to scrape a Top 2000 edition that doesn't exist yet."""
+
+    pass
+
+
 class Top2000Scraper(ChartScraper):
     """
     Scraper for NPO Radio 2 Top 2000 (yearly chart).
 
     Primary: NPO API
     Fallback: Wikipedia tables (for older years)
+
+    Note: The Top 2000 is broadcast in late December (around Christmas).
+    The {year} edition becomes available around December 25 of that year.
+    Attempting to scrape future editions will raise Top2000FutureYearError.
     """
 
     API_NEW_PATTERN = "https://www.nporadio2.nl/api/charts/npo-radio-2-top-2000-van-{year}-12-25"
     API_OLD_PATTERN = "https://www.nporadio2.nl/api/charts/top-2000-van-{year}-12-25"
     chart_db_id = "nl_top2000"
     expected_entry_count = 2000
+
+    # Top 2000 is typically available around December 25
+    AVAILABILITY_MONTH = 12
+    AVAILABILITY_DAY = 25
 
     TITLE_CORRECTIONS = {
         "peaceful easy feeling": (
@@ -34,6 +49,36 @@ class Top2000Scraper(ChartScraper):
     def __init__(self, cache: HttpCache):
         super().__init__("t2000", cache)
 
+    def _validate_year_available(self, year: int) -> None:
+        """
+        Check if the Top 2000 for the given year is likely available.
+
+        The Top 2000 is broadcast in late December, so:
+        - Past years are always available
+        - Current year is available if we're past December 25
+        - Future years are never available
+
+        Raises:
+            Top2000FutureYearError: If the requested year's list isn't available yet
+        """
+        now = datetime.now()
+        current_year = now.year
+
+        if year > current_year:
+            raise Top2000FutureYearError(
+                f"Top 2000 {year} doesn't exist yet. "
+                f"The Top 2000 for year {year} won't be available until December {year}."
+            )
+
+        if year == current_year:
+            # Check if we're past the broadcast date
+            availability_date = datetime(year, self.AVAILABILITY_MONTH, self.AVAILABILITY_DAY)
+            if now < availability_date:
+                raise Top2000FutureYearError(
+                    f"Top 2000 {year} isn't available yet. "
+                    f"It will be broadcast around December 25, {year}."
+                )
+
     def scrape(self, period: str) -> list[tuple[int, str, str]]:
         """
         Scrape Top 2000 chart for a specific year.
@@ -43,8 +88,14 @@ class Top2000Scraper(ChartScraper):
 
         Returns:
             List of (rank, artist, title) tuples
+
+        Raises:
+            Top2000FutureYearError: If the requested year's list isn't available yet
         """
         year = self._parse_year_period(period)
+
+        # Guard against scraping future editions
+        self._validate_year_available(year)
 
         entries = self._try_api(year)
         if entries:
@@ -62,8 +113,14 @@ class Top2000Scraper(ChartScraper):
         Scrape Top 2000 chart with full metadata.
 
         The NPO API may include lastYearPosition for cross-reference.
+
+        Raises:
+            Top2000FutureYearError: If the requested year's list isn't available yet
         """
         year = self._parse_year_period(period)
+
+        # Guard against scraping future editions
+        self._validate_year_available(year)
 
         # Try API with rich data
         entries = self._try_api_rich(year)
@@ -439,3 +496,40 @@ def test_top2000_parse_api_response_alternative_keys():
         entries = scraper._parse_api_response(data)
         assert len(entries) == 1
         assert entries[0] == (1, "Queen", "Bohemian Rhapsody")
+
+
+def test_top2000_future_year_guard():
+    """Test that scraping future years raises an error."""
+    import tempfile
+    from pathlib import Path
+
+    import pytest
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = HttpCache(Path(tmpdir) / "cache")
+        scraper = Top2000Scraper(cache)
+
+        # Far future year should always fail
+        with pytest.raises(Top2000FutureYearError, match="doesn't exist yet"):
+            scraper.scrape("2099")
+
+        # Past year should not raise (the validation step)
+        # Note: This doesn't test the actual scrape, just the validation
+        scraper._validate_year_available(2020)  # Should not raise
+
+
+def test_top2000_validate_year_available_past():
+    """Test that past years are always considered available."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = HttpCache(Path(tmpdir) / "cache")
+        scraper = Top2000Scraper(cache)
+
+        # Historical years should never raise
+        scraper._validate_year_available(1999)
+        scraper._validate_year_available(2010)
+        scraper._validate_year_available(2020)
+        scraper._validate_year_available(2023)
+        scraper._validate_year_available(2024)

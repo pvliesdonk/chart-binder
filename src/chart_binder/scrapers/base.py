@@ -122,6 +122,33 @@ EXPECTED_ENTRY_COUNTS: dict[str, int] = {
     "nl_538_zwaarste": 150,  # 538 De Zwaarste Lijst (typically 150)
 }
 
+# Known authentic numeric-only song titles (not parsing errors)
+# These songs legitimately have numbers as titles
+AUTHENTIC_NUMERIC_TITLES: frozenset[str] = frozenset(
+    {
+        "1999",  # Prince
+        "1979",  # Smashing Pumpkins
+        "505",  # Arctic Monkeys
+        "1992",  # Various artists (Eros & Apollo, etc.)
+        "1985",  # Bowling for Soup
+        "1901",  # Phoenix
+        "1973",  # James Blunt
+        "2002",  # Anne-Marie
+        "7",  # Catfish and the Bottlemen, Prince
+        "22",  # Taylor Swift
+        "25",  # Adele (album but could be title)
+        "45",  # Shinedown
+        "99",  # Barns Courtney
+        "100",  # Various
+        "19",  # Adele (album)
+        "21",  # Adele (album)
+        "30",  # Adele (album)
+        "311",  # Band name sometimes listed as title
+        "867",  # Part of "867-5309/Jenny" but could appear alone
+        "10538",  # ELO "10538 Overture" sometimes truncated
+    }
+)
+
 
 def cross_reference_previous_positions(
     scraped_entries: list[ScrapedEntry],
@@ -428,9 +455,10 @@ class ChartScraper(ABC):
         if slash_count > 5:
             warnings.append(f"Excessive slashes detected ({slash_count}) - possible parsing issue")
 
-        # Check for numeric-only title
+        # Check for numeric-only title (unless it's a known authentic numeric title)
         if title.strip() and title.strip().isdigit():
-            warnings.append(f"Title is numeric-only: '{title}' - likely parsing error")
+            if title.strip() not in AUTHENTIC_NUMERIC_TITLES:
+                warnings.append(f"Title is numeric-only: '{title}' - likely parsing error")
 
         # Check for empty required fields
         if not artist.strip():
@@ -597,3 +625,27 @@ def test_cross_reference_previous_positions_empty():
 
     mismatches = cross_reference_previous_positions(scraped, db_previous)
     assert len(mismatches) == 0
+
+
+def test_validate_entry_numeric_title_authentic():
+    """Test that known authentic numeric titles don't trigger warnings."""
+
+    class DummyScraper(ChartScraper):
+        def scrape(self, period: str) -> list[tuple[int, str, str]]:
+            return []
+
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = HttpCache(Path(tmpdir) / "cache")
+        scraper = DummyScraper("test", cache)
+
+        # Known authentic numeric titles should NOT trigger warnings
+        assert scraper._validate_entry(1, "Prince", "1999") == []
+        assert scraper._validate_entry(2, "Smashing Pumpkins", "1979") == []
+        assert scraper._validate_entry(3, "Arctic Monkeys", "505") == []
+
+        # Unknown numeric titles SHOULD trigger warnings
+        warnings = scraper._validate_entry(4, "Unknown Artist", "12345")
+        assert any("numeric-only" in w for w in warnings)
