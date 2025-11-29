@@ -15,9 +15,11 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from chart_binder.config import Config
     from chart_binder.decisions_db import DecisionsDB
     from chart_binder.llm.adjudicator import LLMAdjudicator
     from chart_binder.llm.review_queue import ReviewQueue
+    from chart_binder.musicgraph import MusicGraphDB
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +75,9 @@ class BatchProcessor:
     def __init__(
         self,
         decisions_db: DecisionsDB,
-        adjudicator: LLMAdjudicator,
+        adjudicator: LLMAdjudicator | None = None,
+        config: Config | None = None,
+        music_graph_db: MusicGraphDB | None = None,
         review_queue: ReviewQueue | None = None,
         auto_accept_threshold: float = 0.85,
         review_threshold: float = 0.60,
@@ -81,6 +85,8 @@ class BatchProcessor:
     ):
         self.decisions_db = decisions_db
         self.adjudicator = adjudicator
+        self.config = config
+        self.music_graph_db = music_graph_db
         self.review_queue = review_queue
         self.auto_accept_threshold = auto_accept_threshold
         self.review_threshold = review_threshold
@@ -337,22 +343,81 @@ class BatchProcessor:
             # Apply rate limiting
             self._rate_limit()
 
-            # Build evidence bundle (simplified - would need more complete implementation)
+            # Build evidence bundle
+            import json
+
             evidence_bundle: dict[str, Any] = {
                 "artist": {"name": "Unknown"},
                 "recording_candidates": [],
                 "provenance": {"sources_used": ["decisions_db"]},
             }
 
-            # Extract work_key
+            # Extract artist and title from work_key
             if " // " in work_key:
                 parts = work_key.split(" // ", 1)
                 evidence_bundle["artist"] = {"name": parts[0]}
+                if len(parts) > 1:
+                    evidence_bundle["recording_title"] = parts[1]
+            else:
+                evidence_bundle["work_key_raw"] = work_key
+
+            # Include decision trace info if available
+            trace_compact = decision.get("trace_compact", "")
+            if trace_compact:
+                evidence_bundle["decision_trace_compact"] = trace_compact
+
+            # Include config snapshot from decision
+            config_json = decision.get("config_snapshot_json", "{}")
+            try:
+                evidence_bundle["config_snapshot"] = json.loads(config_json)
+            except json.JSONDecodeError:
+                pass
+
+            # Try to enrich evidence from music graph if available
+            if self.music_graph_db:
+                # If we have mb_recording_id, try to get recording info
+                mb_recording_id = decision.get("mb_recording_id")
+                if mb_recording_id:
+                    recording = self.music_graph_db.get_recording(mb_recording_id)
+                    if recording:
+                        evidence_bundle["recording_candidates"] = [
+                            {
+                                "title": recording.get("title", ""),
+                                "mb_recording_id": mb_recording_id,
+                                "rg_candidates": [],
+                            }
+                        ]
+                        # If we have artist info, get it
+                        artist_mbid = recording.get("artist_mbid")
+                        if artist_mbid:
+                            artist = self.music_graph_db.get_artist(artist_mbid)
+                            if artist:
+                                evidence_bundle["artist"] = {
+                                    "name": artist.get("name", "Unknown"),
+                                    "mb_artist_id": artist_mbid,
+                                    "begin_area_country": artist.get("begin_area_country"),
+                                }
+
+            # Include existing decision info for context
+            evidence_bundle["existing_decision"] = {
+                "mb_rg_id": decision.get("mb_rg_id"),
+                "mb_release_id": decision.get("mb_release_id"),
+                "state": decision.get("state"),
+            }
 
             log.info(f"Adjudicating {work_key} (file_id: {file_id[:16]}...)")
 
+            # Build decision trace dict from compact string
+            decision_trace: dict[str, Any] | None = None
+            if trace_compact:
+                decision_trace = {"trace_compact": trace_compact}
+
+            # Check adjudicator is available
+            if not self.adjudicator:
+                raise ValueError("Adjudicator not configured for batch processing")
+
             # Call LLM adjudicator
-            adjudication_result = self.adjudicator.adjudicate(evidence_bundle)
+            adjudication_result = self.adjudicator.adjudicate(evidence_bundle, decision_trace)
 
             # Determine outcome based on confidence
             if adjudication_result.outcome == AdjudicationOutcome.ERROR:

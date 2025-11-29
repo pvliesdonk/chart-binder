@@ -1831,6 +1831,7 @@ def llm_batch_adjudicate(
     from chart_binder.llm import LLMAdjudicator
     from chart_binder.llm.batch import BatchProcessor, BatchState
     from chart_binder.llm.review_queue import ReviewQueue
+    from chart_binder.musicgraph import MusicGraphDB
 
     config: Config = ctx.obj["config"]
 
@@ -1841,6 +1842,9 @@ def llm_batch_adjudicate(
 
     # Load decisions database
     decisions_db = DecisionsDB(config.database.decisions_path)
+
+    # Load music graph database
+    music_graph_db = MusicGraphDB(config.database.music_graph_path)
 
     # Create adjudicator
     adjudicator = LLMAdjudicator(config=config.llm)
@@ -1860,6 +1864,8 @@ def llm_batch_adjudicate(
     processor = BatchProcessor(
         decisions_db=decisions_db,
         adjudicator=adjudicator,
+        config=config,
+        music_graph_db=music_graph_db,
         review_queue=review_queue,
         auto_accept_threshold=auto_accept_threshold,
         review_threshold=review_threshold,
@@ -2037,7 +2043,6 @@ def llm_batch_results(ctx: click.Context, session_id: str, verbose: bool) -> Non
     # Create batch processor (just to access session data)
     processor = BatchProcessor(
         decisions_db=decisions_db,
-        adjudicator=None,  # type: ignore
         rate_limit_per_min=0,
     )
 
@@ -2169,7 +2174,6 @@ def llm_inspect(ctx: click.Context, session_id: str, file_id: str) -> None:
     # Create batch processor (just to access data)
     processor = BatchProcessor(
         decisions_db=decisions_db,
-        adjudicator=None,  # type: ignore
         rate_limit_per_min=0,
     )
 
