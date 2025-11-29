@@ -499,6 +499,18 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                             except Exception as e:
                                 logger.debug(f"Failed to fetch {mbid}: {e}")
 
+                # Source 4: Search by barcode (Discogs)
+                if tagset.barcode:
+                    logger.debug(f"Searching Discogs by barcode: {tagset.barcode}")
+                    search_results = fetcher.search_recordings(
+                        barcode=tagset.barcode,
+                        title=tagset.title,
+                        artist=tagset.artist,
+                    )
+                    logger.debug(f"Barcode search returned {len(search_results)} results")
+                    # Note: Discogs results may not have MB IDs, so we just log them
+                    # They'll be included in the evidence bundle for the resolver
+
                 # Discover all candidates from local DB (populated by fetches above)
                 length_ms = duration_sec * 1000 if duration_sec else None
                 candidates = candidate_builder.discover_by_title_artist_length(

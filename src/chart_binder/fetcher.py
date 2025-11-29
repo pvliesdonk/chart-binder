@@ -25,7 +25,10 @@ from chart_binder.wikidata import WikidataClient
 # Higher values indicate more reliable matching methods
 CONFIDENCE_ISRC_MUSICBRAINZ = 0.95  # ISRC is unique and MusicBrainz is canonical
 CONFIDENCE_ISRC_SPOTIFY = 0.90  # ISRC is unique but Spotify metadata less canonical
+CONFIDENCE_LINKED_MB_DISCOGS = 0.90  # Cross-referenced between MB and Discogs
+CONFIDENCE_BARCODE_DISCOGS = 0.85  # Barcode is reliable but may have variants
 CONFIDENCE_TEXT_SEARCH = 0.70  # Text search is fuzzy and may have false positives
+CONFIDENCE_TEXT_SEARCH_DISCOGS = 0.65  # Discogs text search less canonical than MB
 # Note: AcoustID confidence comes directly from the API response
 
 
@@ -254,6 +257,7 @@ class UnifiedFetcher:
         artist: str | None = None,
         fingerprint: str | None = None,
         duration_sec: int | None = None,
+        barcode: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         Search for recordings with fallback chain.
@@ -261,7 +265,8 @@ class UnifiedFetcher:
         Tries in order:
         1. ISRC lookup (MB, then Spotify)
         2. Fingerprint (AcoustID)
-        3. Title + artist search (MB, then Spotify)
+        3. Barcode lookup (Discogs)
+        4. Title + artist search (MB, then Discogs)
 
         Args:
             isrc: ISRC code
@@ -269,6 +274,7 @@ class UnifiedFetcher:
             artist: Artist name
             fingerprint: AcoustID fingerprint
             duration_sec: Track duration in seconds (for fingerprint)
+            barcode: UPC/EAN barcode
 
         Returns:
             List of recording matches with confidence scores
@@ -316,6 +322,24 @@ class UnifiedFetcher:
                     }
                 )
 
+        # Try barcode (Discogs)
+        if barcode and self.discogs_client:
+            discogs_releases = self.discogs_client.search_by_barcode(barcode, limit=5)
+            for release in discogs_releases:
+                # Hydrate release data into database
+                # For now, we don't have MB IDs, so we'll just return Discogs data
+                result_data = {
+                    "discogs_release_id": str(release.id),
+                    "title": release.title,
+                    "artist_name": release.artist,
+                    "source": "discogs_barcode",
+                    "confidence": CONFIDENCE_BARCODE_DISCOGS,
+                    "barcode": barcode,
+                }
+                if release.master_id:
+                    result_data["discogs_master_id"] = str(release.master_id)
+                results.append(result_data)
+
         # Try title + artist search
         if title and artist:
             mb_results = self.mb_client.search_recordings(artist=artist, title=title, limit=10)
@@ -329,6 +353,24 @@ class UnifiedFetcher:
                         "confidence": CONFIDENCE_TEXT_SEARCH,
                     }
                 )
+
+            # Also try Discogs title + artist search
+            if self.discogs_client:
+                discogs_results = self.discogs_client.search_database(
+                    artist=artist, title=title, search_type="release", per_page=10
+                )
+                for result in discogs_results[:10]:
+                    if result.get("type") == "release" and result.get("id"):
+                        result_data = {
+                            "discogs_release_id": str(result["id"]),
+                            "title": result.get("title", ""),
+                            "artist_name": result.get("artist", "") if isinstance(result.get("artist"), str) else "",
+                            "source": "discogs_search",
+                            "confidence": CONFIDENCE_TEXT_SEARCH_DISCOGS,
+                        }
+                        if result.get("master_id"):
+                            result_data["discogs_master_id"] = str(result["master_id"])
+                        results.append(result_data)
 
         # Sort by confidence
         results.sort(key=lambda r: r.get("confidence", 0.0), reverse=True)

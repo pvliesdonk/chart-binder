@@ -75,6 +75,7 @@ class TagSet:
     country: str | None = None  # ISO-3166-1 alpha-2
     media_format: str | None = None
     release_type: ReleaseType | None = None
+    barcode: str | None = None  # UPC/EAN barcode
 
     # Canonical IDs (always safe to add)
     ids: CanonicalIDs = field(default_factory=CanonicalIDs)
@@ -167,6 +168,7 @@ class ID3TagWriter(TagWriter):
     TXXX_FRAMES = {
         "country": "COUNTRY",
         "release_type": "CANONICAL_RELEASE_TYPE",
+        "barcode": "BARCODE",
         "mb_recording_id": "MB_RECORDING_ID",
         "mb_release_group_id": "MB_RELEASE_GROUP_ID",
         "mb_release_id": "MB_RELEASE_ID",
