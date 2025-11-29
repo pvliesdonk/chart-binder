@@ -702,7 +702,7 @@ def charts_scrape(
     output_format: OutputFormat = ctx.obj["output"]
 
     cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
-    db = ChartsDB(config.charts_db.path)
+    db = ChartsDB(config.database.charts_path)
 
     # Get scraper class and DB ID from registry
     scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
@@ -841,7 +841,7 @@ def charts_scrape(
 
         # Ingest entries
         entries_for_ingest = [(rank, artist, title) for rank, artist, title in result.entries]
-        run_id = etl.ingest_run(chart_db_id, period, entries_for_ingest)
+        run_id = etl.ingest(chart_db_id, period, entries_for_ingest)
 
         if output_format == OutputFormat.TEXT:
             click.echo(f"✔︎ Ingested {result.actual_count} entries (run_id: {run_id[:8]}...)")
@@ -906,7 +906,7 @@ def charts_scrape_missing(
         start_year = default_start_years.get(chart_type, 2000)
 
     # Get existing runs from database
-    db = ChartsDB(config.charts_db.path)
+    db = ChartsDB(config.database.charts_path)
     existing_runs = db.list_runs(chart_db_id)
     existing_periods = {run["period"] for run in existing_runs}
 
@@ -1011,7 +1011,7 @@ def charts_scrape_missing(
                     entries_for_ingest = [
                         (rank, artist, title) for rank, artist, title in result.entries
                     ]
-                    etl.ingest_run(chart_db_id, period, entries_for_ingest)
+                    etl.ingest(chart_db_id, period, entries_for_ingest)
 
             except Exception as e:
                 failed += 1
