@@ -484,34 +484,62 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                             except Exception as e:
                                 logger.debug(f"Failed to fetch fingerprint result: {e}")
 
-                # Source 3: Search by title + artist
+                # Source 3: Search by title + artist (both MB and Discogs)
                 if tagset.artist and tagset.title:
-                    logger.debug(f"Searching MusicBrainz for: {tagset.artist} - {tagset.title}")
+                    logger.debug(f"Searching for: {tagset.artist} - {tagset.title}")
                     search_results = fetcher.search_recordings(
                         title=tagset.title,
                         artist=tagset.artist,
                     )
                     logger.debug(f"Title/artist search returned {len(search_results)} results")
-                    for result in search_results[:5]:  # Limit hydration to top 5
-                        if result.get("recording_mbid"):
+
+                    # Hydrate from both sources: top 5 MB + top 5 Discogs
+                    # This ensures we get evidence from multiple sources, not just highest confidence
+                    mb_count = 0
+                    discogs_count = 0
+                    for result in search_results:
+                        # Hydrate MusicBrainz results
+                        if result.get("recording_mbid") and mb_count < 5:
                             mbid = result["recording_mbid"]
-                            logger.debug(f"Hydrating recording {mbid}")
+                            logger.debug(f"Hydrating MB recording {mbid}")
                             try:
                                 fetcher.fetch_recording(mbid)
+                                mb_count += 1
                             except Exception as e:
-                                logger.debug(f"Failed to fetch {mbid}: {e}")
+                                logger.debug(f"Failed to fetch MB recording {mbid}: {e}")
+                        # Hydrate Discogs results
+                        elif result.get("discogs_release_id") and discogs_count < 5:
+                            discogs_id = result["discogs_release_id"]
+                            logger.debug(f"Hydrating Discogs release {discogs_id}")
+                            try:
+                                fetcher.fetch_discogs_release(discogs_id)
+                                discogs_count += 1
+                            except Exception as e:
+                                logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
+
+                        # Stop when we have enough from both sources
+                        if mb_count >= 5 and discogs_count >= 5:
+                            break
+
+                    logger.debug(f"Hydrated {mb_count} MB recordings and {discogs_count} Discogs releases")
 
                 # Source 4: Search by barcode (Discogs)
                 if tagset.barcode:
                     logger.debug(f"Searching Discogs by barcode: {tagset.barcode}")
-                    search_results = fetcher.search_recordings(
+                    barcode_results = fetcher.search_recordings(
                         barcode=tagset.barcode,
                         title=tagset.title,
                         artist=tagset.artist,
                     )
-                    logger.debug(f"Barcode search returned {len(search_results)} results")
-                    # Note: Discogs results may not have MB IDs, so we just log them
-                    # They'll be included in the evidence bundle for the resolver
+                    logger.debug(f"Barcode search returned {len(barcode_results)} results")
+                    for result in barcode_results[:5]:  # Limit to top 5 barcode matches
+                        if result.get("discogs_release_id"):
+                            discogs_id = result["discogs_release_id"]
+                            logger.debug(f"Hydrating Discogs barcode result {discogs_id}")
+                            try:
+                                fetcher.fetch_discogs_release(discogs_id)
+                            except Exception as e:
+                                logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
 
                 # Discover all candidates from local DB (populated by fetches above)
                 length_ms = duration_sec * 1000 if duration_sec else None

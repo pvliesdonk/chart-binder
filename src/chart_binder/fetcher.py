@@ -258,6 +258,91 @@ class UnifiedFetcher:
             "recording": data,
         }
 
+    def fetch_discogs_release(self, discogs_release_id: str) -> dict[str, Any]:
+        """
+        Fetch Discogs release by ID and hydrate into database.
+
+        For Discogs-only data (no MB ID), uses synthetic IDs:
+        - Release: discogs-release-{id}
+        - Master: discogs-master-{id}
+        - Artist: discogs-artist-{name_normalized}
+
+        Args:
+            discogs_release_id: Discogs release ID
+
+        Returns:
+            Dict with release data
+        """
+        # Fetch full release data from Discogs
+        release = self.discogs_client.get_release(discogs_release_id)
+
+        # Create synthetic IDs for Discogs-only entities
+        synthetic_release_id = f"discogs-release-{release.id}"
+        synthetic_master_id = f"discogs-master-{release.master_id}" if release.master_id else None
+
+        # Normalize artist name for synthetic artist ID
+        artist_name = release.artist or "Unknown"
+        artist_normalized = artist_name.lower().replace(" ", "-").replace("&", "and")
+        synthetic_artist_id = f"discogs-artist-{artist_normalized}"
+
+        # Hydrate artist (Discogs-only)
+        self.db.upsert_artist(
+            mbid=synthetic_artist_id,
+            name=artist_name,
+            sort_name=artist_name,
+        )
+
+        # Hydrate master (release group equivalent)
+        if synthetic_master_id:
+            self.db.upsert_release_group(
+                mbid=synthetic_master_id,
+                title=release.title,
+                artist_mbid=synthetic_artist_id,
+                first_release_date=str(release.year) if release.year else None,
+                discogs_master_id=str(release.master_id) if release.master_id else None,
+            )
+
+        # Hydrate release
+        # Note: Discogs has lists for labels/formats, convert to single value for now
+        label = release.labels[0] if release.labels else None
+        format_str = release.formats[0] if release.formats else None
+
+        self.db.upsert_release(
+            mbid=synthetic_release_id,
+            title=release.title,
+            release_group_mbid=synthetic_master_id,
+            artist_mbid=synthetic_artist_id,
+            date=str(release.year) if release.year else None,
+            country=release.country,
+            label=label,
+            format=format_str,
+            barcode=release.barcode,
+            discogs_release_id=str(release.id),
+        )
+
+        # Create synthetic recording ID (Discogs doesn't have recording concept)
+        # Use release ID as recording ID since we don't have track-level data
+        synthetic_recording_id = f"discogs-recording-{release.id}"
+
+        self.db.upsert_recording(
+            mbid=synthetic_recording_id,
+            title=release.title,
+            artist_mbid=synthetic_artist_id,
+        )
+
+        # Link recording to release
+        self.db.upsert_recording_release(synthetic_recording_id, synthetic_release_id)
+
+        return {
+            "release": release,
+            "synthetic_ids": {
+                "recording": synthetic_recording_id,
+                "release": synthetic_release_id,
+                "release_group": synthetic_master_id,
+                "artist": synthetic_artist_id,
+            },
+        }
+
     def search_recordings(
         self,
         isrc: str | None = None,
