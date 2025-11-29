@@ -388,8 +388,9 @@ def _get_or_calc_fingerprint(
 @click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--explain", is_flag=True, help="Show detailed decision rationale")
 @click.option("--no-persist", is_flag=True, help="Skip persisting decisions to database")
+@click.option("--quiet", "-q", is_flag=True, help="Show only summary, not per-file output")
 @click.pass_context
-def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persist: bool) -> None:
+def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persist: bool, quiet: bool) -> None:
     """
     Make canonicalization decisions for audio files.
 
@@ -398,6 +399,9 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
     multiple sources (MusicBrainz, Discogs, Spotify, AcoustID) and the
     CandidateBuilder to construct evidence bundles. Persists decisions to the
     decisions database for drift tracking.
+
+    Use --quiet/-q for batch processing to show only progress and summary instead
+    of detailed per-file output.
     """
     from chart_binder.candidates import CandidateBuilder, CandidateSet
     from chart_binder.decisions_db import DecisionsDB
@@ -453,8 +457,15 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
 
+    # Track statistics for quiet mode
+    stats = {"decided": 0, "indeterminate": 0, "errors": 0}
+    total_files = len(audio_files)
+
+    if quiet and output_format == OutputFormat.TEXT:
+        click.echo(f"Processing {total_files} files...")
+
     with UnifiedFetcher(fetcher_config) as fetcher:
-        for audio_file in audio_files:
+        for idx, audio_file in enumerate(audio_files, 1):
             try:
                 tagset = verify(audio_file)
 
@@ -677,7 +688,24 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
 
                 results.append(result)
 
-                if output_format == OutputFormat.TEXT:
+                # Update statistics
+                if decision.state.value == "decided":
+                    stats["decided"] += 1
+                else:
+                    stats["indeterminate"] += 1
+
+                # Show progress in quiet mode
+                if quiet and output_format == OutputFormat.TEXT:
+                    if idx % 10 == 0 or idx == total_files:  # Update every 10 files or at end
+                        pct = (idx / total_files) * 100
+                        click.echo(
+                            f"  Progress: {idx}/{total_files} ({pct:.1f}%) "
+                            f"[✔︎{stats['decided']} ∆{stats['indeterminate']} ✘{stats['errors']}]",
+                            err=True,
+                        )
+
+                # Show detailed output if not quiet
+                if not quiet and output_format == OutputFormat.TEXT:
                     state_icon = "✔︎" if decision.state.value == "decided" else "∆"
                     click.echo(f"\n{state_icon} {audio_file}")
                     click.echo(f"  Artist: {artist_name}")
@@ -702,18 +730,36 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                     if explain:
                         click.echo("\n" + decision.decision_trace.to_human_readable())
 
-                if decision.decision_trace.missing_facts:
-                    click.echo("\nMissing Facts:")
-                    for fact in decision.decision_trace.missing_facts:
-                        click.echo(f"  - {fact}")
+                    if decision.decision_trace.missing_facts:
+                        click.echo("\nMissing Facts:")
+                        for fact in decision.decision_trace.missing_facts:
+                            click.echo(f"  - {fact}")
 
             except Exception as e:
-                if output_format == OutputFormat.TEXT:
+                stats["errors"] += 1
+                if not quiet and output_format == OutputFormat.TEXT:
                     click.echo(f"\n✘ {audio_file}: {e}", err=True)
                 results.append({"file": str(audio_file), "error": str(e)})
 
+                # Show progress in quiet mode even for errors
+                if quiet and output_format == OutputFormat.TEXT:
+                    if idx % 10 == 0 or idx == total_files:
+                        pct = (idx / total_files) * 100
+                        click.echo(
+                            f"  Progress: {idx}/{total_files} ({pct:.1f}%) "
+                            f"[✔︎{stats['decided']} ∆{stats['indeterminate']} ✘{stats['errors']}]",
+                            err=True,
+                        )
+
     if output_format == OutputFormat.JSON:
         click.echo(json.dumps(results, indent=2))
+    elif quiet and output_format == OutputFormat.TEXT:
+        # Print final summary in quiet mode
+        click.echo(f"\n✓ Completed {total_files} files:")
+        click.echo(f"  Decided:       {stats['decided']}")
+        click.echo(f"  Indeterminate: {stats['indeterminate']}")
+        if stats['errors'] > 0:
+            click.echo(f"  Errors:        {stats['errors']}")
 
     sys.exit(ExitCode.SUCCESS if results else ExitCode.NO_RESULTS)
 
