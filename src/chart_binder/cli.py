@@ -251,25 +251,66 @@ def scan(ctx: click.Context, paths: tuple[Path, ...]) -> None:
     sys.exit(ExitCode.SUCCESS if results else ExitCode.NO_RESULTS)
 
 
+def _get_or_calc_fingerprint(
+    audio_file: Path,
+    tagset: Any,  # TagSet
+    logger: logging.Logger,
+) -> tuple[str | None, int | None]:
+    """
+    Get fingerprint from tags (trust-on-read) or calculate it.
+
+    Returns (fingerprint, duration_sec) tuple.
+    """
+    from chart_binder.fingerprint import FingerprintError, calculate_fingerprint
+
+    # Trust-on-read: check if fingerprint is already in tags
+    if tagset.compact.fingerprint and tagset.compact.fingerprint_duration:
+        logger.debug(f"Using cached fingerprint from tags for {audio_file}")
+        return tagset.compact.fingerprint, tagset.compact.fingerprint_duration
+
+    # Calculate fingerprint via fpcalc
+    try:
+        fp_result = calculate_fingerprint(audio_file)
+        logger.debug(f"Calculated fingerprint for {audio_file}: {fp_result.duration_sec}s")
+        return fp_result.fingerprint, fp_result.duration_sec
+    except FingerprintError as e:
+        logger.warning(f"Fingerprint calculation failed for {audio_file}: {e}")
+        return None, None
+
+
 @canon.command()
 @click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--explain", is_flag=True, help="Show detailed decision rationale")
+@click.option("--no-persist", is_flag=True, help="Skip persisting decisions to database")
 @click.pass_context
-def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
+def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persist: bool) -> None:
     """
     Make canonicalization decisions for audio files.
 
     Resolves the Canonical Release Group (CRG) and Representative Release (RR)
-    for each file based on available metadata.
+    for each file based on available metadata. Persists decisions to the
+    decisions database for drift tracking.
     """
-    from chart_binder.resolver import ConfigSnapshot, Resolver
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.decisions_db import DecisionState as DBDecisionState
+    from chart_binder.resolver import ConfigSnapshot, DecisionState, Resolver
     from chart_binder.tagging import verify
 
     logger = logging.getLogger(__name__)
     logger.info(f"Running decide command on {len(paths)} path(s), explain={explain}")
 
     output_format = ctx.obj["output"]
+    config: Config = ctx.obj["config"]
     results: list[dict[str, Any]] = []
+
+    # Initialize decisions database
+    decisions_db: DecisionsDB | None = None
+    if not no_persist:
+        try:
+            decisions_db = DecisionsDB(config.database.decisions_path)
+            logger.debug(f"Initialized decisions DB at {config.database.decisions_path}")
+        except Exception as e:
+            logger.warning(f"Could not initialize decisions DB: {e}")
 
     # Create resolver with config
     resolver_config = ConfigSnapshot(
@@ -283,6 +324,9 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
     for audio_file in audio_files:
         try:
             tagset = verify(audio_file)
+
+            # Get or calculate fingerprint for stable identity
+            fingerprint, duration_sec = _get_or_calc_fingerprint(audio_file, tagset, logger)
 
             # Build minimal evidence bundle from existing tags
             evidence_bundle: dict[str, Any] = {
@@ -328,6 +372,51 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
                 ]
 
             decision = resolver.resolve(evidence_bundle)
+
+            # Persist decision to database if fingerprint available
+            if decisions_db and fingerprint and duration_sec:
+                file_id = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+
+                # Determine library root and relative path
+                library_root = str(audio_file.parent)
+                relative_path = audio_file.name
+
+                # Upsert file artifact
+                decisions_db.upsert_file_artifact(
+                    file_id=file_id,
+                    library_root=library_root,
+                    relative_path=relative_path,
+                    duration_ms=duration_sec * 1000 if duration_sec else None,
+                    fp_id=fingerprint[:32] if fingerprint else None,
+                )
+
+                # Map resolver state to DB state
+                db_state = (
+                    DBDecisionState.DECIDED
+                    if decision.state == DecisionState.DECIDED
+                    else DBDecisionState.INDETERMINATE
+                )
+
+                # Build work_key from artist and title
+                work_key = f"{tagset.artist or 'unknown'}_{tagset.title or 'unknown'}".lower()
+
+                # Upsert decision
+                decisions_db.upsert_decision(
+                    file_id=file_id,
+                    work_key=work_key,
+                    mb_rg_id=decision.release_group_mbid or "",
+                    mb_release_id=decision.release_mbid or "",
+                    mb_recording_id=tagset.ids.mb_recording_id,
+                    ruleset_version=decision.decision_trace.ruleset_version,
+                    config_snapshot={
+                        "lead_window_days": resolver_config.lead_window_days,
+                        "reissue_long_gap_years": resolver_config.reissue_long_gap_years,
+                    },
+                    evidence_hash=decision.decision_trace.evidence_hash,
+                    trace_compact=decision.compact_tag,
+                    state=db_state,
+                )
+                logger.debug(f"Persisted decision for {audio_file} (file_id={file_id[:16]}...)")
 
             result = {
                 "file": str(audio_file),
@@ -385,17 +474,23 @@ def write(ctx: click.Context, paths: tuple[Path, ...], dry_run: bool, apply: boo
     """
     Write canonical tags to audio files.
 
-    Writes decision trace, canonical IDs, and optionally CHARTS blob to files.
+    Writes decision trace, canonical IDs, fingerprint, and optionally CHARTS
+    blob to files. The fingerprint is stored for stable file identity across
+    tag edits and file moves.
+
     Use --dry-run to preview changes without writing.
     Use --apply to confirm actual writes (safety feature).
     """
+    from chart_binder.fingerprint import FingerprintError, calculate_fingerprint
     from chart_binder.tagging import (
         CanonicalIDs,
         CompactFields,
         TagSet,
+        verify,
         write_tags,
     )
 
+    logger = logging.getLogger(__name__)
     output_format = ctx.obj["output"]
     results = []
 
@@ -407,12 +502,39 @@ def write(ctx: click.Context, paths: tuple[Path, ...], dry_run: bool, apply: boo
 
     for audio_file in audio_files:
         try:
-            # For now, create a minimal tagset for demonstration
-            # In full implementation, this would come from decide()
+            # Read existing tags
+            existing_tagset = verify(audio_file)
+
+            # Get or calculate fingerprint for stable identity
+            fingerprint: str | None = None
+            duration_sec: int | None = None
+
+            # Trust-on-read: check if fingerprint is already in tags
+            if (
+                existing_tagset.compact.fingerprint
+                and existing_tagset.compact.fingerprint_duration
+            ):
+                fingerprint = existing_tagset.compact.fingerprint
+                duration_sec = existing_tagset.compact.fingerprint_duration
+                logger.debug(f"Using cached fingerprint from tags for {audio_file}")
+            else:
+                # Calculate fingerprint via fpcalc
+                try:
+                    fp_result = calculate_fingerprint(audio_file)
+                    fingerprint = fp_result.fingerprint
+                    duration_sec = fp_result.duration_sec
+                    logger.debug(f"Calculated fingerprint for {audio_file}")
+                except FingerprintError as e:
+                    logger.warning(f"Fingerprint calculation failed for {audio_file}: {e}")
+
+            # Build tagset with fingerprint
+            # In full implementation, this would include decision data
             tagset = TagSet(
                 ids=CanonicalIDs(),
                 compact=CompactFields(
                     ruleset_version="canon-1.0",
+                    fingerprint=fingerprint,
+                    fingerprint_duration=duration_sec,
                 ),
             )
 

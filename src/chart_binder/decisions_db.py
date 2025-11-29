@@ -230,13 +230,32 @@ class DecisionsDB:
         conn.close()
 
     @staticmethod
-    def generate_file_id(path: Path, size: int, mtime: float) -> str:
+    def generate_file_id(fingerprint: str, duration_sec: int) -> str:
         """
-        Generate stable file ID from path, size, and mtime.
+        Generate stable file ID from audio fingerprint and duration.
 
-        This creates a deterministic signature for file artifact tracking.
+        This creates an acoustic identity that survives tag edits,
+        file renames, and file moves.
+
+        Args:
+            fingerprint: Chromaprint audio fingerprint
+            duration_sec: Track duration in seconds
+
+        Returns:
+            SHA-256 hash of fingerprint:duration
         """
-        signature = f"{path}:{size}:{int(mtime)}"
+        signature = f"{fingerprint}:{duration_sec}"
+        return hashlib.sha256(signature.encode()).hexdigest()
+
+    @staticmethod
+    def generate_file_id_fallback(path: Path, size: int, mtime: float) -> str:
+        """
+        Generate fallback file ID from path, size, and mtime.
+
+        DEPRECATED: Use generate_file_id with fingerprint for stable identity.
+        This method is fragile - changes when tags are modified.
+        """
+        signature = f"fallback:{path}:{size}:{int(mtime)}"
         return hashlib.sha256(signature.encode()).hexdigest()
 
     def upsert_file_artifact(
@@ -541,14 +560,32 @@ def test_decisions_db_schema(tmp_path):
 
 
 def test_file_id_generation():
-    """Test file ID generation is deterministic."""
+    """Test fingerprint-based file ID generation is deterministic."""
+    fingerprint = "AQABz0qUkZK4oOfhL-CPc4e5C_wW2H2QH9uDL4cvoT8UNQ"
+    duration_sec = 180
+
+    file_id1 = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+    file_id2 = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+    assert file_id1 == file_id2
+
+    # Different fingerprint = different ID
+    file_id3 = DecisionsDB.generate_file_id("different_fingerprint", duration_sec)
+    assert file_id1 != file_id3
+
+    # Different duration = different ID
+    file_id4 = DecisionsDB.generate_file_id(fingerprint, 200)
+    assert file_id1 != file_id4
+
+
+def test_file_id_fallback_generation():
+    """Test fallback file ID generation is deterministic."""
     path = Path("/music/song.mp3")
-    file_id1 = DecisionsDB.generate_file_id(path, 1024, 1234567890.0)
-    file_id2 = DecisionsDB.generate_file_id(path, 1024, 1234567890.0)
+    file_id1 = DecisionsDB.generate_file_id_fallback(path, 1024, 1234567890.0)
+    file_id2 = DecisionsDB.generate_file_id_fallback(path, 1024, 1234567890.0)
     assert file_id1 == file_id2
 
     # Different params = different ID
-    file_id3 = DecisionsDB.generate_file_id(path, 1025, 1234567890.0)
+    file_id3 = DecisionsDB.generate_file_id_fallback(path, 1025, 1234567890.0)
     assert file_id1 != file_id3
 
 

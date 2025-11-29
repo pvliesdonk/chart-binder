@@ -48,6 +48,9 @@ class CompactFields:
     decision_trace: str | None = None  # evh=...;crg=...;rr=...;src=...;cfg=...
     ruleset_version: str | None = None
     evidence_hash: str | None = None
+    # Acoustic fingerprint for stable identity (trust-on-read)
+    fingerprint: str | None = None
+    fingerprint_duration: int | None = None  # Duration in seconds
 
 
 @dataclass
@@ -176,6 +179,8 @@ class ID3TagWriter(TagWriter):
         "decision_trace": "TAG_DECISION_TRACE",
         "ruleset_version": "CANON_RULESET_VERSION",
         "evidence_hash": "CANON_EVIDENCE_HASH",
+        "fingerprint": "CHART_BINDER_FINGERPRINT",
+        "fingerprint_duration": "CHART_BINDER_FINGERPRINT_DURATION",
         "orig_title": "ORIG_TITLE",
         "orig_artist": "ORIG_ARTIST",
         "orig_album": "ORIG_ALBUM",
@@ -414,6 +419,16 @@ class ID3TagWriter(TagWriter):
         if tagset.compact.evidence_hash:
             write_txxx("CANON_EVIDENCE_HASH", tagset.compact.evidence_hash, "evidence_hash")
 
+        # Fingerprint fields (for stable acoustic identity)
+        if tagset.compact.fingerprint:
+            write_txxx("CHART_BINDER_FINGERPRINT", tagset.compact.fingerprint, "fingerprint")
+        if tagset.compact.fingerprint_duration:
+            write_txxx(
+                "CHART_BINDER_FINGERPRINT_DURATION",
+                str(tagset.compact.fingerprint_duration),
+                "fingerprint_duration",
+            )
+
         # Save tags
         if not dry_run:
             tags.save(file_path, v2_version=4)
@@ -484,6 +499,8 @@ class VorbisTagWriter(TagWriter):
         "decision_trace": "TAG_DECISION_TRACE",
         "ruleset_version": "CANON_RULESET_VERSION",
         "evidence_hash": "CANON_EVIDENCE_HASH",
+        "fingerprint": "CHART_BINDER_FINGERPRINT",
+        "fingerprint_duration": "CHART_BINDER_FINGERPRINT_DURATION",
         "orig_title": "ORIG_TITLE",
         "orig_artist": "ORIG_ARTIST",
         "orig_album": "ORIG_ALBUM",
@@ -622,6 +639,14 @@ class VorbisTagWriter(TagWriter):
         write_field("CANON_RULESET_VERSION", tagset.compact.ruleset_version, "ruleset_version")
         write_field("CANON_EVIDENCE_HASH", tagset.compact.evidence_hash, "evidence_hash")
 
+        # Fingerprint fields (for stable acoustic identity)
+        write_field("CHART_BINDER_FINGERPRINT", tagset.compact.fingerprint, "fingerprint")
+        write_field(
+            "CHART_BINDER_FINGERPRINT_DURATION",
+            str(tagset.compact.fingerprint_duration) if tagset.compact.fingerprint_duration else None,
+            "fingerprint_duration",
+        )
+
         # Save
         if not dry_run:
             audio.save()
@@ -691,6 +716,8 @@ class MP4TagWriter(TagWriter):
         "decision_trace": "TAG_DECISION_TRACE",
         "ruleset_version": "CANON_RULESET_VERSION",
         "evidence_hash": "CANON_EVIDENCE_HASH",
+        "fingerprint": "CHART_BINDER_FINGERPRINT",
+        "fingerprint_duration": "CHART_BINDER_FINGERPRINT_DURATION",
         "orig_title": "ORIG_TITLE",
         "orig_artist": "ORIG_ARTIST",
         "orig_album": "ORIG_ALBUM",
@@ -876,6 +903,14 @@ class MP4TagWriter(TagWriter):
         write_custom("CANON_RULESET_VERSION", tagset.compact.ruleset_version, "ruleset_version")
         write_custom("CANON_EVIDENCE_HASH", tagset.compact.evidence_hash, "evidence_hash")
 
+        # Fingerprint fields (for stable acoustic identity)
+        write_custom("CHART_BINDER_FINGERPRINT", tagset.compact.fingerprint, "fingerprint")
+        write_custom(
+            "CHART_BINDER_FINGERPRINT_DURATION",
+            str(tagset.compact.fingerprint_duration) if tagset.compact.fingerprint_duration else None,
+            "fingerprint_duration",
+        )
+
         # Save
         if not dry_run:
             audio.save()
@@ -1046,6 +1081,14 @@ def verify(file_path: Path) -> TagSet:
     tagset.compact.decision_trace = tags.get("decision_trace")
     tagset.compact.ruleset_version = tags.get("ruleset_version")
     tagset.compact.evidence_hash = tags.get("evidence_hash")
+    tagset.compact.fingerprint = tags.get("fingerprint")
+    # Parse fingerprint_duration as int if present
+    fp_duration = tags.get("fingerprint_duration")
+    if fp_duration:
+        try:
+            tagset.compact.fingerprint_duration = int(fp_duration)
+        except (ValueError, TypeError):
+            pass
 
     # Stashed originals
     tagset.orig_title = tags.get("orig_title")
