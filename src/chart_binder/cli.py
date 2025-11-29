@@ -2006,6 +2006,260 @@ def llm_batch_adjudicate(
     sys.exit(ExitCode.SUCCESS)
 
 
+@llm.command("batch-results")
+@click.argument("session_id")
+@click.option("--verbose", "-v", is_flag=True, help="Show full details including rationale")
+@click.pass_context
+def llm_batch_results(ctx: click.Context, session_id: str, verbose: bool) -> None:
+    """View results from a batch adjudication session.
+
+    Shows what the LLM decided for each decision in the batch,
+    including confidence scores and rationales.
+
+    Examples:
+
+        # List all results from a session
+        charts llm batch-results batch_20251129_193202_698d8338
+
+        # Show full details including LLM rationales
+        charts llm batch-results batch_20251129_193202_698d8338 --verbose
+    """
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.llm.batch import BatchProcessor
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    # Load decisions database
+    decisions_db = DecisionsDB(config.database.decisions_path)
+
+    # Create batch processor (just to access session data)
+    processor = BatchProcessor(
+        decisions_db=decisions_db,
+        adjudicator=None,  # type: ignore
+        rate_limit_per_min=0,
+    )
+
+    # Get session
+    session = processor.get_session(session_id)
+    if not session:
+        click.echo(f"Session not found: {session_id}", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    # Get results
+    results = processor.get_session_results(session_id)
+
+    if output_format == OutputFormat.JSON:
+        import json
+
+        output = {"session": session.__dict__, "results": results}
+        click.echo(json.dumps(output, indent=2, default=str))
+        sys.exit(ExitCode.SUCCESS)
+
+    # Text output
+    click.echo("Batch Adjudication Results")
+    click.echo("=" * 60)
+    click.echo(f"Session ID: {session_id}")
+    click.echo(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(session.started_at))}")
+    if session.completed_at:
+        click.echo(
+            f"Completed: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(session.completed_at))}"
+        )
+    click.echo(f"State: {session.state.value}")
+    click.echo()
+
+    click.echo("Summary:")
+    click.echo(f"  Total: {session.total_count}")
+    click.echo(f"  Processed: {session.processed_count}")
+    click.echo(f"  ✓ Accepted: {session.accepted_count}")
+    click.echo(f"  ⚠ Review:   {session.reviewed_count}")
+    click.echo(f"  ✗ Rejected: {session.rejected_count}")
+    click.echo(f"  ⨯ Errors:   {session.error_count}")
+    click.echo()
+
+    if not results:
+        click.echo("No results found.")
+        sys.exit(ExitCode.SUCCESS)
+
+    # Group by outcome
+    by_outcome: dict[str, list] = {"accepted": [], "review": [], "rejected": [], "error": []}
+    for result in results:
+        outcome = result.get("outcome", "error")
+        by_outcome[outcome].append(result)
+
+    # Show results grouped by outcome
+    for outcome in ["accepted", "review", "rejected", "error"]:
+        outcome_results = by_outcome[outcome]
+        if not outcome_results:
+            continue
+
+        outcome_label = {
+            "accepted": "✓ Auto-Accepted",
+            "review": "⚠ Needs Review",
+            "rejected": "✗ Rejected (Low Confidence)",
+            "error": "⨯ Errors",
+        }[outcome]
+
+        click.echo(f"{outcome_label} ({len(outcome_results)})")
+        click.echo("-" * 60)
+
+        for result in outcome_results:
+            file_id = result["file_id"]
+            confidence = result.get("confidence", 0.0)
+            crg_mbid = result.get("crg_mbid")
+            rr_mbid = result.get("rr_mbid")
+            rationale = result.get("rationale", "")
+            error = result.get("error_message")
+            model = result.get("model_id", "unknown")
+
+            # Get decision info
+            decision = decisions_db.get_decision(file_id)
+            work_key = decision.get("work_key", "unknown") if decision else "unknown"
+
+            click.echo(f"  File: {file_id[:16]}...")
+            click.echo(f"  Work: {work_key}")
+            click.echo(f"  Confidence: {confidence:.2f}")
+            if crg_mbid:
+                click.echo(f"  CRG: {crg_mbid}")
+            if rr_mbid:
+                click.echo(f"  RR: {rr_mbid}")
+            click.echo(f"  Model: {model}")
+
+            if verbose and rationale:
+                click.echo(f"  Rationale: {rationale}")
+
+            if error:
+                click.echo(f"  Error: {error}")
+
+            click.echo()
+
+    sys.exit(ExitCode.SUCCESS)
+
+
+@llm.command("inspect")
+@click.argument("session_id")
+@click.argument("file_id")
+@click.pass_context
+def llm_inspect(ctx: click.Context, session_id: str, file_id: str) -> None:
+    """Inspect the full LLM prompt and response for a specific decision.
+
+    Shows the exact prompt sent to the LLM and the raw response received,
+    useful for debugging why a decision was accepted/rejected.
+
+    Examples:
+
+        # Inspect a specific adjudication
+        charts llm inspect batch_20251129_193202_698d8338 abc123def456
+
+        # Pipe to jq for pretty JSON
+        charts llm inspect batch_20251129_193202_698d8338 abc123def456 | jq .
+    """
+    import json
+
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.llm.batch import BatchProcessor
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    # Load decisions database
+    decisions_db = DecisionsDB(config.database.decisions_path)
+
+    # Create batch processor (just to access data)
+    processor = BatchProcessor(
+        decisions_db=decisions_db,
+        adjudicator=None,  # type: ignore
+        rate_limit_per_min=0,
+    )
+
+    # Get all results for this session
+    all_results = processor.get_session_results(session_id)
+
+    # Find the specific result
+    result = None
+    for r in all_results:
+        if r["file_id"].startswith(file_id):
+            result = r
+            break
+
+    if not result:
+        click.echo(f"No result found for file_id starting with: {file_id}", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    # Get decision info for context
+    decision = decisions_db.get_decision(result["file_id"])
+    work_key = decision.get("work_key", "unknown") if decision else "unknown"
+
+    if output_format == OutputFormat.JSON:
+        output = {
+            "file_id": result["file_id"],
+            "work_key": work_key,
+            "outcome": result["outcome"],
+            "confidence": result.get("confidence"),
+            "crg_mbid": result.get("crg_mbid"),
+            "rr_mbid": result.get("rr_mbid"),
+            "rationale": result.get("rationale"),
+            "model_id": result.get("model_id"),
+            "prompt": json.loads(result["prompt_json"]) if result.get("prompt_json") else None,
+            "response": json.loads(result["response_json"]) if result.get("response_json") else None,
+        }
+        click.echo(json.dumps(output, indent=2))
+        sys.exit(ExitCode.SUCCESS)
+
+    # Text output
+    click.echo("LLM Adjudication Inspection")
+    click.echo("=" * 70)
+    click.echo(f"File ID: {result['file_id']}")
+    click.echo(f"Work Key: {work_key}")
+    click.echo(f"Outcome: {result['outcome']}")
+    click.echo(f"Confidence: {result.get('confidence', 0.0):.2f}")
+    if result.get("crg_mbid"):
+        click.echo(f"CRG: {result['crg_mbid']}")
+    if result.get("rr_mbid"):
+        click.echo(f"RR: {result['rr_mbid']}")
+    click.echo(f"Model: {result.get('model_id', 'unknown')}")
+    click.echo()
+
+    if result.get("rationale"):
+        click.echo("Rationale:")
+        click.echo("-" * 70)
+        click.echo(result["rationale"])
+        click.echo()
+
+    if result.get("prompt_json"):
+        click.echo("Prompt Sent to LLM:")
+        click.echo("=" * 70)
+        try:
+            prompt_data = json.loads(result["prompt_json"])
+            if "system" in prompt_data:
+                click.echo("\n### SYSTEM PROMPT:")
+                click.echo(prompt_data["system"])
+            if "user" in prompt_data:
+                click.echo("\n### USER PROMPT:")
+                click.echo(prompt_data["user"])
+        except json.JSONDecodeError:
+            click.echo(result["prompt_json"])
+        click.echo()
+
+    if result.get("response_json"):
+        click.echo("Raw LLM Response:")
+        click.echo("=" * 70)
+        try:
+            response_data = json.loads(result["response_json"])
+            click.echo(json.dumps(response_data, indent=2))
+        except json.JSONDecodeError:
+            click.echo(result["response_json"])
+        click.echo()
+
+    if result.get("error_message"):
+        click.echo("Error:")
+        click.echo("-" * 70)
+        click.echo(result["error_message"])
+        click.echo()
+
+    sys.exit(ExitCode.SUCCESS)
+
+
 @llm.command("status")
 @click.pass_context
 def llm_status(ctx: click.Context) -> None:

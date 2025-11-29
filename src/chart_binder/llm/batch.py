@@ -63,6 +63,8 @@ class BatchResult:
     model_id: str | None = None
     error_message: str | None = None
     adjudication_id: str | None = None
+    prompt_json: str | None = None
+    response_json: str | None = None
 
 
 class BatchProcessor:
@@ -118,6 +120,8 @@ class BatchProcessor:
                 model_id TEXT,
                 error_message TEXT,
                 adjudication_id TEXT,
+                prompt_json TEXT,
+                response_json TEXT,
                 PRIMARY KEY (session_id, file_id)
             );
 
@@ -270,8 +274,9 @@ class BatchProcessor:
             """
             INSERT OR REPLACE INTO llm_batch_result
                 (session_id, file_id, processed_at, outcome, crg_mbid, rr_mbid,
-                 confidence, rationale, model_id, error_message, adjudication_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 confidence, rationale, model_id, error_message, adjudication_id,
+                 prompt_json, response_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result.session_id,
@@ -285,6 +290,8 @@ class BatchProcessor:
                 result.model_id,
                 result.error_message,
                 result.adjudication_id,
+                result.prompt_json,
+                result.response_json,
             ),
         )
         conn.commit()
@@ -324,6 +331,7 @@ class BatchProcessor:
         from chart_binder.llm.adjudicator import AdjudicationOutcome
 
         file_id = decision["file_id"]
+        work_key = decision.get("work_key", "")
 
         try:
             # Apply rate limiting
@@ -337,10 +345,11 @@ class BatchProcessor:
             }
 
             # Extract work_key
-            work_key = decision.get("work_key", "")
             if " // " in work_key:
                 parts = work_key.split(" // ", 1)
                 evidence_bundle["artist"] = {"name": parts[0]}
+
+            log.info(f"Adjudicating {work_key} (file_id: {file_id[:16]}...)")
 
             # Call LLM adjudicator
             adjudication_result = self.adjudicator.adjudicate(evidence_bundle)
@@ -348,12 +357,29 @@ class BatchProcessor:
             # Determine outcome based on confidence
             if adjudication_result.outcome == AdjudicationOutcome.ERROR:
                 outcome = "error"
+                log.warning(
+                    f"  ERROR: {adjudication_result.error_message}"
+                )
             elif adjudication_result.confidence >= self.auto_accept_threshold:
                 outcome = "accepted"
+                log.info(
+                    f"  ACCEPTED: confidence={adjudication_result.confidence:.2f} "
+                    f"CRG={adjudication_result.crg_mbid}"
+                )
             elif adjudication_result.confidence >= self.review_threshold:
                 outcome = "review"
+                log.info(
+                    f"  REVIEW: confidence={adjudication_result.confidence:.2f} "
+                    f"CRG={adjudication_result.crg_mbid}"
+                )
             else:
                 outcome = "rejected"
+                log.info(
+                    f"  REJECTED: confidence={adjudication_result.confidence:.2f} "
+                    f"(below threshold {self.review_threshold})"
+                )
+                if adjudication_result.rationale:
+                    log.debug(f"  Rationale: {adjudication_result.rationale}")
 
             result = BatchResult(
                 session_id=session_id,
@@ -367,10 +393,12 @@ class BatchProcessor:
                 model_id=adjudication_result.model_id,
                 error_message=adjudication_result.error_message,
                 adjudication_id=adjudication_result.adjudication_id,
+                prompt_json=adjudication_result.prompt_json,
+                response_json=adjudication_result.response_json,
             )
 
         except Exception as e:
-            log.error(f"Error processing decision {file_id}: {e}")
+            log.error(f"Error processing decision {file_id}: {e}", exc_info=True)
             result = BatchResult(
                 session_id=session_id,
                 file_id=file_id,
