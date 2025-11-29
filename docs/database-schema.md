@@ -6,9 +6,44 @@ Chart-Binder uses SQLite databases to store chart data, MusicBrainz entities, an
 
 | File | Purpose |
 |------|---------|
-| `charts.sqlite` | Chart runs, entries, links, and normalization aliases |
+| `charts.sqlite` | Chart runs, entries, song registry, and normalization aliases |
 | `musicgraph.sqlite` | MusicBrainz entities (artists, recordings, releases) |
 | `decisions.sqlite` | Canonicalization decisions and traces (future) |
+
+---
+
+## Three-Layer Data Model
+
+Chart entries flow through three layers, preserving raw data while enabling corrections:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Layer 1: RAW (chart_entry) - immutable after scrape             │
+│   Stores exactly what the website said                          │
+│   "The Beatles - Penny Lane / Strawberry Fields Forever"        │
+│   rank=1, previous_position=3, weeks_on_chart=5                 │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓ split/normalize
+┌─────────────────────────────────────────────────────────────────┐
+│ Layer 2: NORMALIZED (chart_entry_song) - editable               │
+│   Split into individual songs, linked to song registry          │
+│   Entry 1: artist="Beatles", title="Penny Lane", song_idx=0     │
+│   Entry 2: artist="Beatles", title="Strawberry Fields", idx=1   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓ match/link
+┌─────────────────────────────────────────────────────────────────┐
+│ Layer 3: CANONICAL (song) - song registry with external IDs     │
+│   song_id=abc123 → MBID, work_key, Spotify ID, etc.            │
+│   Persists across all chart runs                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key benefits:**
+- Raw data never lost - can always re-process or audit
+- Double A-sides properly handled - one raw entry → multiple songs
+- Matching corrections don't touch raw data
+- Song identity persists across all chart runs
+- Reverse query: find all chart appearances for a song
 
 ---
 
@@ -60,34 +95,80 @@ CREATE TABLE chart_run (
 - Weekly charts: `YYYY-Www` (e.g., `2024-W01`, `2024-W52`)
 - Yearly charts: `YYYY` (e.g., `2024`, `1999`)
 
-### chart_entry
+### chart_entry (Layer 1: Raw)
 
-Individual entries (songs) in a chart run.
+Raw scraped entries - **immutable after ingestion**.
 
 ```sql
 CREATE TABLE chart_entry (
+    entry_id TEXT PRIMARY KEY,      -- Deterministic hash(run_id, rank)
     run_id TEXT NOT NULL,           -- FK to chart_run
     rank INTEGER NOT NULL,          -- Position in chart (1-based)
-    artist_raw TEXT NOT NULL,       -- Artist name as scraped
-    title_raw TEXT NOT NULL,        -- Title as scraped
+    artist_raw TEXT NOT NULL,       -- Artist name exactly as scraped
+    title_raw TEXT NOT NULL,        -- Title exactly as scraped
+    previous_position INTEGER,      -- Position last week (from website)
+    weeks_on_chart INTEGER,         -- Weeks on chart (from website)
     entry_unit TEXT NOT NULL,       -- "recording", "single_release", "medley"
     extra_raw TEXT,                 -- Extra info (remixer, version, etc.)
-    artist_normalized TEXT,         -- Normalized artist name
-    title_normalized TEXT,          -- Normalized title
-    title_tags_json TEXT,           -- JSON: extracted tags (remix, live, etc.)
-    PRIMARY KEY (run_id, rank)
+    scraped_at REAL NOT NULL,       -- When this entry was scraped
+    UNIQUE(run_id, rank)
 );
 ```
 
 **Entry units:**
 - `recording`: Standard song/track
-- `single_release`: Physical single release
+- `single_release`: Physical single release (may contain multiple songs)
 - `medley`: Multiple songs combined
 - `unknown`: Unclassified
 
-### chart_link
+### chart_entry_song (Layer 2: Normalized)
 
-Links between chart entries and work keys (for matching to MusicBrainz).
+Normalized/split songs from raw entries - **editable for corrections**.
+
+```sql
+CREATE TABLE chart_entry_song (
+    id TEXT PRIMARY KEY,            -- UUID
+    entry_id TEXT NOT NULL,         -- FK to chart_entry (raw)
+    song_idx INTEGER NOT NULL,      -- 0, 1, 2... for multi-song entries
+    artist_norm TEXT NOT NULL,      -- Normalized artist name
+    title_norm TEXT NOT NULL,       -- Normalized title
+    song_id TEXT,                   -- FK to song (nullable until linked)
+    link_method TEXT,               -- 'auto', 'manual', 'alias'
+    link_confidence REAL,           -- 0.0 to 1.0
+    FOREIGN KEY (entry_id) REFERENCES chart_entry(entry_id),
+    FOREIGN KEY (song_id) REFERENCES song(song_id),
+    UNIQUE(entry_id, song_idx)
+);
+```
+
+**Link methods:**
+- `auto`: Automatically matched by normalization
+- `manual`: Human-assigned link
+- `alias`: Matched via alias_norm exception
+
+### song (Layer 3: Canonical)
+
+Canonical song registry - persistent song identities.
+
+```sql
+CREATE TABLE song (
+    song_id TEXT PRIMARY KEY,       -- Stable internal ID (UUID)
+    artist_canonical TEXT NOT NULL, -- Canonical artist name
+    title_canonical TEXT NOT NULL,  -- Canonical title
+    artist_sort TEXT,               -- Sort name for artist
+    work_key TEXT,                  -- MusicBrainz work key
+    recording_mbid TEXT,            -- MusicBrainz recording MBID
+    release_group_mbid TEXT,        -- MusicBrainz release group MBID
+    spotify_id TEXT,                -- Spotify track ID
+    isrc TEXT,                      -- ISRC code
+    created_at REAL NOT NULL,       -- When first seen
+    UNIQUE(artist_canonical, title_canonical)
+);
+```
+
+### chart_link (Legacy compatibility)
+
+Links between chart entries and work keys. *Deprecated - use song table instead.*
 
 ```sql
 CREATE TABLE chart_link (
@@ -101,12 +182,6 @@ CREATE TABLE chart_link (
     PRIMARY KEY (run_id, rank)
 );
 ```
-
-**Link methods:**
-- `isrc`: Matched by ISRC code
-- `title_artist_year`: Fuzzy match on title/artist/year
-- `bundle_release`: Linked via release bundle
-- `manual`: Human-assigned link
 
 ### alias_norm
 
@@ -221,35 +296,71 @@ CREATE TABLE recording_release (
 ## Data Flow
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Scraper   │────▶│   charts    │────▶│   Link &    │
-│  (web data) │     │   .sqlite   │     │   Match     │
-└─────────────┘     └─────────────┘     └──────┬──────┘
-                                               │
-                    ┌─────────────┐             │
-                    │ musicgraph  │◀────────────┘
-                    │  .sqlite    │
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   Scraper   │────▶│ chart_entry │────▶│chart_entry_ │────▶│    song     │
+│  (web data) │     │   (raw)     │     │   song      │     │ (canonical) │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                                                                    │
+                    ┌─────────────┐                                 │
+                    │ musicgraph  │◀────────────────────────────────┘
+                    │  .sqlite    │      (MBID linking)
                     └─────────────┘
 ```
 
 1. **Scrape**: `canon charts scrape t40 2024-W01 --ingest`
    - Fetches data from web source
+   - Stores raw data in `chart_entry` (immutable)
    - Validates entry count and continuity
-   - Stores in `chart_run` and `chart_entry`
 
-2. **Link**: `canon charts link nl_top40 2024-W01`
-   - Matches entries to work keys
-   - Stores in `chart_link`
+2. **Normalize**: Automatic during ingest
+   - Splits double A-sides into separate `chart_entry_song` rows
+   - Normalizes artist/title text
+   - Links to existing `song` entries or creates new ones
 
-3. **Resolve**: Uses MusicBrainz data from `musicgraph.sqlite`
-   - Finds canonical release groups
-   - Selects representative releases
+3. **Link**: `canon charts link nl_top40 2024-W01`
+   - Matches songs to MusicBrainz recordings
+   - Updates `song` table with MBIDs
 
 ---
 
 ## Querying Examples
 
+### Get all chart appearances for a song
+
+```sql
+-- Find all positions for "Bohemian Rhapsody" by Queen
+SELECT
+    r.chart_id,
+    r.period,
+    e.rank,
+    e.previous_position,
+    e.weeks_on_chart
+FROM song s
+JOIN chart_entry_song es ON es.song_id = s.song_id
+JOIN chart_entry e ON e.entry_id = es.entry_id
+JOIN chart_run r ON r.run_id = e.run_id
+WHERE s.artist_canonical = 'Queen'
+  AND s.title_canonical = 'Bohemian Rhapsody'
+ORDER BY r.chart_id, r.period;
+```
+
+### Get chart history by MBID (for beets tagging)
+
+```sql
+SELECT
+    r.chart_id,
+    r.period,
+    e.rank
+FROM song s
+JOIN chart_entry_song es ON es.song_id = s.song_id
+JOIN chart_entry e ON e.entry_id = es.entry_id
+JOIN chart_run r ON r.run_id = e.run_id
+WHERE s.recording_mbid = '12345-abcd-...'
+ORDER BY r.period DESC;
+```
+
 ### List all chart runs
+
 ```sql
 SELECT chart_id, period, scraped_at,
        (SELECT COUNT(*) FROM chart_entry WHERE run_id = chart_run.run_id) as entry_count
@@ -258,33 +369,32 @@ ORDER BY chart_id, period DESC;
 ```
 
 ### Get entries for a specific week
+
 ```sql
-SELECT rank, artist_raw, title_raw
-FROM chart_entry
-WHERE run_id = (
-    SELECT run_id FROM chart_run
-    WHERE chart_id = 'nl_top40' AND period = '2024-W01'
-)
-ORDER BY rank;
+SELECT e.rank, e.artist_raw, e.title_raw, e.previous_position
+FROM chart_entry e
+JOIN chart_run r ON e.run_id = r.run_id
+WHERE r.chart_id = 'nl_top40' AND r.period = '2024-W01'
+ORDER BY e.rank;
 ```
 
-### Find unlinked entries
+### Find double A-sides
+
 ```sql
-SELECT e.rank, e.artist_raw, e.title_raw
+SELECT e.artist_raw, e.title_raw, COUNT(*) as song_count
 FROM chart_entry e
-LEFT JOIN chart_link l ON e.run_id = l.run_id AND e.rank = l.rank
-WHERE e.run_id = ? AND l.work_key IS NULL;
+JOIN chart_entry_song es ON es.entry_id = e.entry_id
+GROUP BY e.entry_id
+HAVING COUNT(*) > 1;
 ```
 
-### Coverage report
+### Find unlinked songs
+
 ```sql
-SELECT
-    COUNT(*) as total,
-    SUM(CASE WHEN l.work_key IS NOT NULL THEN 1 ELSE 0 END) as linked,
-    ROUND(100.0 * SUM(CASE WHEN l.work_key IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*), 1) as coverage_pct
-FROM chart_entry e
-LEFT JOIN chart_link l ON e.run_id = l.run_id AND e.rank = l.rank
-WHERE e.run_id = ?;
+SELECT DISTINCT es.artist_norm, es.title_norm
+FROM chart_entry_song es
+WHERE es.song_id IS NULL
+ORDER BY es.artist_norm, es.title_norm;
 ```
 
 ---
@@ -303,3 +413,7 @@ WHERE e.run_id = ?;
 - Expect ≥50% overlap with previous week
 - Songs don't typically all change at once
 - Low overlap indicates possible scraping error
+
+### Cross-Reference (previous position)
+- Website's claimed "previous position" checked against database
+- Mismatches indicate data quality issues
