@@ -211,7 +211,7 @@ class UnifiedFetcher:
         )
 
         # Hydrate releases and release groups
-        for release in data.get("release-list", []):
+        for release in data.get("releases", []):
             release_mbid = release.get("id")
             if not release_mbid:
                 continue
@@ -228,7 +228,7 @@ class UnifiedFetcher:
                     artist_mbid=artist_mbid,
                     type=rg.get("primary-type"),
                     first_release_date=rg.get("first-release-date"),
-                    secondary_types_json=json.dumps(rg.get("secondary-type-list", [])),
+                    secondary_types_json=json.dumps(rg.get("secondary-types", [])),
                 )
 
             # Hydrate release
