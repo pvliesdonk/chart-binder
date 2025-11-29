@@ -1,0 +1,322 @@
+2025-11-29 21:16:21,482 - chart_binder.cli - DEBUG - Logging configured: level=DEBUG, hash_paths=False
+2025-11-29 21:16:21,484 - chart_binder.cli - INFO - Running decide command on 1 path(s), explain=True
+2025-11-29 21:16:21,484 - chart_binder.cli - DEBUG - Initialized decisions DB at decisions.sqlite
+2025-11-29 21:16:21,484 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-29 21:16:21,485 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-29 21:16:22,155 - httpcore.connection - DEBUG - connect_tcp.started host='athena.int.liesdonk.nl' port=1080 local_address=None timeout=5.0 socket_options=None
+2025-11-29 21:16:22,158 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fc2fa4d3380>
+2025-11-29 21:16:22,158 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-29 21:16:22,158 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 21:16:22,158 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-29 21:16:22,158 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 21:16:22,158 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-29 21:16:22,161 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'content-type', b'text/html; charset=utf-8'), (b'content-length', b'6278'), (b'server-timing', b'total;dur=2.053, render;dur=0.611'), (b'x-content-type-options', b'nosniff'), (b'x-download-options', b'noopen'), (b'x-robots-tag', b'noindex, nofollow'), (b'referrer-policy', b'no-referrer'), (b'server', b'granian'), (b'date', b'Sat, 29 Nov 2025 20:16:22 GMT')])
+2025-11-29 21:16:22,161 - httpx - INFO - HTTP Request: GET http://athena.int.liesdonk.nl:1080/ "HTTP/1.1 200 OK"
+2025-11-29 21:16:22,161 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-29 21:16:22,161 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 21:16:22,161 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 21:16:22,161 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 21:16:22,162 - chart_binder.cli - INFO - SearxNG web search enabled at http://athena.int.liesdonk.nl:1080
+2025-11-29 21:16:22,170 - chart_binder.llm.agent_adjudicator - INFO - LLM tools enabled: ['web_search', 'web_fetch']
+2025-11-29 21:16:22,172 - chart_binder.cli - INFO - LLM adjudication enabled (auto-accept threshold: 0.85)
+2025-11-29 21:16:22,172 - chart_binder.cli - DEBUG - Collected 1 audio files
+2025-11-29 21:16:22,173 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-29 21:16:22,173 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-29 21:16:22,335 - chart_binder.cli - DEBUG - Calculated fingerprint for /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac: 180s
+2025-11-29 21:16:22,335 - chart_binder.cli - DEBUG - Searching by fingerprint (180s)
+2025-11-29 21:16:22,336 - chart_binder.cli - DEBUG - Fingerprint search returned 8 results
+2025-11-29 21:16:37,379 - chart_binder.cli - DEBUG - Searching for: Queen - Killer Queen
+2025-11-29 21:16:38,344 - httpcore.connection - DEBUG - connect_tcp.started host='accounts.spotify.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-29 21:16:38,356 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fc2f9e996d0>
+2025-11-29 21:16:38,356 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7fc2f9f120d0> server_hostname='accounts.spotify.com' timeout=30.0
+2025-11-29 21:16:38,371 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fc2f9e99810>
+2025-11-29 21:16:38,371 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'POST']>
+2025-11-29 21:16:38,372 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 21:16:38,372 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'POST']>
+2025-11-29 21:16:38,372 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 21:16:38,372 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
+2025-11-29 21:16:38,394 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Sat, 29 Nov 2025 20:16:38 GMT'), (b'request-id', b'71874acc-4a75-43ca-8a69-2311514b5d94'), (b'content-type', b'application/json'), (b'set-cookie', b'__Host-device_id=AQDJg6OjlFV5uLOX-CfoPXlm1mBNeX7R2eWCikxQp_TktsEWTskc1jq9zHypsVmc_27iAHcPvfZnBW57ST1c5GTPDC6suECfkMg;Version=1;Path=/;Max-Age=2147483647;Secure;HttpOnly;SameSite=Lax'), (b'set-cookie', b'sp_tr=false;Version=1;Domain=accounts.spotify.com;Path=/;Secure;SameSite=Lax'), (b'server', b'envoy'), (b'x-envoy-upstream-service-time', b'8'), (b'via', b'HTTP/1.1 fringe, HTTP/2 edgeproxy, 1.1 google'), (b'strict-transport-security', b'max-age=31536000'), (b'x-content-type-options', b'nosniff'), (b'alt-svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'content-encoding', b'gzip'), (b'vary', b'Accept-Encoding'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-11-29 21:16:38,396 - httpx - INFO - HTTP Request: POST https://accounts.spotify.com/api/token "HTTP/1.1 200 OK"
+2025-11-29 21:16:38,396 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'POST']>
+2025-11-29 21:16:38,398 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 21:16:38,398 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 21:16:38,398 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 21:16:38,401 - httpcore.connection - DEBUG - connect_tcp.started host='api.spotify.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-29 21:16:38,414 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fc2f9ce4050>
+2025-11-29 21:16:38,414 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7fc2f9f120d0> server_hostname='api.spotify.com' timeout=30.0
+2025-11-29 21:16:38,432 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fc2f9ce4180>
+2025-11-29 21:16:38,432 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-29 21:16:38,433 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 21:16:38,433 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-29 21:16:38,433 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 21:16:38,433 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-29 21:16:38,813 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'content-type', b'application/json; charset=utf-8'), (b'cache-control', b'public, max-age=0'), (b'etag', b'"MC-IjUyYWJmMThlNDRjMjgwYTk1MzEyYTU0MTdmNTkyN2RhIg=="'), (b'x-robots-tag', b'noindex, nofollow'), (b'access-control-allow-origin', b'*'), (b'access-control-allow-headers', b'Accept, App-Platform, Authorization, Content-Type, Origin, Retry-After, Spotify-App-Version, X-Cloud-Trace-Context, client-token, content-access-token'), (b'access-control-allow-methods', b'GET, POST, OPTIONS, PUT, DELETE, PATCH'), (b'access-control-allow-credentials', b'true'), (b'access-control-max-age', b'604800'), (b'content-encoding', b'gzip'), (b'strict-transport-security', b'max-age=31536000'), (b'x-content-type-options', b'nosniff'), (b'alt-svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'date', b'Sat, 29 Nov 2025 20:16:38 GMT'), (b'server', b'envoy'), (b'via', b'HTTP/2 edgeproxy, 1.1 google'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-11-29 21:16:38,814 - httpx - INFO - HTTP Request: GET https://api.spotify.com/v1/search?q=artist%3A%22Queen%22+track%3A%22Killer+Queen%22&type=track&limit=10 "HTTP/1.1 200 OK"
+2025-11-29 21:16:38,814 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-29 21:16:38,815 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 21:16:38,816 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 21:16:38,816 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 21:16:38,817 - chart_binder.cli - DEBUG - Title/artist search returned 20 results
+2025-11-29 21:16:38,818 - chart_binder.cli - DEBUG - Hydrating MB recording dd6a43bf-076a-4d04-8f06-f40840f6c3b3
+2025-11-29 21:16:40,372 - chart_binder.cli - DEBUG - Hydrating MB recording 484524e8-1ce9-4806-a183-328454e085e1
+2025-11-29 21:16:42,374 - chart_binder.cli - DEBUG - Hydrating MB recording 3394c1c4-54a6-4d6e-805f-309e39e95115
+2025-11-29 21:16:44,380 - chart_binder.cli - DEBUG - Hydrating MB recording 7f02aded-b1b5-4727-9a24-58676f689a62
+2025-11-29 21:16:46,372 - chart_binder.cli - DEBUG - Hydrating MB recording 50273cb7-0fcc-4856-b10a-20723ca894de
+2025-11-29 21:16:48,371 - chart_binder.cli - DEBUG - Hydrating Discogs release 822629
+2025-11-29 21:16:48,393 - chart_binder.cli - DEBUG - Hydrating Discogs release 6458613
+2025-11-29 21:16:48,411 - chart_binder.cli - DEBUG - Hydrating Discogs release 12788363
+2025-11-29 21:16:48,425 - chart_binder.cli - DEBUG - Hydrating Discogs release 650513
+2025-11-29 21:16:48,442 - chart_binder.cli - DEBUG - Hydrating Discogs release 6460983
+2025-11-29 21:16:48,458 - chart_binder.cli - DEBUG - Hydrated 5 MB recordings, 5 Discogs releases, and 0 Spotify tracks
+2025-11-29 21:16:48,458 - chart_binder.candidates - INFO - Starting title/artist/length discovery: title=Killer Queen, artist=Queen, length=180000
+2025-11-29 21:16:48,460 - chart_binder.candidates - DEBUG - Normalized: title_core=killer queen, artist_core=queen
+2025-11-29 21:16:48,460 - chart_binder.candidates - DEBUG - Length range: 162000ms - 198000ms (±10% of 180000ms)
+2025-11-29 21:16:48,460 - chart_binder.candidates - DEBUG - Fuzzy search: title=killer queen, artist=queen, length=162000-198000
+2025-11-29 21:16:48,460 - chart_binder.musicgraph - DEBUG - Fuzzy search: title=killer queen, artist=queen, length=162000-198000, limit=100
+2025-11-29 21:16:48,460 - chart_binder.musicgraph - DEBUG - Fuzzy search returned 8 recordings
+2025-11-29 21:16:48,460 - chart_binder.candidates - INFO - Found 8 recording(s) via fuzzy match
+2025-11-29 21:16:48,460 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 33ea8d72-141a-485d-88b0-9a1d3bdac8e5
+2025-11-29 21:16:48,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 33ea8d72-141a-485d-88b0-9a1d3bdac8e5
+2025-11-29 21:16:48,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 3f680381-432d-4489-b36d-63b322b136c1
+2025-11-29 21:16:48,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 3f680381-432d-4489-b36d-63b322b136c1
+2025-11-29 21:16:48,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 5d500acc-e103-4558-bca6-0309902914f2
+2025-11-29 21:16:48,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 5d500acc-e103-4558-bca6-0309902914f2
+2025-11-29 21:16:48,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 7b3d96c9-3e22-4337-be32-f8a26b816685
+2025-11-29 21:16:48,461 - chart_binder.candidates - INFO - Found 5 release group(s) for recording 7b3d96c9-3e22-4337-be32-f8a26b816685
+2025-11-29 21:16:48,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: aafdfae8-7ef3-474c-bab9-84fecf9e2d19
+2025-11-29 21:16:48,462 - chart_binder.candidates - INFO - Found 1 release group(s) for recording aafdfae8-7ef3-474c-bab9-84fecf9e2d19
+2025-11-29 21:16:48,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f4539477-edf5-4055-b91c-10da8a8bc00f
+2025-11-29 21:16:48,462 - chart_binder.candidates - INFO - Found 2 release group(s) for recording f4539477-edf5-4055-b91c-10da8a8bc00f
+2025-11-29 21:16:48,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: fe7ce1c9-5d61-488a-a461-ec3d00086c1b
+2025-11-29 21:16:48,462 - chart_binder.candidates - INFO - Found 1 release group(s) for recording fe7ce1c9-5d61-488a-a461-ec3d00086c1b
+2025-11-29 21:16:48,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 3394c1c4-54a6-4d6e-805f-309e39e95115
+2025-11-29 21:16:48,463 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 3394c1c4-54a6-4d6e-805f-309e39e95115
+2025-11-29 21:16:48,463 - chart_binder.candidates - INFO - Title/artist/length discovery complete: found 13 candidates
+2025-11-29 21:16:48,463 - chart_binder.candidates - INFO - Building evidence bundle from 13 candidates
+2025-11-29 21:16:48,463 - chart_binder.candidates - DEBUG - Fetching artist data for 0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-29 21:16:48,463 - chart_binder.musicgraph - DEBUG - Querying artist: mbid=0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-29 21:16:48,463 - chart_binder.musicgraph - DEBUG - Artist query result: found
+2025-11-29 21:16:48,463 - chart_binder.candidates - INFO - Added artist: Queen
+2025-11-29 21:16:48,464 - chart_binder.candidates - INFO - Added 8 unique recording(s)
+2025-11-29 21:16:48,466 - chart_binder.candidates - INFO - Added 11 unique release group(s)
+2025-11-29 21:16:48,466 - chart_binder.candidates - DEBUG - Timeline facts: {'earliest_album_date': '1974-11-01', 'earliest_single_date': '1974-10'}
+2025-11-29 21:16:48,466 - chart_binder.candidates - INFO - Evidence bundle built: 8 recordings, 11 release groups, hash=cfa01a1049d9
+2025-11-29 21:16:48,470 - chart_binder.cli - DEBUG - Decision is INDETERMINATE, attempting LLM adjudication...
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - LLM Tool-Calling Adjudication:
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - ======================================================================
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - SYSTEM:
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - You are a music metadata expert specialized in determining the canonical release for recordings.
+
+Your task is to analyze evidence about a recording and determine:
+1. The Canonical Release Group (CRG): The authoritative release group where this recording first appeared
+2. The Representative Release (RR): The specific release within the CRG to use for metadata
+
+Guidelines:
+- Prefer the earliest official release, not bootlegs or compilations
+- Consider the release type: singles/EPs often precede album releases as true premieres
+- If a single was released as a promotional lead single before an album (within 90 days), prefer the album
+- Live recordings should only be CRG if no studio version exists
+- Soundtracks take precedence if the recording was created for the soundtrack
+- Remixes should link to their original single/EP release, not the parent album
+- For the representative release, prefer releases from the artist's origin country
+
+You must respond in valid JSON format with these exact fields:
+{
+  "crg_mbid": "the release group MBID you selected",
+  "rr_mbid": "the release MBID you selected within the CRG",
+  "confidence": 0.0 to 1.0,
+  "rationale": "brief explanation of your reasoning"
+}
+
+If you cannot determine the canonical release with reasonable confidence, set confidence below 0.60 and explain why.
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - ======================================================================
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - USER:
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - # Recording Evidence
+
+## Artist
+- Name: Queen
+- MBID: 0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+- Origin Country: GB
+
+## Release Group Candidates
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release: 1974-10
+   - Sample Releases:
+     - 1983 [US] (a17c9476...)
+     - 1974-10 [BE] (9bfad0af...)
+     - 1974 [US] (cc25cb9d...)
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary: Compilation
+   - First Release: 2004
+   - Sample Releases:
+     - 2004 [JP] (355eff3d...)
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary: Compilation
+   - First Release: 1981-11-03
+   - Sample Releases:
+     - 1981 [DE] (5032df80...)
+     - 1981-11-03 [US] (bab57bb1...)
+     - 1981 [JP] (0668d85b...)
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary: Compilation
+   - First Release: 1981
+   - Sample Releases:
+     - 1981 [XG] (24af3cd5...)
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release: 1984
+   - Sample Releases:
+     - 1984 [GB] (264c9a98...)
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release: 1974-11-01
+   - Sample Releases:
+     - 1974-11-01 [GB] (8b75d351...)
+     - 1974-11-08 [CA] (41cbd00b...)
+     - 1974-11 [US] (9c8a310a...)
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release: 1986
+   - Sample Releases:
+     - 1986 [XE] (ff1b6fa0...)
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary: Compilation
+   - First Release: 2019-06-07
+   - Sample Releases:
+     - 2019-06-07 [BE] (7d021a7f...)
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary: Compilation
+   - First Release: 2024
+   - Sample Releases:
+     - 2024 [BE] (cda4e017...)
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary: Compilation
+   - First Release: 2024-05-03
+   - Sample Releases:
+     - 2024-05-03 [GB] (cfb93d12...)
+
+11. **Smash Singles of the 70's**
+   - RG MBID: 5375d4c2-4949-3878-8e7f-bd992421a1cc
+   - Type: Album
+   - Secondary: Compilation
+   - Sample Releases:
+     - (5d65f765...)
+
+## Timeline
+- Earliest Album: 1974-11-01
+- Earliest Single/EP: 1974-10
+
+## Your Task
+
+Determine the Canonical Release Group (CRG) and Representative Release (RR).
+
+You have access to these tools:
+- `web_search(query)`: Search the web for additional information
+- `web_fetch(url)`: Fetch content from a specific URL
+
+Use these tools if you need more information to make a confident decision.
+
+**IMPORTANT**: Return your final answer as a JSON object (you may use tools first if needed):
+```json
+{
+  "crg_mbid": "selected release group MBID",
+  "rr_mbid": "selected release MBID within CRG",
+  "confidence": 0.0-1.0,
+  "rationale": "brief explanation"
+}
+```
+2025-11-29 21:16:48,471 - chart_binder.llm.agent_adjudicator - DEBUG - ======================================================================
+2025-11-29 21:16:48,472 - httpcore.connection - DEBUG - connect_tcp.started host='athena.int.liesdonk.nl' port=11434 local_address=None timeout=None socket_options=None
+2025-11-29 21:16:48,475 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fc2f9d10170>
+2025-11-29 21:16:48,475 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'POST']>
+2025-11-29 21:16:48,475 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 21:16:48,475 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'POST']>
+2025-11-29 21:16:48,475 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 21:16:48,475 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
+2025-11-29 21:16:48,825 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/x-ndjson'), (b'Date', b'Sat, 29 Nov 2025 20:16:48 GMT'), (b'Transfer-Encoding', b'chunked')])
+2025-11-29 21:16:48,826 - httpx - INFO - HTTP Request: POST http://athena.int.liesdonk.nl:11434/api/chat "HTTP/1.1 200 OK"
+2025-11-29 21:16:48,827 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'POST']>
+2025-11-29 21:17:12,996 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 21:17:12,996 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 21:17:12,996 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - LLM Response:
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - ======================================================================
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - Content: 
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - Type: <class 'langchain_core.messages.ai.AIMessage'>
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - tool_calls attribute: []
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - additional_kwargs: {}
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - All attributes: ['additional_kwargs', 'construct', 'content', 'content_blocks', 'copy', 'dict', 'from_orm', 'get_lc_namespace', 'id', 'invalid_tool_calls', 'is_lc_serializable', 'json', 'lc_attributes', 'lc_id', 'lc_secrets', 'model_computed_fields', 'model_config', 'model_construct', 'model_copy', 'model_dump', 'model_dump_json', 'model_extra', 'model_fields', 'model_fields_set', 'model_json_schema', 'model_parametrized_name', 'model_post_init', 'model_rebuild', 'model_validate', 'model_validate_json', 'model_validate_strings', 'name', 'parse_file', 'parse_obj', 'parse_raw', 'pretty_print', 'pretty_repr', 'response_metadata', 'schema', 'schema_json', 'text', 'to_json', 'to_json_not_implemented', 'tool_calls', 'type', 'update_forward_refs', 'usage_metadata', 'validate']
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - ======================================================================
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - WARNING - Failed to parse LLM response: Expecting value: line 1 column 1 (char 0)
+2025-11-29 21:17:12,997 - chart_binder.llm.agent_adjudicator - DEBUG - Response content: 
+2025-11-29 21:17:12,997 - chart_binder.cli - DEBUG - LLM confidence 0.00 below threshold 0.85, keeping INDETERMINATE
+2025-11-29 21:17:13,008 - chart_binder.cli - DEBUG - Persisted decision for /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac (file_id=26b2a47e8f76768f...)
+
+∆ /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac
+  Artist: Queen
+  State: indeterminate
+  Trace: evh=d331c282;crg=;rr=;src=mb;cfg=lw90,rg10
+
+Decision Trace
+==================================================
+Ruleset Version: 1.0
+Evidence Hash: d331c282a565e763...
+Artist Origin Country: GB
+
+CRG Selection:
+  Rule Applied: unknown
+
+RR Selection:
+
+Candidates Considered: 88
+  1. Single RG c62156a9...
+      First date: 1974-10
+  2. Album RG 515b1954...
+      First date: 2004
+  3. Album RG 69ce61c8...
+      First date: 1981-11-03
+  4. Album RG e7ad7dc7...
+      First date: 1981
+  5. Single RG 178f6e5d...
+      First date: 1984
+
+Missing Facts:
+  - tie_between_8_release_groups_with_same_earliest_date
+
+Config:
+  Lead Window: 90 days
+  Reissue Gap: 10 years
+
+Missing Facts:
+  - tie_between_8_release_groups_with_same_earliest_date
+2025-11-29 21:17:13,008 - httpcore.connection - DEBUG - close.started
+2025-11-29 21:17:13,008 - httpcore.connection - DEBUG - close.complete
+2025-11-29 21:17:13,008 - httpcore.connection - DEBUG - close.started
+2025-11-29 21:17:13,008 - httpcore.connection - DEBUG - close.complete
