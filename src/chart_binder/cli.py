@@ -592,24 +592,27 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
 
                 decision = resolver.resolve(evidence_bundle)
 
-                # Extract artist and title information from evidence bundle
+                # Extract metadata from decision trace (decided values)
                 artist_name = evidence_bundle.get("artist", {}).get("name", "Unknown")
+                artist_credits = None
                 recording_title = None
                 release_group_title = None
                 selected_release_title = None
                 discogs_master_id = None
                 discogs_release_id = None
 
-                if evidence_bundle.get("recording_candidates"):
-                    rec = evidence_bundle["recording_candidates"][0]
-                    recording_title = rec.get("title")
+                # Get recording title and artist credits from CRG selection
+                if decision.decision_trace.crg_selection:
+                    crg_data = decision.decision_trace.crg_selection.get("release_group", {})
+                    release_group_title = crg_data.get("title")
+                    discogs_master_id = crg_data.get("discogs_master_id")
+                    artist_credits = crg_data.get("artist_credit")
 
-                    if rec.get("rg_candidates"):
-                        rg = rec["rg_candidates"][0]
-                        release_group_title = rg.get("title")
-                        discogs_master_id = rg.get("discogs_master_id")
+                    # Get recording title from the selected recording
+                    recording_data = decision.decision_trace.crg_selection.get("recording", {})
+                    recording_title = recording_data.get("title")
 
-                # Extract selected release title and Discogs ID from decision trace
+                # Extract selected release title and Discogs ID from RR selection
                 if decision.decision_trace.rr_selection:
                     release_data = decision.decision_trace.rr_selection.get("release", {})
                     selected_release_title = release_data.get("title")
@@ -664,6 +667,7 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                     "file": str(audio_file),
                     "state": decision.state.value,
                     "artist": artist_name,
+                    "artist_credits": artist_credits,
                     "recording_title": recording_title,
                     "release_group_title": release_group_title,
                     "selected_release_title": selected_release_title,
@@ -716,6 +720,8 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                         click.echo(f"  CRG: {decision.release_group_mbid}")
                         if release_group_title:
                             click.echo(f"       Title: {release_group_title}")
+                        if artist_credits:
+                            click.echo(f"       Artist Credit: {artist_credits}")
                         if discogs_master_id:
                             click.echo(f"       Discogs Master: {discogs_master_id}")
                         click.echo(f"       ({decision.crg_rationale})")
