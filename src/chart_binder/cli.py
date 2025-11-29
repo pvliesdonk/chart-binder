@@ -1473,17 +1473,81 @@ def ingest(
     type=click.Choice(["multi_source", "title_artist_year", "bundle_release"]),
     help="Linking strategy (default: multi_source)",
 )
+@click.option(
+    "--missing-only",
+    is_flag=True,
+    help="Skip entries that already have links with confidence >= min-confidence",
+)
+@click.option(
+    "--min-confidence",
+    type=float,
+    default=0.85,
+    help="Minimum confidence threshold for missing-only filter (default: 0.85)",
+)
+@click.option(
+    "--limit",
+    type=int,
+    help="Maximum number of entries to process (for testing)",
+)
+@click.option(
+    "--start-rank",
+    type=int,
+    help="Start processing from this rank (1-based, inclusive)",
+)
+@click.option(
+    "--end-rank",
+    type=int,
+    help="Stop processing at this rank (1-based, inclusive)",
+)
+@click.option(
+    "--prioritize-by-score",
+    is_flag=True,
+    help="Process entries by score (sum of total - rank across all runs)",
+)
+@click.option(
+    "--batch-size",
+    type=int,
+    default=100,
+    help="Commit every N entries for checkpoint/resume (default: 100)",
+)
+@click.option(
+    "--no-progress",
+    is_flag=True,
+    help="Disable progress display",
+)
 @click.pass_context
-def link(ctx: click.Context, chart_id: str, period: str, strategy: str) -> None:
+def link(
+    ctx: click.Context,
+    chart_id: str,
+    period: str,
+    strategy: str,
+    missing_only: bool,
+    min_confidence: float,
+    limit: int | None,
+    start_rank: int | None,
+    end_rank: int | None,
+    prioritize_by_score: bool,
+    batch_size: int,
+    no_progress: bool,
+) -> None:
     """
     Link chart entries to canonical recordings using multi-source search.
 
     Uses UnifiedFetcher to search across MusicBrainz, Discogs, and Spotify
     with all enhanced intelligence (popularity weighting, cross-source validation, etc.).
 
+    Performance options:
+    - Use --missing-only to skip entries that already have good links
+    - Use --limit to test with small batches (e.g., --limit 10)
+    - Use --start-rank/--end-rank to process specific rank ranges
+    - Use --prioritize-by-score to process most important entries first
+    - Batch commits every 100 entries (configurable with --batch-size)
+
     Examples:
         canon charts link nl_top2000 2024
-        canon charts link nl_top2000 2024 --strategy title_artist_year
+        canon charts link nl_top2000 2024 --missing-only
+        canon charts link nl_top2000 2024 --limit 10 --prioritize-by-score
+        canon charts link nl_top2000 2024 --start-rank 1 --end-rank 100
     """
     from chart_binder.charts_db import ChartsDB, ChartsETL
     from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
@@ -1512,7 +1576,19 @@ def link(ctx: click.Context, chart_id: str, period: str, strategy: str) -> None:
         click.echo(f"No chart run found for {chart_id} {period}", err=True)
         sys.exit(ExitCode.NO_RESULTS)
 
-    report = etl.link(run["run_id"], strategy=strategy)
+    report = etl.link(
+        run["run_id"],
+        strategy=strategy,
+        missing_only=missing_only,
+        min_confidence=min_confidence,
+        limit=limit,
+        start_rank=start_rank,
+        end_rank=end_rank,
+        prioritize_by_score=prioritize_by_score,
+        chart_id=chart_id,
+        batch_size=batch_size,
+        progress=not no_progress,
+    )
 
     # Close fetcher if we created one
     if fetcher:

@@ -761,6 +761,84 @@ class ChartsDB:
         finally:
             conn.close()
 
+    def calculate_entry_scores(
+        self, chart_id: str, normalizer: Any | None = None
+    ) -> dict[tuple[str, str], float]:
+        """
+        Calculate priority scores for chart entries across all runs.
+
+        Score = sum of (total_entries - rank) for each appearance.
+        Higher scores indicate more important/popular entries.
+
+        Args:
+            chart_id: Chart identifier (e.g., 't2000')
+            normalizer: Optional Normalizer instance (will create if not provided)
+
+        Returns:
+            Dictionary mapping (artist_normalized, title_normalized) -> score
+        """
+        # Import here to avoid circular dependency
+        if normalizer is None:
+            from chart_binder.normalize import Normalizer
+
+            normalizer = Normalizer()
+
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            # Get all runs for this chart
+            cursor.execute("SELECT run_id FROM chart_run WHERE chart_id = ?", (chart_id,))
+            run_ids = [row["run_id"] for row in cursor.fetchall()]
+
+            if not run_ids:
+                return {}
+
+            # Calculate total entries per run
+            run_totals: dict[str, int] = {}
+            for run_id in run_ids:
+                cursor.execute(
+                    "SELECT COUNT(*) as cnt FROM chart_entry WHERE run_id = ?", (run_id,)
+                )
+                run_totals[run_id] = cursor.fetchone()["cnt"]
+
+            # Calculate scores: sum of (total - rank) across all runs
+            scores: dict[tuple[str, str], float] = {}
+
+            for run_id in run_ids:
+                total = run_totals[run_id]
+                cursor.execute(
+                    """
+                    SELECT artist_raw, title_raw, rank
+                    FROM chart_entry
+                    WHERE run_id = ?
+                    """,
+                    (run_id,),
+                )
+
+                for row in cursor.fetchall():
+                    artist_raw = row["artist_raw"]
+                    title_raw = row["title_raw"]
+                    rank = row["rank"]
+
+                    # Normalize on the fly
+                    artist_norm = normalizer.normalize_artist(artist_raw).core
+                    title_norm = normalizer.normalize_title(title_raw).core
+
+                    # Skip entries without normalized values
+                    if not artist_norm or not title_norm:
+                        continue
+
+                    key = (artist_norm, title_norm)
+                    contribution = total - rank
+                    scores[key] = scores.get(key, 0.0) + contribution
+
+            return scores
+
+        finally:
+            conn.close()
+
     # Alias management
 
     def upsert_alias(
@@ -1374,7 +1452,20 @@ class ChartsETL:
             title_tags=title_tags,
         )
 
-    def link(self, run_id: str, strategy: str = "multi_source") -> CoverageReport:
+    def link(
+        self,
+        run_id: str,
+        strategy: str = "multi_source",
+        missing_only: bool = False,
+        min_confidence: float = 0.85,
+        limit: int | None = None,
+        start_rank: int | None = None,
+        end_rank: int | None = None,
+        prioritize_by_score: bool = False,
+        chart_id: str | None = None,
+        batch_size: int = 100,
+        progress: bool = True,
+    ) -> CoverageReport:
         """
         Link chart entries to work_keys and canonical IDs.
 
@@ -1384,12 +1475,75 @@ class ChartsETL:
                 - 'multi_source': Use UnifiedFetcher for multi-source search (default, requires fetcher)
                 - 'title_artist_year': Legacy hash-based linking (no fetcher required)
                 - 'bundle_release': Bundle-based linking
+            missing_only: If True, skip entries that already have links with confidence >= min_confidence
+            min_confidence: Minimum confidence threshold for "missing_only" filter (default 0.85)
+            limit: Maximum number of entries to process (for testing)
+            start_rank: Start processing from this rank (1-based, inclusive)
+            end_rank: Stop processing at this rank (1-based, inclusive)
+            prioritize_by_score: If True, process entries by score (requires chart_id)
+            chart_id: Chart ID for score calculation (required if prioritize_by_score=True)
+            batch_size: Commit every N entries for checkpoint/resume (default 100)
+            progress: If True, display progress messages (default True)
 
         Returns:
             CoverageReport with linking results
         """
+        import sys
+
         entries = self.db.list_entries(run_id)
+        total_entries = len(entries)
+
+        # Filter by rank range if specified
+        if start_rank is not None or end_rank is not None:
+            start = start_rank if start_rank is not None else 1
+            end = end_rank if end_rank is not None else total_entries
+            entries = [e for e in entries if start <= e["rank"] <= end]
+
+        # Get existing links for missing_only filter
+        existing_links: dict[int, dict[str, Any]] = {}
+        if missing_only:
+            for link in self.db.list_links(run_id):
+                existing_links[link["rank"]] = link
+
+        # Filter missing entries
+        if missing_only:
+            entries = [
+                e
+                for e in entries
+                if e["rank"] not in existing_links
+                or existing_links[e["rank"]].get("confidence", 0.0) < min_confidence
+            ]
+
+        # Prioritize by score if requested
+        if prioritize_by_score:
+            if not chart_id:
+                raise ValueError("chart_id required for score-based prioritization")
+
+            scores = self.db.calculate_entry_scores(chart_id, normalizer=self.normalizer)
+
+            # Sort entries by score (highest first)
+            def get_score(entry: dict[str, Any]) -> float:
+                # Normalize the entry to match score keys
+                artist_raw = entry.get("artist_raw", "")
+                title_raw = entry.get("title_raw", "")
+                artist_norm = self.normalizer.normalize_artist(artist_raw).core
+                title_norm = self.normalizer.normalize_title(title_raw).core
+                key = (artist_norm, title_norm)
+                return scores.get(key, 0.0)
+
+            entries = sorted(entries, key=get_score, reverse=True)
+
+        # Apply limit
+        if limit is not None:
+            entries = entries[:limit]
+
+        # Process entries with batching and progress
         links = []
+        processed = 0
+        total_to_process = len(entries)
+
+        if progress:
+            print(f"Processing {total_to_process} entries (out of {total_entries} total)")
 
         for entry in entries:
             link_result = self._compute_link(entry, strategy)
@@ -1407,8 +1561,25 @@ class ChartsETL:
                 source=link_result.get("source"),
             )
             links.append(link)
+            processed += 1
 
-        self.db.add_links_batch(links)
+            # Batch commit for checkpoint/resume
+            if len(links) >= batch_size:
+                self.db.add_links_batch(links)
+                links = []
+
+                if progress:
+                    pct = (processed / total_to_process) * 100
+                    print(
+                        f"  Progress: {processed}/{total_to_process} ({pct:.1f}%)", file=sys.stderr
+                    )
+
+        # Final commit for remaining links
+        if links:
+            self.db.add_links_batch(links)
+
+        if progress:
+            print(f"✓ Completed: {processed} entries linked")
 
         return self.db.get_coverage_report(run_id)
 
