@@ -357,9 +357,7 @@ class BatchProcessor:
             # Determine outcome based on confidence
             if adjudication_result.outcome == AdjudicationOutcome.ERROR:
                 outcome = "error"
-                log.warning(
-                    f"  ERROR: {adjudication_result.error_message}"
-                )
+                log.warning(f"  ERROR: {adjudication_result.error_message}")
             elif adjudication_result.confidence >= self.auto_accept_threshold:
                 outcome = "accepted"
                 log.info(

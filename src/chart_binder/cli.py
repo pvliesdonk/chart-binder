@@ -5,6 +5,7 @@ import logging
 import os
 import sqlite3
 import sys
+import time
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -1828,7 +1829,7 @@ def llm_batch_adjudicate(
 
     from chart_binder.decisions_db import DecisionsDB
     from chart_binder.llm import LLMAdjudicator
-    from chart_binder.llm.batch import BatchProcessor
+    from chart_binder.llm.batch import BatchProcessor, BatchState
     from chart_binder.llm.review_queue import ReviewQueue
 
     config: Config = ctx.obj["config"]
@@ -2201,7 +2202,9 @@ def llm_inspect(ctx: click.Context, session_id: str, file_id: str) -> None:
             "rationale": result.get("rationale"),
             "model_id": result.get("model_id"),
             "prompt": json.loads(result["prompt_json"]) if result.get("prompt_json") else None,
-            "response": json.loads(result["response_json"]) if result.get("response_json") else None,
+            "response": json.loads(result["response_json"])
+            if result.get("response_json")
+            else None,
         }
         click.echo(json.dumps(output, indent=2))
         sys.exit(ExitCode.SUCCESS)
