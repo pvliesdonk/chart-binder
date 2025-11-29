@@ -493,43 +493,41 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                     )
                     logger.debug(f"Title/artist search returned {len(search_results)} results")
 
-                    # Hydrate from all sources: top 5 MB + top 5 Discogs + top 5 Spotify
-                    # This ensures we get evidence from multiple sources, not just highest confidence
-                    mb_count = 0
-                    discogs_count = 0
-                    spotify_count = 0
-                    for result in search_results:
-                        # Hydrate MusicBrainz results
-                        if result.get("recording_mbid") and mb_count < 5:
-                            mbid = result["recording_mbid"]
-                            logger.debug(f"Hydrating MB recording {mbid}")
-                            try:
-                                fetcher.fetch_recording(mbid)
-                                mb_count += 1
-                            except Exception as e:
-                                logger.debug(f"Failed to fetch MB recording {mbid}: {e}")
-                        # Hydrate Discogs results
-                        elif result.get("discogs_release_id") and discogs_count < 5:
-                            discogs_id = result["discogs_release_id"]
-                            logger.debug(f"Hydrating Discogs release {discogs_id}")
-                            try:
-                                fetcher.fetch_discogs_release(discogs_id)
-                                discogs_count += 1
-                            except Exception as e:
-                                logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
-                        # Hydrate Spotify results
-                        elif result.get("spotify_track_id") and spotify_count < 5:
-                            spotify_id = result["spotify_track_id"]
-                            logger.debug(f"Hydrating Spotify track {spotify_id}")
-                            try:
-                                fetcher.fetch_spotify_track(spotify_id)
-                                spotify_count += 1
-                            except Exception as e:
-                                logger.debug(f"Failed to fetch Spotify track {spotify_id}: {e}")
+                    # Hydrate top 5 from each source type
+                    # Separate by source to ensure balanced evidence gathering
+                    mb_results = [r for r in search_results if r.get("recording_mbid")]
+                    discogs_results = [r for r in search_results if r.get("discogs_release_id")]
+                    spotify_results = [r for r in search_results if r.get("spotify_track_id")]
 
-                        # Stop when we have enough from all sources
-                        if mb_count >= 5 and discogs_count >= 5 and spotify_count >= 5:
-                            break
+                    mb_count = 0
+                    for result in mb_results[:5]:
+                        mbid = result["recording_mbid"]
+                        logger.debug(f"Hydrating MB recording {mbid}")
+                        try:
+                            fetcher.fetch_recording(mbid)
+                            mb_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch MB recording {mbid}: {e}")
+
+                    discogs_count = 0
+                    for result in discogs_results[:5]:
+                        discogs_id = result["discogs_release_id"]
+                        logger.debug(f"Hydrating Discogs release {discogs_id}")
+                        try:
+                            fetcher.fetch_discogs_release(discogs_id)
+                            discogs_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
+
+                    spotify_count = 0
+                    for result in spotify_results[:5]:
+                        spotify_id = result["spotify_track_id"]
+                        logger.debug(f"Hydrating Spotify track {spotify_id}")
+                        try:
+                            fetcher.fetch_spotify_track(spotify_id)
+                            spotify_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch Spotify track {spotify_id}: {e}")
 
                     logger.debug(
                         f"Hydrated {mb_count} MB recordings, {discogs_count} Discogs releases, "
