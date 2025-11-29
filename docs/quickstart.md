@@ -19,8 +19,8 @@ Before you begin, ensure you have:
 git clone https://github.com/pvliesdonk/chart-binder.git
 cd chart-binder
 
-# Install dependencies
-uv sync
+# Install dependencies (includes beets plugin support)
+uv sync --all-extras
 
 # Verify installation
 uv run canon --help

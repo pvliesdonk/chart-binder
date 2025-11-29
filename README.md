@@ -32,8 +32,8 @@ Chart-Binder solves the problem of determining the "canonical" version of a song
 git clone https://github.com/pvliesdonk/chart-binder.git
 cd chart-binder
 
-# Install dependencies with uv
-uv sync
+# Install dependencies with uv (includes beets plugin support)
+uv sync --all-extras
 
 # Or install with pip
 pip install -e .

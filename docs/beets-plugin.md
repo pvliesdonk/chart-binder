@@ -16,8 +16,8 @@ The Chart-Binder beets plugin provides canonicalization during the beets import 
 The plugin is included with Chart-Binder. Install Chart-Binder:
 
 ```bash
-# Using uv
-uv sync
+# Using uv (--all-extras required for beets plugin)
+uv sync --all-extras
 
 # Or using pip
 pip install -e .

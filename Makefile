@@ -3,7 +3,7 @@
 all: install lint test
 
 install:
-	uv sync
+	uv sync --all-extras
 
 lint:
 	uv run python devtools/lint.py
