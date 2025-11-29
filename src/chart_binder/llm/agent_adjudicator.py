@@ -130,10 +130,13 @@ class AgentAdjudicator:
             log.debug(f"Content: {response.content}")
             log.debug(f"Type: {type(response)}")
             if hasattr(response, "tool_calls"):
-                log.debug(f"tool_calls attribute: {response.tool_calls}")
+                log.debug(f"tool_calls: {response.tool_calls}")
+            if hasattr(response, "invalid_tool_calls"):
+                log.debug(f"invalid_tool_calls: {response.invalid_tool_calls}")
             if hasattr(response, "additional_kwargs"):
                 log.debug(f"additional_kwargs: {response.additional_kwargs}")
-            log.debug(f"All attributes: {[x for x in dir(response) if not x.startswith('_')]}")
+            if hasattr(response, "response_metadata"):
+                log.debug(f"response_metadata: {json.dumps(response.response_metadata, indent=2)}")
             log.debug("=" * 70)
 
             # If there are tool calls, execute them and get final response
