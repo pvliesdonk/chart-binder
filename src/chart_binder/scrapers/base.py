@@ -185,7 +185,9 @@ class ChartScraper(ABC):
             self._client = httpx.Client(
                 timeout=30.0,
                 follow_redirects=True,
-                headers={"User-Agent": "chart-binder/1.0"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
             )
         return self._client
 

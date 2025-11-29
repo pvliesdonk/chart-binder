@@ -88,7 +88,11 @@ class Top2000Scraper(ChartScraper):
 
         # Fallback to other pattern if primary fails
         if data is None:
-            fallback_url = self.API_NEW_PATTERN.format(year=year) if year < 2024 else self.API_OLD_PATTERN.format(year=year)
+            fallback_url = (
+                self.API_NEW_PATTERN.format(year=year)
+                if year < 2024
+                else self.API_OLD_PATTERN.format(year=year)
+            )
             data = self._fetch_json(fallback_url)
 
         if data is None:
@@ -101,7 +105,10 @@ class Top2000Scraper(ChartScraper):
         entries: list[ScrapedEntry] = []
 
         if isinstance(data, dict):
-            items = data.get("data", data.get("items", data.get("chart", [])))
+            # NPO API uses "positions" key
+            items = data.get(
+                "positions", data.get("data", data.get("items", data.get("chart", [])))
+            )
             if isinstance(items, dict):
                 items = items.get("items", [])
         else:
@@ -114,17 +121,27 @@ class Top2000Scraper(ChartScraper):
             if not isinstance(item, dict):
                 continue
 
-            rank = item.get("position") or item.get("rank") or item.get("pos")
-            artist = item.get("artist") or item.get("artistName") or ""
-            title = item.get("title") or item.get("trackTitle") or item.get("name") or ""
+            # Handle nested structure: position.current and track.artist/track.title
+            position_data = item.get("position", {})
+            track_data = item.get("track", {})
 
-            # Look for previous position in various formats
-            prev_pos = (
-                item.get("lastYearPosition")
-                or item.get("previousPosition")
-                or item.get("prev_position")
-                or item.get("lastYear")
-            )
+            if position_data and track_data:
+                # New NPO API format
+                rank = position_data.get("current")
+                artist = track_data.get("artist", "")
+                title = track_data.get("title", "")
+                prev_pos = position_data.get("previous")
+            else:
+                # Legacy format
+                rank = item.get("position") or item.get("rank") or item.get("pos")
+                artist = item.get("artist") or item.get("artistName") or ""
+                title = item.get("title") or item.get("trackTitle") or item.get("name") or ""
+                prev_pos = (
+                    item.get("lastYearPosition")
+                    or item.get("previousPosition")
+                    or item.get("prev_position")
+                    or item.get("lastYear")
+                )
 
             if rank is None or not artist or not title:
                 continue
@@ -168,7 +185,11 @@ class Top2000Scraper(ChartScraper):
 
         # Fallback to other pattern if primary fails
         if data is None:
-            fallback_url = self.API_NEW_PATTERN.format(year=year) if year < 2024 else self.API_OLD_PATTERN.format(year=year)
+            fallback_url = (
+                self.API_NEW_PATTERN.format(year=year)
+                if year < 2024
+                else self.API_OLD_PATTERN.format(year=year)
+            )
             data = self._fetch_json(fallback_url)
 
         if data is None:
@@ -181,7 +202,10 @@ class Top2000Scraper(ChartScraper):
         entries: list[tuple[int, str, str]] = []
 
         if isinstance(data, dict):
-            items = data.get("data", data.get("items", data.get("chart", [])))
+            # NPO API uses "positions" key
+            items = data.get(
+                "positions", data.get("data", data.get("items", data.get("chart", [])))
+            )
             if isinstance(items, dict):
                 items = items.get("items", [])
         else:
@@ -194,9 +218,20 @@ class Top2000Scraper(ChartScraper):
             if not isinstance(item, dict):
                 continue
 
-            rank = item.get("position") or item.get("rank") or item.get("pos")
-            artist = item.get("artist") or item.get("artistName") or ""
-            title = item.get("title") or item.get("trackTitle") or item.get("name") or ""
+            # Handle nested structure: position.current and track.artist/track.title
+            position_data = item.get("position", {})
+            track_data = item.get("track", {})
+
+            if position_data and track_data:
+                # New NPO API format
+                rank = position_data.get("current")
+                artist = track_data.get("artist", "")
+                title = track_data.get("title", "")
+            else:
+                # Legacy format
+                rank = item.get("position") or item.get("rank") or item.get("pos")
+                artist = item.get("artist") or item.get("artistName") or ""
+                title = item.get("title") or item.get("trackTitle") or item.get("name") or ""
 
             if rank is None or not artist or not title:
                 continue
