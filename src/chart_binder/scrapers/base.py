@@ -14,6 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class ScrapedEntry:
+    """A single scraped chart entry with optional metadata."""
+
+    rank: int
+    artist: str
+    title: str
+    previous_position: int | None = None  # Position in previous week (from website)
+    weeks_on_chart: int | None = None  # How long on chart (from website)
+
+    def as_tuple(self) -> tuple[int, str, str]:
+        """Convert to simple tuple format for backwards compatibility."""
+        return (self.rank, self.artist, self.title)
+
+
+@dataclass
 class ScrapeResult:
     """Result of a scrape operation with validation info."""
 
@@ -22,9 +37,13 @@ class ScrapeResult:
     chart_type: str
     period: str
     warnings: list[str]
+    # Rich entry data (if available)
+    rich_entries: list[ScrapedEntry] | None = None
     # Continuity validation
     continuity_overlap: float | None = None  # Overlap % with reference run
     continuity_reference: str | None = None  # Reference period used
+    # Cross-reference validation
+    position_mismatches: list[tuple[str, str, int, int]] | None = None  # (artist, title, claimed, actual)
 
     @property
     def actual_count(self) -> int:
@@ -100,6 +119,44 @@ EXPECTED_ENTRY_COUNTS: dict[str, int] = {
     "nl_top2000": 2000,  # NPO Top 2000
     "nl_538_zwaarste": 150,  # 538 De Zwaarste Lijst (typically 150)
 }
+
+
+def cross_reference_previous_positions(
+    scraped_entries: list[ScrapedEntry],
+    db_previous_ranks: dict[tuple[str, str], int],
+) -> list[tuple[str, str, int, int]]:
+    """
+    Cross-reference scraped previous_position against actual database positions.
+
+    Args:
+        scraped_entries: List of ScrapedEntry objects with previous_position from website
+        db_previous_ranks: Dict mapping (normalized_artist, normalized_title) to actual rank
+                          from the previous period in our database
+
+    Returns:
+        List of mismatches as (artist, title, claimed_position, actual_position) tuples.
+        Empty list means all positions match or no previous_position data available.
+    """
+    mismatches: list[tuple[str, str, int, int]] = []
+
+    for entry in scraped_entries:
+        if entry.previous_position is None:
+            # No previous position claimed, skip
+            continue
+
+        # Normalize for matching
+        key = (entry.artist.lower().strip(), entry.title.lower().strip())
+
+        actual_rank = db_previous_ranks.get(key)
+        if actual_rank is None:
+            # Entry not found in previous period - might be new or naming mismatch
+            # Not necessarily a mismatch, could be genuinely new entry
+            continue
+
+        if actual_rank != entry.previous_position:
+            mismatches.append((entry.artist, entry.title, entry.previous_position, actual_rank))
+
+    return mismatches
 
 
 class ChartScraper(ABC):
@@ -467,3 +524,37 @@ def test_remove_double_parens():
     assert ChartScraper._remove_double_parens("Title ((metadata))") == "Title"
     assert ChartScraper._remove_double_parens("Title [info]") == "Title"
     assert ChartScraper._remove_double_parens("Title (normal parens)") == "Title (normal parens)"
+
+
+def test_cross_reference_previous_positions():
+    # Scraped entries with claimed previous positions
+    scraped = [
+        ScrapedEntry(rank=1, artist="Artist A", title="Song A", previous_position=3),
+        ScrapedEntry(rank=2, artist="Artist B", title="Song B", previous_position=1),
+        ScrapedEntry(rank=3, artist="Artist C", title="Song C", previous_position=None),  # New entry
+        ScrapedEntry(rank=4, artist="Artist D", title="Song D", previous_position=5),
+    ]
+
+    # Database records from previous period
+    db_previous = {
+        ("artist a", "song a"): 3,  # Correct
+        ("artist b", "song b"): 2,  # Mismatch! Website claims 1, db says 2
+        ("artist d", "song d"): 5,  # Correct
+    }
+
+    mismatches = cross_reference_previous_positions(scraped, db_previous)
+
+    # Only Artist B should be flagged (claimed 1, actual 2)
+    assert len(mismatches) == 1
+    assert mismatches[0] == ("Artist B", "Song B", 1, 2)
+
+
+def test_cross_reference_previous_positions_empty():
+    # No previous positions claimed
+    scraped = [
+        ScrapedEntry(rank=1, artist="Artist A", title="Song A", previous_position=None),
+    ]
+    db_previous: dict[tuple[str, str], int] = {}
+
+    mismatches = cross_reference_previous_positions(scraped, db_previous)
+    assert len(mismatches) == 0

@@ -4,7 +4,7 @@ import logging
 import re
 
 from chart_binder.http_cache import HttpCache
-from chart_binder.scrapers.base import ChartScraper
+from chart_binder.scrapers.base import ChartScraper, ScrapedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,26 @@ class Top40Scraper(ChartScraper):
 
         return self._parse_html(html)
 
+    def scrape_rich(self, period: str) -> list[ScrapedEntry]:
+        """
+        Scrape Top 40 chart with full metadata including previous position.
+
+        Args:
+            period: Week in format YYYY-Www (e.g., "2024-W01", "1967-W07")
+
+        Returns:
+            List of ScrapedEntry objects with previous_position and weeks_on_chart
+        """
+        year, week = self._parse_period(period)
+        url = f"{self.BASE_URL}/top40/{year}/week-{week:02d}"
+
+        html = self._fetch_url(url)
+        if html is None:
+            logger.warning(f"Week {period} not found")
+            return []
+
+        return self._parse_html_rich(html)
+
     def _parse_html(self, html: str) -> list[tuple[int, str, str]]:
         """Parse Top40 HTML page and extract chart entries."""
         try:
@@ -68,6 +88,56 @@ class Top40Scraper(ChartScraper):
 
                 split_entries = self._handle_split_entries(rank_val, artist_val, title_val)
                 entries.extend(split_entries)
+
+            return entries
+
+        except Exception as e:
+            logger.error(f"Error parsing Top40 HTML: {e}")
+            return []
+
+    def _parse_html_rich(self, html: str) -> list[ScrapedEntry]:
+        """Parse Top40 HTML page and extract chart entries with metadata."""
+        try:
+            entries: list[ScrapedEntry] = []
+            parser = Top40Parser()
+            parser.feed(html)
+            raw_entries = parser.entries
+
+            for entry in raw_entries:
+                rank_val = entry.get("rank")
+                artist_val = entry.get("artist", "")
+                title_val = entry.get("title", "")
+
+                if rank_val is None or not artist_val or not title_val:
+                    continue
+
+                if not isinstance(rank_val, int):
+                    continue
+                if not isinstance(artist_val, str):
+                    continue
+                if not isinstance(title_val, str):
+                    continue
+
+                # Extract metadata
+                prev_pos = entry.get("previous_position")
+                weeks = entry.get("weeks_on_chart")
+
+                # Clean text
+                artist_val = self._clean_text(artist_val)
+                title_val = self._clean_text(title_val)
+                title_val = self._remove_double_parens(title_val)
+
+                # Note: For rich entries, we don't split double A-sides
+                # since metadata is per-entry
+                entries.append(
+                    ScrapedEntry(
+                        rank=rank_val,
+                        artist=artist_val,
+                        title=title_val,
+                        previous_position=prev_pos if isinstance(prev_pos, int) else None,
+                        weeks_on_chart=weeks if isinstance(weeks, int) else None,
+                    )
+                )
 
             return entries
 
@@ -146,6 +216,8 @@ class _Top40HTMLParser:
         self._in_position = False
         self._in_title = False
         self._in_artist = False
+        self._in_previous = False
+        self._in_weeks = False
         self._current_entry: dict[str, int | str] = {}
         self._text_buffer = ""
 
@@ -192,6 +264,20 @@ class _Top40HTMLParser:
             elif "top40-list__artist" in class_attr or "artist" in class_attr:
                 self._in_artist = True
                 self._text_buffer = ""
+            # Previous position - various class patterns
+            elif any(
+                x in class_attr.lower()
+                for x in ["previous", "vorige", "last-week", "lastweek"]
+            ):
+                self._in_previous = True
+                self._text_buffer = ""
+            # Weeks on chart - various class patterns
+            elif any(
+                x in class_attr.lower()
+                for x in ["weeks", "weken", "duration", "chart-weeks"]
+            ):
+                self._in_weeks = True
+                self._text_buffer = ""
 
     def _handle_endtag(self, tag: str) -> None:
         if self._in_position:
@@ -210,6 +296,28 @@ class _Top40HTMLParser:
             self._in_artist = False
             self._current_entry["artist"] = self._text_buffer.strip()
 
+        if self._in_previous:
+            self._in_previous = False
+            try:
+                # Extract number from text like "vorige week: 5" or just "5"
+                # Also handle "nieuw" (new) or "-" (not in chart)
+                text = self._text_buffer.strip().lower()
+                if text and text not in ("nieuw", "new", "-", ""):
+                    prev = int(re.sub(r"\D", "", self._text_buffer))
+                    if prev > 0:
+                        self._current_entry["previous_position"] = prev
+            except ValueError:
+                pass
+
+        if self._in_weeks:
+            self._in_weeks = False
+            try:
+                weeks = int(re.sub(r"\D", "", self._text_buffer))
+                if weeks > 0:
+                    self._current_entry["weeks_on_chart"] = weeks
+            except ValueError:
+                pass
+
         if self._in_item and tag in ("li", "div"):
             if "rank" in self._current_entry:
                 self.parent.entries.append(self._current_entry.copy())
@@ -217,7 +325,13 @@ class _Top40HTMLParser:
             self._current_entry = {}
 
     def _handle_data(self, data: str) -> None:
-        if self._in_position or self._in_title or self._in_artist:
+        if (
+            self._in_position
+            or self._in_title
+            or self._in_artist
+            or self._in_previous
+            or self._in_weeks
+        ):
             self._text_buffer += data
 
 

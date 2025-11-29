@@ -413,6 +413,31 @@ class ChartsDB:
         entries = self.list_entries(run["run_id"])
         return [(e["artist_raw"], e["title_raw"]) for e in entries]
 
+    def get_entries_with_ranks_by_period(
+        self, chart_id: str, period: str
+    ) -> dict[tuple[str, str], int] | None:
+        """
+        Get entries with ranks for cross-reference validation.
+
+        Returns dict mapping (normalized_artist, normalized_title) to rank,
+        or None if run doesn't exist.
+        """
+        run = self.get_run_by_period(chart_id, period)
+        if not run:
+            return None
+
+        entries = self.list_entries(run["run_id"])
+        # Return dict keyed by (artist, title) normalized for matching
+        return {
+            (self._normalize_for_match(e["artist_raw"]), self._normalize_for_match(e["title_raw"])): e["rank"]
+            for e in entries
+        }
+
+    @staticmethod
+    def _normalize_for_match(text: str) -> str:
+        """Normalize text for matching (lowercase, strip whitespace)."""
+        return text.lower().strip()
+
     def get_adjacent_period(
         self, chart_id: str, period: str, direction: int = -1
     ) -> str | None:

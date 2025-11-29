@@ -9,8 +9,10 @@ Provides robust scraping infrastructure for chart data from various sources.
 __all__ = [
     "ChartScraper",
     "ScrapeResult",
+    "ScrapedEntry",
     "EXPECTED_ENTRY_COUNTS",
     "calculate_overlap",
+    "cross_reference_previous_positions",
     "Top40Scraper",
     "Top40JaarScraper",
     "Top2000Scraper",
@@ -21,8 +23,10 @@ __all__ = [
 from chart_binder.scrapers.base import (
     EXPECTED_ENTRY_COUNTS,
     ChartScraper,
+    ScrapedEntry,
     ScrapeResult,
     calculate_overlap,
+    cross_reference_previous_positions,
 )
 from chart_binder.scrapers.top40 import Top40Scraper
 from chart_binder.scrapers.top40_jaar import Top40JaarScraper
