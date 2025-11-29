@@ -10,13 +10,14 @@ Non-goals for v1: GUIs, Postgres migrations. Live source integration and LLM adj
 
 Components (deterministic, testable, decoupled):
 
-- Ingestors: MusicBrainz, Discogs, Spotify, Wikidata, AcoustID (live API clients with VCR-based tests for CI), chart scrapers (fixtures).
+- **Multi-Source Ingestors**: MusicBrainz, Discogs, Spotify, Wikidata, AcoustID (live API clients with VCR-based tests for CI), chart scrapers (fixtures). **All sources treated as equals** — no single source is canonical. Entities from any source can participate in canonicalization decisions using synthetic IDs (e.g., `discogs-release-{id}`, `spotify-track-{id}`).
+- **Cross-Source Validation**: Results appearing in multiple sources receive confidence boosts (+0.10 for 2 sources, +0.15 for 3+ sources), rewarding cross-platform validation.
 - Normalizer: Normalization Ruleset v1 to produce artist/title cores, guests, and edition tags; maintains alias registry.
-- Candidate Builder: Expands candidate graph (recording ↔ release_group ↔ release) using ISRC/AcoustID/title+duration corroboration.
-- Resolver: Canonicalization Rule Table selects CRG first, then RR, with explicit rationale codes and safe INDETERMINATE outcomes.
+- Candidate Builder: Expands candidate graph (recording ↔ release_group ↔ release) using ISRC/AcoustID/title+duration corroboration from all sources.
+- Resolver: Canonicalization Rule Table selects CRG first, then RR, with explicit rationale codes and safe INDETERMINATE outcomes. Can select entities from any source based on evidence quality.
 - Charts ETL: Scrape → normalize → link → snapshot; exports compact CHARTS JSON blob v1.
 - Tagging: Assembles canonical tagset and writes/reads tags across ID3v2.4, Vorbis/FLAC, MP4. Verifies round-trip.
-- Stores & Cache: HTTP cache, entity cache (`musicgraph.sqlite`), charts (`charts.sqlite`), decisions (`decisions.sqlite`).
+- Stores & Cache: HTTP cache (per-source with TTLs), entity cache (`musicgraph.sqlite`), charts (`charts.sqlite`), decisions (`decisions.sqlite`).
 - Explainability & Drift: Evidence bundle hashing, compact Decision Trace string, structured trace, drift classification.
 
 ## 3. Public Library API (stable for v1)

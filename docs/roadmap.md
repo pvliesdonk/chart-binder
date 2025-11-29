@@ -40,14 +40,17 @@ This roadmap turns the specification into small, implementable units suitable fo
 
 ### Epic 3.5 — Live Source Ingestors (M0/M1 boundary)
 
+**Status**: ✅ MusicBrainz, Discogs, Spotify implemented with multi-source architecture and cross-source confidence boosting. Wikidata and AcoustID pending.
+
 - Features
-  - **MusicBrainz API client**: recording/release-group/release lookups by MBID or search query; batch lookup optimization; URL relationships parsing; rate limiting (1 req/sec, configurable).
-  - **Discogs API client**: master/release lookups by ID; OAuth authentication; marketplace data filtering; rate limiting (60/min auth, 25/min unauth).
-  - **Spotify Web API client**: track/album metadata by ID or search; client credentials flow; preview URL and popularity extraction; rate limiting per ToS.
-  - **Wikidata SPARQL client**: artist country/origin queries (P27, P495, P740); result caching; timeout handling.
-  - **AcoustID client**: fingerprint submission and lookup; duration+fingerprint corroboration; confidence thresholds.
-  - **Unified fetcher interface**: `fetch_recording(mbid)`, `search_recordings(isrc|title_artist)` with fallback chain; cache-aware with TTL/ETag respect; `--offline|--refresh|--frozen` mode support.
-  - **Entity hydration**: parse API responses into `musicgraph.sqlite` entities; maintain external ID linkages; timestamp provenance (`fetched_at_utc`).
+  - **MusicBrainz API client** ✅: recording/release-group/release lookups by MBID or search query; batch lookup optimization; URL relationships parsing; rate limiting (1 req/sec, configurable).
+  - **Discogs API client** ✅: master/release lookups by ID; database search and barcode lookup; OAuth authentication; marketplace data filtering; rate limiting (60/min auth, 25/min unauth).
+  - **Spotify Web API client** ✅: track/album metadata by ID or search; client credentials flow; preview URL and popularity extraction; rate limiting per ToS.
+  - **Wikidata SPARQL client** ⏳: artist country/origin queries (P27, P495, P740); result caching; timeout handling.
+  - **AcoustID client** ⏳: fingerprint submission and lookup; duration+fingerprint corroboration; confidence thresholds.
+  - **Unified fetcher interface** ✅: `fetch_recording(mbid)`, `fetch_discogs_release(id)`, `fetch_spotify_track(id)`, `search_recordings(isrc|title_artist)` with multi-source aggregation; cache-aware with TTL/ETag respect; `--offline|--refresh|--frozen` mode support.
+  - **Entity hydration** ✅: parse API responses into `musicgraph.sqlite` entities using synthetic IDs for non-MB sources; maintain external ID linkages; timestamp provenance (`fetched_at_utc`).
+  - **Cross-source confidence boosting** ✅: group results by normalized title+artist; apply boosts for multi-source validation (+0.10 for 2 sources, +0.15 for 3+ sources).
 - Acceptance
   - Live API calls succeed with valid credentials (use VCR cassettes for CI); rate limits enforced (token bucket verification); cache hit/miss logic correct; `--offline` mode never hits network; entity CRUD round-trips with all fields populated; fixture-based tests continue passing via mocked responses.
 - Notes
@@ -166,6 +169,41 @@ This roadmap turns the specification into small, implementable units suitable fo
   - Batch sizing; token-bucket rate limits; cache-only mode; PII-safe logging; lint/type/test gates; property tests.
 - Acceptance
   - Lint/type clean; all tests green; logs contain no PII; rate limits exercised in tests.
+
+## Future Enhancements (Post-v1)
+
+The following enhancements build on the multi-source architecture to improve accuracy, coverage, and automation:
+
+### Enhanced Cross-Source Intelligence
+
+- **Popularity-Weighted Confidence**: Use Spotify popularity scores and Discogs community ratings to boost confidence in high-engagement releases. Helps disambiguate between original and cover versions.
+- **ISRC Cross-Linking**: Automatically link Spotify tracks to MusicBrainz recordings via ISRC codes. Strengthens multi-source validation and reduces reliance on fuzzy text matching.
+- **Release Date Validation**: Cross-reference release dates across MB, Discogs, and Spotify to detect discrepancies. Flag conflicts > 1 year for human review or LLM adjudication.
+- **Label and Format Validation**: Compare label names and media formats across sources for consistency checks. Prefer sources with richer format metadata (e.g., Discogs vinyl/CD details).
+
+### Additional Streaming Sources
+
+- **Apple Music Integration**: Track/album search and metadata retrieval; ISRC-based cross-linking; popularity signals.
+- **Tidal Integration**: High-fidelity metadata; master recording indicators; credits data for artist validation.
+- **YouTube Music Integration**: Official releases vs user uploads; play counts as popularity signal.
+
+### Consensus Resolver
+
+- **Conflicting Data Resolution**: When sources disagree on core facts (artist name, release year, track title), implement voting/weighting algorithm based on source authority and confidence.
+- **Metadata Completeness Scoring**: Prefer sources with richer metadata (e.g., Discogs often has detailed format/packaging info; Spotify has preview URLs).
+- **Human-in-the-Loop Escalation**: Integrate with Epic 13's review queue for conflicts that exceed threshold disagreement.
+
+### AcoustID Integration (from Epic 3.5)
+
+- **Fingerprint-Based Matching**: Submit audio fingerprints to AcoustID for MBID lookup; high-confidence match bypasses text search.
+- **Duration + Fingerprint Corroboration**: Use acoustic similarity to validate or challenge text-based matches; detect mastering variants.
+- **Fallback for Obscure Tracks**: AcoustID can identify recordings without ISRCs or with poor metadata.
+
+### Performance and Scalability
+
+- **Parallel Source Fetching**: Fetch from MB, Discogs, Spotify simultaneously to reduce total latency.
+- **Incremental Cache Warming**: Background process to pre-fetch common recordings and populate musicgraph.sqlite.
+- **Batch Canonicalization**: Process entire libraries in parallel batches with progress tracking and retry logic.
 
 ## Dependencies & Order
 
