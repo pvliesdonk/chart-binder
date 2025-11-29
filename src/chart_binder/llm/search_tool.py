@@ -493,3 +493,124 @@ def test_format_for_llm():
     formatted = tool.format_for_llm(searches)
     assert "## Artist search" in formatted
     assert "## Recording search" in formatted
+
+
+def test_search_tool_with_real_db_methods(tmp_path):
+    """Test SearchTool uses actual DB methods when available."""
+    from chart_binder.musicgraph import MusicGraphDB
+
+    # Create a populated database
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "The Beatles", sort_name="Beatles, The", begin_area_country="GB")
+    db.upsert_artist("artist-2", "The Rolling Stones")
+
+    db.upsert_recording(
+        "rec-1",
+        "Yesterday",
+        artist_mbid="artist-1",
+        length_ms=125000,
+        isrcs_json='["GBAYE0601315"]',
+    )
+    db.upsert_recording(
+        "rec-2",
+        "Hey Jude",
+        artist_mbid="artist-1",
+        length_ms=431000,
+    )
+
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release_group("rg-2", "Abbey Road", artist_mbid="artist-1", type="Album")
+
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+    db.upsert_release("rel-2", "Abbey Road", release_group_mbid="rg-2")
+
+    db.upsert_recording_release("rec-1", "rel-1")
+    db.upsert_recording_release("rec-2", "rel-2")
+
+    # Create search tool with database
+    tool = SearchTool(music_graph_db=db)
+
+    # Test artist search by name
+    response = tool.search_artist("Beatles")
+    assert response.total_count >= 1
+    assert any(r.title == "The Beatles" for r in response.results)
+    assert any(r.metadata.get("country") == "GB" for r in response.results)
+
+    # Test artist search by MBID
+    response = tool.search_artist("artist-1", by_mbid=True)
+    assert response.total_count == 1
+    assert response.results[0].title == "The Beatles"
+    assert response.results[0].metadata["sort_name"] == "Beatles, The"
+
+    # Test recording search by ISRC
+    response = tool.search_recording("GBAYE0601315", by_isrc=True)
+    assert response.total_count == 1
+    assert response.results[0].title == "Yesterday"
+
+    # Test recording search by MBID
+    response = tool.search_recording("rec-2", by_mbid=True)
+    assert response.total_count == 1
+    assert response.results[0].title == "Hey Jude"
+
+    # Test release group search
+    response = tool.search_release_group("Abbey", artist="Beatles")
+    assert response.total_count >= 1
+    assert any(r.title == "Abbey Road" for r in response.results)
+
+    # Test release group search by MBID
+    response = tool.search_release_group("rg-1", by_mbid=True)
+    assert response.total_count == 1
+    assert response.results[0].title == "Help!"
+
+    # Test get releases in group
+    response = tool.get_release_group_releases("rg-1")
+    assert response.total_count >= 1
+    assert any(r.title == "Help!" for r in response.results)
+
+    # Test get release groups for recording
+    response = tool.get_recording_release_groups("rec-1")
+    assert response.total_count >= 1
+    assert any(r.title == "Help!" for r in response.results)
+
+
+def test_search_tool_format_for_llm_multiple_searches(tmp_path):
+    """Test format_for_llm with multiple search types."""
+    from chart_binder.musicgraph import MusicGraphDB
+
+    # Create a populated database
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "The Beatles")
+    db.upsert_recording("rec-1", "Yesterday", artist_mbid="artist-1", length_ms=125000)
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+
+    tool = SearchTool(music_graph_db=db)
+
+    # Perform multiple types of searches
+    artist_search = tool.search_artist("Beatles")
+    # Search by MBID since text search requires search_recordings method
+    recording_search = tool.search_recording("rec-1", by_mbid=True)
+    rg_search = tool.search_release_group("Help!")
+
+    # Format all searches together
+    searches = [
+        ("Artist Results", artist_search),
+        ("Recording Results", recording_search),
+        ("Release Group Results", rg_search),
+    ]
+    formatted = tool.format_for_llm(searches)
+
+    # Verify all sections are present
+    assert "## Artist Results" in formatted
+    assert "## Recording Results" in formatted
+    assert "## Release Group Results" in formatted
+
+    # Verify actual results appear
+    assert "The Beatles" in formatted
+    assert "Yesterday" in formatted
+    assert "Help!" in formatted
+
+    # Verify structure
+    assert "[artist]" in formatted
+    assert "[recording]" in formatted
+    assert "[release_group]" in formatted

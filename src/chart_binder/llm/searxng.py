@@ -526,3 +526,116 @@ def test_convert_to_search_response():
     assert search_response.results[0].metadata["snippet"] == "Test content"
     assert search_response.results[0].metadata["source_engine"] == "google"
     assert search_response.results[0].score == 0.9
+
+
+def test_searxng_client_timeout_handling():
+    """Test client handles timeout gracefully."""
+    import httpx
+    from unittest.mock import Mock, patch
+
+    client = SearxNGClient(base_url="http://localhost:8080", timeout=0.001)
+
+    with patch.object(client._client, "get") as mock_get:
+        # Simulate timeout exception
+        mock_get.side_effect = httpx.TimeoutException("Request timed out")
+
+        response = client.search("test query")
+
+        # Should return error response, not crash
+        assert response.error is not None
+        assert "timeout" in response.error.lower()
+        assert response.total_count == 0
+        assert len(response.results) == 0
+
+
+def test_searxng_client_malformed_response():
+    """Test client handles malformed JSON response."""
+    import httpx
+    from unittest.mock import Mock, patch
+
+    client = SearxNGClient(base_url="http://localhost:8080")
+
+    with patch.object(client._client, "get") as mock_get:
+        # Simulate successful HTTP response with malformed JSON
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+        mock_get.return_value = mock_response
+
+        response = client.search("test query")
+
+        # Should return error response
+        assert response.error is not None
+        assert "error" in response.error.lower()
+        assert response.total_count == 0
+        assert len(response.results) == 0
+
+    # Test with missing results field
+    with patch.object(client._client, "get") as mock_get:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"invalid": "structure"}  # Missing "results" key
+        mock_get.return_value = mock_response
+
+        response = client.search("test query")
+
+        # Should handle gracefully and return empty results
+        assert response.total_count == 0
+        assert len(response.results) == 0
+
+    # Test with partial result data
+    with patch.object(client._client, "get") as mock_get:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {"title": "Title Only"},  # Missing url, content, engine
+                {"url": "https://example.com"},  # Missing title
+            ]
+        }
+        mock_get.return_value = mock_response
+
+        response = client.search("test query")
+
+        # Should create results with default values for missing fields
+        assert len(response.results) == 2
+        assert response.results[0].title == "Title Only"
+        assert response.results[0].url == ""
+        assert response.results[1].url == "https://example.com"
+        assert response.results[1].title == ""
+
+
+def test_searxng_tool_empty_artist_or_title():
+    """Test music search with empty artist or title."""
+    tool = SearxNGSearchTool(base_url="http://localhost:8080", timeout=1.0)
+
+    # Test with empty artist
+    response = tool.search_music_info(artist="", title="Hey Jude")
+    assert isinstance(response, SearchResponse)
+    # Should still construct a query with just the title
+    assert "Hey Jude" in response.query
+
+    # Test with empty title
+    response = tool.search_music_info(artist="The Beatles", title="")
+    assert isinstance(response, SearchResponse)
+    # Should still construct a query with just the artist
+    assert "The Beatles" in response.query
+
+    # Test with both empty
+    response = tool.search_music_info(artist="", title="")
+    assert isinstance(response, SearchResponse)
+    # Should have a query (just "music") but likely return error or empty
+    assert response.query is not None
+
+    # Test verify_release with empty year
+    response = tool.verify_release(artist="Pink Floyd", title="The Wall", year=None)
+    assert isinstance(response, SearchResponse)
+    assert "Pink Floyd" in response.query
+    assert "The Wall" in response.query
+    # Year should not be in query when None
+    assert response.query.count("None") == 0
+
+    # Test verify_release with empty strings
+    response = tool.verify_release(artist="", title="Album", year="1999")
+    assert isinstance(response, SearchResponse)
+    # Should handle empty artist gracefully

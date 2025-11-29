@@ -1048,3 +1048,191 @@ def test_get_releases_in_group(tmp_path):
     # Test with non-existent release group
     releases = db.get_releases_in_group("nonexistent")
     assert len(releases) == 0
+
+
+def test_search_recordings_by_isrc_malformed_json(tmp_path):
+    """Test ISRC search handles malformed JSON gracefully."""
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "Test Artist")
+    # Insert recording with malformed JSON directly
+    conn = db._get_connection()
+    conn.execute(
+        "INSERT INTO recording (mbid, title, isrcs_json, fetched_at) VALUES (?, ?, ?, ?)",
+        ("rec-1", "Test", "not valid json", time.time())
+    )
+    conn.commit()
+    conn.close()
+
+    # SQLite's json_each will raise an error for malformed JSON
+    # This tests that the error properly propagates (documenting behavior)
+    try:
+        results = db.search_recordings_by_isrc("ANYTHING")
+        # If we get here, SQLite version might handle it differently
+        # Some versions return empty, others raise error
+        assert len(results) == 0
+    except sqlite3.OperationalError as e:
+        # Expected behavior - malformed JSON raises error
+        assert "malformed JSON" in str(e) or "JSON" in str(e)
+
+    # Clean up malformed record before testing with valid data
+    conn = db._get_connection()
+    conn.execute("DELETE FROM recording WHERE mbid = ?", ("rec-1",))
+    conn.commit()
+    conn.close()
+
+    # Add valid recording to confirm search works normally after cleanup
+    db.upsert_recording("rec-2", "Valid", isrcs_json='["USCA12345678"]')
+    results = db.search_recordings_by_isrc("USCA12345678")
+    assert len(results) == 1
+    assert results[0]["title"] == "Valid"
+
+
+def test_search_recordings_fuzzy_empty_database(tmp_path):
+    """Test fuzzy search on empty database."""
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+
+    # Search with all parameters on empty database
+    results = db.search_recordings_fuzzy("Yesterday")
+    assert len(results) == 0
+
+    results = db.search_recordings_fuzzy("Test", artist_name="Artist")
+    assert len(results) == 0
+
+    results = db.search_recordings_fuzzy("", length_min=100000, length_max=200000)
+    assert len(results) == 0
+
+
+def test_search_recordings_fuzzy_special_characters(tmp_path):
+    """Test fuzzy search with SQL special characters (%, _, etc.)."""
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+
+    db.upsert_artist("artist-1", "100% Pure")
+    db.upsert_artist("artist-2", "Under_Score")
+
+    db.upsert_recording("rec-1", "50% Love", artist_mbid="artist-1", length_ms=180000)
+    db.upsert_recording("rec-2", "100% Pure", artist_mbid="artist-1", length_ms=200000)
+    db.upsert_recording("rec-3", "My_Song", artist_mbid="artist-2", length_ms=220000)
+
+    # Test % character in title search
+    results = db.search_recordings_fuzzy("100%")
+    assert len(results) == 1
+    assert results[0]["title"] == "100% Pure"
+
+    # Test % character in artist search
+    results = db.search_recordings_fuzzy("", artist_name="100%")
+    assert len(results) == 2
+    titles = {r["title"] for r in results}
+    assert titles == {"50% Love", "100% Pure"}
+
+    # Test _ character (SQL wildcard for single character)
+    results = db.search_recordings_fuzzy("My_")
+    assert len(results) == 1
+    assert results[0]["title"] == "My_Song"
+
+    # Test underscore in artist name
+    results = db.search_recordings_fuzzy("", artist_name="Under_")
+    assert len(results) == 1
+    assert results[0]["title"] == "My_Song"
+
+
+def test_get_release_groups_for_recording_complex_chain(tmp_path):
+    """Test with recording in multiple releases across multiple release groups."""
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+
+    # Setup artist
+    db.upsert_artist("artist-1", "The Beatles")
+
+    # Setup one recording
+    db.upsert_recording("recording-1", "Yesterday", artist_mbid="artist-1")
+
+    # Create 3 release groups
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release_group("rg-2", "Yesterday and Today", artist_mbid="artist-1", type="Album")
+    db.upsert_release_group("rg-3", "Greatest Hits", artist_mbid="artist-1", type="Compilation")
+
+    # Create multiple releases in each release group
+    db.upsert_release("release-1", "Help! UK", release_group_mbid="rg-1", artist_mbid="artist-1")
+    db.upsert_release("release-2", "Help! US", release_group_mbid="rg-1", artist_mbid="artist-1")
+    db.upsert_release("release-3", "Yesterday and Today", release_group_mbid="rg-2", artist_mbid="artist-1")
+    db.upsert_release("release-4", "Greatest Hits Vol 1", release_group_mbid="rg-3", artist_mbid="artist-1")
+    db.upsert_release("release-5", "Greatest Hits Vol 2", release_group_mbid="rg-3", artist_mbid="artist-1")
+
+    # Link recording to all releases
+    db.upsert_recording_release("recording-1", "release-1")
+    db.upsert_recording_release("recording-1", "release-2")
+    db.upsert_recording_release("recording-1", "release-3")
+    db.upsert_recording_release("recording-1", "release-4")
+    db.upsert_recording_release("recording-1", "release-5")
+
+    # Get release groups for recording
+    rgs = db.get_release_groups_for_recording("recording-1")
+
+    # Should return all 3 release groups despite having 5 releases
+    assert len(rgs) == 3
+
+    rg_mbids = {rg["mbid"] for rg in rgs}
+    assert rg_mbids == {"rg-1", "rg-2", "rg-3"}
+
+    # Verify types
+    rg_types = {rg["type"] for rg in rgs}
+    assert rg_types == {"Album", "Compilation"}
+
+    # Verify all have artist_name
+    for rg in rgs:
+        assert rg["artist_name"] == "The Beatles"
+
+
+def test_concurrent_database_access(tmp_path):
+    """Test database handles concurrent read/write correctly."""
+    import threading
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "Test Artist")
+
+    errors = []
+    results = []
+
+    def write_recordings(start_idx, count):
+        try:
+            for i in range(start_idx, start_idx + count):
+                db.upsert_recording(
+                    f"rec-{i}",
+                    f"Song {i}",
+                    artist_mbid="artist-1",
+                    length_ms=100000 + i
+                )
+        except Exception as e:
+            errors.append(e)
+
+    def read_recordings():
+        try:
+            for _ in range(10):
+                result = db.search_recordings_fuzzy("Song", limit=100)
+                results.append(len(result))
+        except Exception as e:
+            errors.append(e)
+
+    # Create threads for concurrent access
+    threads = []
+    threads.append(threading.Thread(target=write_recordings, args=(0, 10)))
+    threads.append(threading.Thread(target=write_recordings, args=(10, 10)))
+    threads.append(threading.Thread(target=read_recordings))
+    threads.append(threading.Thread(target=read_recordings))
+
+    # Start all threads
+    for thread in threads:
+        thread.start()
+
+    # Wait for completion
+    for thread in threads:
+        thread.join()
+
+    # No errors should occur
+    assert len(errors) == 0
+
+    # Verify all recordings were written
+    all_recordings = db.search_recordings_fuzzy("Song", limit=100)
+    assert len(all_recordings) == 20
+
+    # Verify reads worked (should have some results)
+    assert len(results) > 0

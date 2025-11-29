@@ -1,0 +1,225 @@
+{
+  "version": "1.0",
+  "description": "Known scraper edge cases that require special handling",
+  "metadata": {
+    "created": "2025-11-29",
+    "updated": "2025-11-29",
+    "purpose": "Track known problematic patterns and ensure scrapers handle them correctly"
+  },
+  "edge_cases": {
+    "t40": {
+      "split_entries": [
+        {
+          "id": "t40-split-001",
+          "description": "Double A-side with slash separator",
+          "input": {
+            "rank": 1,
+            "artist": "Queen",
+            "title": "We Will Rock You / We Are The Champions"
+          },
+          "expected": [
+            {
+              "rank": 1,
+              "artist": "Queen",
+              "title": "We Will Rock You"
+            },
+            {
+              "rank": 1,
+              "artist": "Queen",
+              "title": "We Are The Champions"
+            }
+          ],
+          "status": "handled",
+          "notes": "Common pattern in 1970s-1980s charts"
+        },
+        {
+          "id": "t40-split-002",
+          "description": "Multiple artists with multiple titles",
+          "input": {
+            "rank": 5,
+            "artist": "Artist A / Artist B",
+            "title": "Song A / Song B"
+          },
+          "expected": [
+            {
+              "rank": 5,
+              "artist": "Artist A",
+              "title": "Song A"
+            },
+            {
+              "rank": 5,
+              "artist": "Artist B",
+              "title": "Song B"
+            }
+          ],
+          "status": "handled",
+          "notes": "Duet or collaboration split across entries"
+        },
+        {
+          "id": "t40-split-003",
+          "description": "Semicolon as separator",
+          "input": {
+            "rank": 10,
+            "artist": "The Beatles",
+            "title": "Penny Lane; Strawberry Fields Forever"
+          },
+          "expected": [
+            {
+              "rank": 10,
+              "artist": "The Beatles",
+              "title": "Penny Lane"
+            },
+            {
+              "rank": 10,
+              "artist": "The Beatles",
+              "title": "Strawberry Fields Forever"
+            }
+          ],
+          "status": "handled",
+          "notes": "Semicolon converted to slash internally"
+        }
+      ],
+      "malformed_entries": [
+        {
+          "id": "t40-malformed-001",
+          "description": "Missing artist",
+          "input": {
+            "rank": 1,
+            "artist": "",
+            "title": "Some Title"
+          },
+          "expected_behavior": "skip",
+          "status": "handled",
+          "notes": "Parser should skip entries with missing required fields"
+        },
+        {
+          "id": "t40-malformed-002",
+          "description": "Missing title",
+          "input": {
+            "rank": 1,
+            "artist": "Some Artist",
+            "title": ""
+          },
+          "expected_behavior": "skip",
+          "status": "handled",
+          "notes": "Parser should skip entries with missing required fields"
+        }
+      ],
+      "encoding_issues": [
+        {
+          "id": "t40-encoding-001",
+          "description": "Special characters in title",
+          "input": {
+            "rank": 1,
+            "artist": "Café Tacvba",
+            "title": "Ërës Tú"
+          },
+          "expected_behavior": "preserve",
+          "status": "pending",
+          "notes": "Should preserve UTF-8 characters correctly"
+        }
+      ],
+      "missing_fields": [
+        {
+          "id": "t40-missing-001",
+          "description": "Rank is None",
+          "input": {
+            "rank": null,
+            "artist": "Artist",
+            "title": "Title"
+          },
+          "expected_behavior": "skip",
+          "status": "handled",
+          "notes": "Parser skips entries without valid rank"
+        }
+      ]
+    },
+    "t40jaar": {
+      "split_entries": [],
+      "malformed_entries": [],
+      "encoding_issues": [],
+      "missing_fields": [],
+      "notes": "Top 40 Jaar follows similar patterns to t40"
+    },
+    "top2000": {
+      "split_entries": [
+        {
+          "id": "top2000-split-001",
+          "description": "Medley entries",
+          "input": {
+            "rank": 100,
+            "artist": "Various Artists",
+            "title": "Song 1 / Song 2 / Song 3"
+          },
+          "expected_behavior": "split_or_preserve",
+          "status": "pending",
+          "notes": "Need to decide: split into 3 entries or keep as medley?"
+        }
+      ],
+      "malformed_entries": [],
+      "encoding_issues": [],
+      "missing_fields": []
+    },
+    "zwaarste": {
+      "split_entries": [],
+      "malformed_entries": [],
+      "encoding_issues": [],
+      "missing_fields": [],
+      "notes": "Similar patterns to other scrapers"
+    }
+  },
+  "regression_html": {
+    "description": "HTML snippets that caused parsing issues in the past",
+    "cases": [
+      {
+        "id": "html-regression-001",
+        "scraper": "t40",
+        "description": "Nested HTML in title field",
+        "html_snippet": "<div class=\"top40-list__title\">Title <span>feat. Artist</span></div>",
+        "expected_extraction": "Title feat. Artist",
+        "status": "pending",
+        "notes": "Parser should extract text from nested elements"
+      }
+    ]
+  },
+  "validation_rules": {
+    "description": "Rules for detecting suspicious patterns that should trigger warnings",
+    "rules": [
+      {
+        "id": "validation-001",
+        "rule": "title_too_long",
+        "threshold": 200,
+        "action": "warn",
+        "notes": "Titles over 200 chars are suspicious"
+      },
+      {
+        "id": "validation-002",
+        "rule": "artist_too_long",
+        "threshold": 150,
+        "action": "warn",
+        "notes": "Artist names over 150 chars are suspicious"
+      },
+      {
+        "id": "validation-003",
+        "rule": "excessive_slashes",
+        "threshold": 5,
+        "action": "warn",
+        "notes": "More than 5 slashes in title/artist suggests parsing issue"
+      },
+      {
+        "id": "validation-004",
+        "rule": "numeric_only_title",
+        "pattern": "^\\d+$",
+        "action": "warn",
+        "notes": "Title that is only numbers is suspicious"
+      },
+      {
+        "id": "validation-005",
+        "rule": "html_tags_in_text",
+        "pattern": "<[^>]+>",
+        "action": "error",
+        "notes": "HTML tags in extracted text indicate parsing failure"
+      }
+    ]
+  }
+}

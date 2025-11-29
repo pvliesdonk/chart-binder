@@ -163,6 +163,136 @@ class ChartScraper(ABC):
         text = re.sub(r"\[[^\]]*\]", "", text)
         return text.strip()
 
+    def _validate_entry(
+        self, rank: int, artist: str, title: str, strict: bool = False
+    ) -> list[str]:
+        """
+        Validate a scraped entry for suspicious patterns.
+
+        Args:
+            rank: Chart rank
+            artist: Artist name
+            title: Song title
+            strict: If True, raise exception on errors; if False, just return warnings
+
+        Returns:
+            List of warning messages (empty if no issues)
+
+        Raises:
+            ValueError: If strict=True and critical issues are found
+        """
+        warnings: list[str] = []
+
+        # Check for HTML tags (critical error)
+        html_pattern = r"<[^>]+>"
+        if re.search(html_pattern, title):
+            msg = f"HTML tags found in title: {title}"
+            warnings.append(msg)
+            if strict:
+                raise ValueError(msg)
+
+        if re.search(html_pattern, artist):
+            msg = f"HTML tags found in artist: {artist}"
+            warnings.append(msg)
+            if strict:
+                raise ValueError(msg)
+
+        # Check for excessively long fields
+        if len(title) > 200:
+            warnings.append(
+                f"Unusually long title ({len(title)} chars): {title[:50]}..."
+            )
+
+        if len(artist) > 150:
+            warnings.append(
+                f"Unusually long artist ({len(artist)} chars): {artist[:50]}..."
+            )
+
+        # Check for excessive slashes (might indicate parsing issue)
+        slash_count = title.count("/") + artist.count("/")
+        if slash_count > 5:
+            warnings.append(
+                f"Excessive slashes detected ({slash_count}) - possible parsing issue"
+            )
+
+        # Check for numeric-only title
+        if title.strip() and title.strip().isdigit():
+            warnings.append(f"Title is numeric-only: '{title}' - likely parsing error")
+
+        # Check for empty required fields
+        if not artist.strip():
+            warnings.append("Artist is empty")
+
+        if not title.strip():
+            warnings.append("Title is empty")
+
+        # Log warnings if any found
+        if warnings:
+            logger.warning(
+                f"Validation warnings for [{self.chart_id}] rank {rank}: {'; '.join(warnings)}"
+            )
+
+        return warnings
+
+    def _validate_entries(
+        self, entries: list[tuple[int, str, str]], strict: bool = False
+    ) -> dict[str, list]:
+        """
+        Validate all entries in a scraped result.
+
+        Args:
+            entries: List of (rank, artist, title) tuples
+            strict: If True, raise exception on critical errors
+
+        Returns:
+            Dict mapping issue types to lists of problematic entries
+        """
+        issues: dict[str, list] = {
+            "html_in_text": [],
+            "long_titles": [],
+            "long_artists": [],
+            "excessive_slashes": [],
+            "numeric_titles": [],
+            "empty_fields": [],
+            "duplicates": [],
+        }
+
+        seen = set()
+
+        for rank, artist, title in entries:
+            # Check for duplicates
+            key = (rank, artist, title)
+            if key in seen:
+                issues["duplicates"].append((rank, artist, title))
+            seen.add(key)
+
+            # Validate entry
+            warnings = self._validate_entry(rank, artist, title, strict=strict)
+
+            # Categorize issues
+            for warning in warnings:
+                if "HTML tags" in warning:
+                    issues["html_in_text"].append((rank, artist, title))
+                elif "long title" in warning:
+                    issues["long_titles"].append((rank, artist, title))
+                elif "long artist" in warning:
+                    issues["long_artists"].append((rank, artist, title))
+                elif "slashes" in warning:
+                    issues["excessive_slashes"].append((rank, artist, title))
+                elif "numeric-only" in warning:
+                    issues["numeric_titles"].append((rank, artist, title))
+                elif "empty" in warning.lower():
+                    issues["empty_fields"].append((rank, artist, title))
+
+        # Log summary if issues found
+        total_issues = sum(len(v) for v in issues.values())
+        if total_issues > 0:
+            logger.warning(
+                f"Validation found {total_issues} potential issues in {len(entries)} entries for {self.chart_id}"
+            )
+
+        return issues
+
 
 ## Tests
 
