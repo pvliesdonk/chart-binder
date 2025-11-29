@@ -78,12 +78,18 @@ class Top2000Scraper(ChartScraper):
 
     def _try_api_rich(self, year: int) -> list[ScrapedEntry]:
         """Try to fetch from NPO API and capture previous position if available."""
-        url_new = self.API_NEW_PATTERN.format(year=year)
-        data = self._fetch_json(url_new)
+        # URL pattern changed in 2024
+        if year < 2024:
+            url = self.API_OLD_PATTERN.format(year=year)
+        else:
+            url = self.API_NEW_PATTERN.format(year=year)
 
+        data = self._fetch_json(url)
+
+        # Fallback to other pattern if primary fails
         if data is None:
-            url_old = self.API_OLD_PATTERN.format(year=year)
-            data = self._fetch_json(url_old)
+            fallback_url = self.API_NEW_PATTERN.format(year=year) if year < 2024 else self.API_OLD_PATTERN.format(year=year)
+            data = self._fetch_json(fallback_url)
 
         if data is None:
             return []
@@ -151,13 +157,19 @@ class Top2000Scraper(ChartScraper):
         return entries
 
     def _try_api(self, year: int) -> list[tuple[int, str, str]]:
-        """Try to fetch from NPO API (new pattern first, then old)."""
-        url_new = self.API_NEW_PATTERN.format(year=year)
-        data = self._fetch_json(url_new)
+        """Try to fetch from NPO API."""
+        # URL pattern changed in 2024
+        if year < 2024:
+            url = self.API_OLD_PATTERN.format(year=year)
+        else:
+            url = self.API_NEW_PATTERN.format(year=year)
 
+        data = self._fetch_json(url)
+
+        # Fallback to other pattern if primary fails
         if data is None:
-            url_old = self.API_OLD_PATTERN.format(year=year)
-            data = self._fetch_json(url_old)
+            fallback_url = self.API_NEW_PATTERN.format(year=year) if year < 2024 else self.API_OLD_PATTERN.format(year=year)
+            data = self._fetch_json(fallback_url)
 
         if data is None:
             return []
