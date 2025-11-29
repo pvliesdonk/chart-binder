@@ -55,6 +55,66 @@ def _get_rationale_value(rationale: Any) -> str | None:
     return rationale.value if hasattr(rationale, "value") else str(rationale)
 
 
+def _convert_evidence_bundle(bundle: Any, audio_file: Path, tagset: Any) -> dict[str, Any]:
+    """
+    Convert EvidenceBundle dataclass to dict format expected by resolver.
+
+    The resolver expects a specific structure with recording_candidates containing
+    rg_candidates, while EvidenceBundle has a flatter structure. This bridges
+    the two formats.
+    """
+    # Build recording_candidates from the bundle's recordings and release_groups
+    recording_candidates = []
+
+    # Group release groups by recording
+    rg_by_recording: dict[str, list[dict[str, Any]]] = {}
+    for rg in bundle.release_groups:
+        # Find which recording this RG is associated with
+        # For now, associate all RGs with all recordings (will be refined later)
+        for rec in bundle.recordings:
+            rec_mbid = rec.get("mbid", "")
+            if rec_mbid not in rg_by_recording:
+                rg_by_recording[rec_mbid] = []
+            rg_by_recording[rec_mbid].append(
+                {
+                    "mb_rg_id": rg.get("mbid"),
+                    "title": rg.get("title"),
+                    "primary_type": rg.get("type"),
+                    "secondary_types": rg.get("secondary_types", []),
+                    "first_release_date": rg.get("first_release_date"),
+                    "releases": [],  # Would be populated from release data
+                }
+            )
+
+    for rec in bundle.recordings:
+        rec_mbid = rec.get("mbid", "")
+        recording_candidates.append(
+            {
+                "mb_recording_id": rec_mbid,
+                "title": rec.get("title"),
+                "rg_candidates": rg_by_recording.get(rec_mbid, []),
+            }
+        )
+
+    # Build the evidence bundle dict
+    evidence_dict: dict[str, Any] = {
+        "artifact": {
+            "file_path": str(audio_file),
+        },
+        "artist": {
+            "name": bundle.artist.get("name") if bundle.artist else tagset.artist or "Unknown",
+            "mb_artist_id": bundle.artist.get("mbid") if bundle.artist else None,
+            "begin_area_country": bundle.artist.get("begin_area_country") if bundle.artist else None,
+            "wikidata_qid": bundle.artist.get("wikidata_qid") if bundle.artist else None,
+        },
+        "recording_candidates": recording_candidates,
+        "timeline_facts": bundle.timeline_facts or {},
+        "provenance": bundle.provenance or {"sources_used": ["MB"]},
+    }
+
+    return evidence_dict
+
+
 @click.group()
 @click.option(
     "--config",
@@ -288,11 +348,17 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
     Make canonicalization decisions for audio files.
 
     Resolves the Canonical Release Group (CRG) and Representative Release (RR)
-    for each file based on available metadata. Persists decisions to the
+    for each file based on available metadata. Uses the UnifiedFetcher to search
+    multiple sources (MusicBrainz, Discogs, Spotify, AcoustID) and the
+    CandidateBuilder to construct evidence bundles. Persists decisions to the
     decisions database for drift tracking.
     """
+    from chart_binder.candidates import CandidateBuilder, CandidateSet
     from chart_binder.decisions_db import DecisionsDB
     from chart_binder.decisions_db import DecisionState as DBDecisionState
+    from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
+    from chart_binder.musicgraph import MusicGraphDB
+    from chart_binder.normalize import Normalizer
     from chart_binder.resolver import ConfigSnapshot, DecisionState, Resolver
     from chart_binder.tagging import verify
 
@@ -318,146 +384,198 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
         reissue_long_gap_years=10,
     )
     resolver = Resolver(resolver_config)
+
+    # Initialize UnifiedFetcher for multi-source lookups
+    cache_dir = config.database.cache_path.parent / "http_cache"
+    musicgraph_path = config.database.musicgraph_path
+    fetcher_config = FetcherConfig(
+        cache_dir=cache_dir,
+        db_path=musicgraph_path,
+        mode=FetchMode.NORMAL,
+    )
+
+    # Initialize CandidateBuilder for evidence bundle construction
+    musicgraph_db = MusicGraphDB(musicgraph_path)
+    normalizer = Normalizer()
+    candidate_builder = CandidateBuilder(musicgraph_db, normalizer)
+
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
 
-    for audio_file in audio_files:
-        try:
-            tagset = verify(audio_file)
+    with UnifiedFetcher(fetcher_config) as fetcher:
+        for audio_file in audio_files:
+            try:
+                tagset = verify(audio_file)
 
-            # Get or calculate fingerprint for stable identity
-            fingerprint, duration_sec = _get_or_calc_fingerprint(audio_file, tagset, logger)
+                # Get or calculate fingerprint for stable identity
+                fingerprint, duration_sec = _get_or_calc_fingerprint(audio_file, tagset, logger)
 
-            # Build minimal evidence bundle from existing tags
-            evidence_bundle: dict[str, Any] = {
-                "artifact": {
-                    "file_path": str(audio_file),
-                },
-                "artist": {
-                    "name": tagset.artist or "Unknown",
-                    "mb_artist_id": None,
-                },
-                "recording_candidates": [],
-                "timeline_facts": {},
-                "provenance": {
-                    "sources_used": ["local_tags"],
-                },
-            }
+                # Try to discover candidates using multiple methods
+                candidates = []
 
-            # If MB IDs exist, build candidate structure
-            if tagset.ids.mb_release_group_id:
-                evidence_bundle["recording_candidates"] = [
-                    {
-                        "mb_recording_id": tagset.ids.mb_recording_id,
-                        "title": tagset.title,
-                        "rg_candidates": [
-                            {
-                                "mb_rg_id": tagset.ids.mb_release_group_id,
-                                "title": tagset.album,
-                                "primary_type": "Album",
-                                "first_release_date": tagset.original_year,
-                                "releases": [
-                                    {
-                                        "mb_release_id": tagset.ids.mb_release_id or "unknown",
-                                        "date": tagset.original_year,
-                                        "country": tagset.country,
-                                        "label": tagset.label,
-                                        "title": tagset.album,
-                                        "flags": {"is_official": True},
-                                    }
-                                ],
-                            }
-                        ],
-                    }
-                ]
+                # Method 1: Use existing MB IDs from tags
+                if tagset.ids.mb_release_group_id and tagset.ids.mb_recording_id:
+                    logger.debug(f"Using MB IDs from tags for {audio_file}")
+                    # Fetch and hydrate the recording to populate the local DB
+                    try:
+                        fetcher.fetch_recording(tagset.ids.mb_recording_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch recording: {e}")
 
-            decision = resolver.resolve(evidence_bundle)
+                # Method 2: Search by ISRC if available
+                if not candidates and tagset.isrc:
+                    logger.debug(f"Searching by ISRC: {tagset.isrc}")
+                    search_results = fetcher.search_recordings(isrc=tagset.isrc)
+                    for result in search_results:
+                        if result.get("recording_mbid"):
+                            try:
+                                fetcher.fetch_recording(result["recording_mbid"])
+                            except Exception:
+                                pass
 
-            # Persist decision to database if fingerprint available
-            if decisions_db and fingerprint and duration_sec:
-                file_id = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+                    # Now discover from local DB
+                    candidates = candidate_builder.discover_by_isrc(tagset.isrc)
 
-                # Determine library root and relative path
-                library_root = str(audio_file.parent)
-                relative_path = audio_file.name
+                # Method 3: Search by fingerprint if available
+                if not candidates and fingerprint and duration_sec:
+                    logger.debug(f"Searching by fingerprint for {audio_file}")
+                    search_results = fetcher.search_recordings(
+                        fingerprint=fingerprint,
+                        duration_sec=duration_sec,
+                    )
+                    for result in search_results:
+                        if result.get("recording_mbid"):
+                            try:
+                                fetcher.fetch_recording(result["recording_mbid"])
+                            except Exception:
+                                pass
 
-                # Upsert file artifact
-                decisions_db.upsert_file_artifact(
-                    file_id=file_id,
-                    library_root=library_root,
-                    relative_path=relative_path,
-                    duration_ms=duration_sec * 1000 if duration_sec else None,
-                    fp_id=fingerprint[:32] if fingerprint else None,
+                # Method 4: Search by title + artist
+                if not candidates and tagset.artist and tagset.title:
+                    logger.debug(f"Searching by title/artist: {tagset.artist} - {tagset.title}")
+                    search_results = fetcher.search_recordings(
+                        title=tagset.title,
+                        artist=tagset.artist,
+                    )
+                    for result in search_results[:5]:  # Limit hydration to top 5
+                        if result.get("recording_mbid"):
+                            try:
+                                fetcher.fetch_recording(result["recording_mbid"])
+                            except Exception:
+                                pass
+
+                    # Discover from local DB with fuzzy matching
+                    length_ms = duration_sec * 1000 if duration_sec else None
+                    candidates = candidate_builder.discover_by_title_artist_length(
+                        tagset.title, tagset.artist, length_ms
+                    )
+
+                # Build evidence bundle from candidates
+                candidate_set = CandidateSet(
+                    file_path=audio_file,
+                    candidates=candidates,
+                    normalized_title=tagset.title or "",
+                    normalized_artist=tagset.artist or "",
+                    length_ms=duration_sec * 1000 if duration_sec else None,
                 )
 
-                # Map resolver state to DB state
-                db_state = (
-                    DBDecisionState.DECIDED
-                    if decision.state == DecisionState.DECIDED
-                    else DBDecisionState.INDETERMINATE
-                )
+                evidence_bundle_obj = candidate_builder.build_evidence_bundle(candidate_set)
 
-                # Build work_key from artist and title
-                work_key = f"{tagset.artist or 'unknown'}_{tagset.title or 'unknown'}".lower()
+                # Convert EvidenceBundle to dict format expected by resolver
+                evidence_bundle = _convert_evidence_bundle(evidence_bundle_obj, audio_file, tagset)
 
-                # Upsert decision
-                decisions_db.upsert_decision(
-                    file_id=file_id,
-                    work_key=work_key,
-                    mb_rg_id=decision.release_group_mbid or "",
-                    mb_release_id=decision.release_mbid or "",
-                    mb_recording_id=tagset.ids.mb_recording_id,
-                    ruleset_version=decision.decision_trace.ruleset_version,
-                    config_snapshot={
-                        "lead_window_days": resolver_config.lead_window_days,
-                        "reissue_long_gap_years": resolver_config.reissue_long_gap_years,
-                    },
-                    evidence_hash=decision.decision_trace.evidence_hash,
-                    trace_compact=decision.compact_tag,
-                    state=db_state,
-                )
-                logger.debug(f"Persisted decision for {audio_file} (file_id={file_id[:16]}...)")
+                decision = resolver.resolve(evidence_bundle)
 
-            result = {
-                "file": str(audio_file),
-                "state": decision.state.value,
-                "crg_mbid": decision.release_group_mbid,
-                "rr_mbid": decision.release_mbid,
-                "crg_rationale": _get_rationale_value(decision.crg_rationale),
-                "rr_rationale": _get_rationale_value(decision.rr_rationale),
-                "compact_tag": decision.compact_tag,
-            }
+                # Persist decision to database if fingerprint available
+                if decisions_db and fingerprint and duration_sec:
+                    file_id = DecisionsDB.generate_file_id(fingerprint, duration_sec)
 
-            if explain:
-                trace_dict: dict[str, Any] = {
-                    "evidence_hash": decision.decision_trace.evidence_hash,
-                    "considered_candidates": decision.decision_trace.considered_candidates,
-                    "crg_selection": decision.decision_trace.crg_selection,
-                    "rr_selection": decision.decision_trace.rr_selection,
-                    "missing_facts": decision.decision_trace.missing_facts,
+                    # Determine library root and relative path
+                    library_root = str(audio_file.parent)
+                    relative_path = audio_file.name
+
+                    # Upsert file artifact
+                    decisions_db.upsert_file_artifact(
+                        file_id=file_id,
+                        library_root=library_root,
+                        relative_path=relative_path,
+                        duration_ms=duration_sec * 1000 if duration_sec else None,
+                        fp_id=fingerprint[:32] if fingerprint else None,
+                    )
+
+                    # Map resolver state to DB state
+                    db_state = (
+                        DBDecisionState.DECIDED
+                        if decision.state == DecisionState.DECIDED
+                        else DBDecisionState.INDETERMINATE
+                    )
+
+                    # Build work_key from artist and title
+                    work_key = f"{tagset.artist or 'unknown'}_{tagset.title or 'unknown'}".lower()
+
+                    # Upsert decision
+                    decisions_db.upsert_decision(
+                        file_id=file_id,
+                        work_key=work_key,
+                        mb_rg_id=decision.release_group_mbid or "",
+                        mb_release_id=decision.release_mbid or "",
+                        mb_recording_id=tagset.ids.mb_recording_id,
+                        ruleset_version=decision.decision_trace.ruleset_version,
+                        config_snapshot={
+                            "lead_window_days": resolver_config.lead_window_days,
+                            "reissue_long_gap_years": resolver_config.reissue_long_gap_years,
+                        },
+                        evidence_hash=decision.decision_trace.evidence_hash,
+                        trace_compact=decision.compact_tag,
+                        state=db_state,
+                    )
+                    logger.debug(f"Persisted decision for {audio_file} (file_id={file_id[:16]}...)")
+
+                result = {
+                    "file": str(audio_file),
+                    "state": decision.state.value,
+                    "crg_mbid": decision.release_group_mbid,
+                    "rr_mbid": decision.release_mbid,
+                    "crg_rationale": _get_rationale_value(decision.crg_rationale),
+                    "rr_rationale": _get_rationale_value(decision.rr_rationale),
+                    "compact_tag": decision.compact_tag,
                 }
-                result["trace"] = json.dumps(trace_dict)
 
-            results.append(result)
-
-            if output_format == OutputFormat.TEXT:
-                state_icon = "✔︎" if decision.state.value == "decided" else "∆"
-                click.echo(f"\n{state_icon} {audio_file}")
-                click.echo(f"  State: {decision.state.value}")
-                if decision.release_group_mbid:
-                    click.echo(f"  CRG: {decision.release_group_mbid}")
-                    click.echo(f"       ({decision.crg_rationale})")
-                if decision.release_mbid:
-                    click.echo(f"  RR:  {decision.release_mbid}")
-                    click.echo(f"       ({decision.rr_rationale})")
-                click.echo(f"  Trace: {decision.compact_tag}")
                 if explain:
-                    click.echo("\n" + decision.decision_trace.to_human_readable())
+                    trace_dict: dict[str, Any] = {
+                        "evidence_hash": decision.decision_trace.evidence_hash,
+                        "considered_candidates": decision.decision_trace.considered_candidates,
+                        "crg_selection": decision.decision_trace.crg_selection,
+                        "rr_selection": decision.decision_trace.rr_selection,
+                        "missing_facts": decision.decision_trace.missing_facts,
+                    }
+                    result["trace"] = json.dumps(trace_dict)
 
-        except Exception as e:
-            if output_format == OutputFormat.TEXT:
-                click.echo(f"\n✘ {audio_file}: {e}", err=True)
-            results.append({"file": str(audio_file), "error": str(e)})
+                results.append(result)
+
+                if output_format == OutputFormat.TEXT:
+                    state_icon = "✔︎" if decision.state.value == "decided" else "∆"
+                    click.echo(f"\n{state_icon} {audio_file}")
+                    click.echo(f"  State: {decision.state.value}")
+                    if decision.release_group_mbid:
+                        click.echo(f"  CRG: {decision.release_group_mbid}")
+                        click.echo(f"       ({decision.crg_rationale})")
+                    if decision.release_mbid:
+                        click.echo(f"  RR:  {decision.release_mbid}")
+                        click.echo(f"       ({decision.rr_rationale})")
+                    click.echo(f"  Trace: {decision.compact_tag}")
+                    if explain:
+                        click.echo("\n" + decision.decision_trace.to_human_readable())
+
+                if decision.decision_trace.missing_facts:
+                    click.echo("\nMissing Facts:")
+                    for fact in decision.decision_trace.missing_facts:
+                        click.echo(f"  - {fact}")
+
+            except Exception as e:
+                if output_format == OutputFormat.TEXT:
+                    click.echo(f"\n✘ {audio_file}: {e}", err=True)
+                results.append({"file": str(audio_file), "error": str(e)})
 
     if output_format == OutputFormat.JSON:
         click.echo(json.dumps(results, indent=2))
