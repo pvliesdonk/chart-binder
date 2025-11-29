@@ -280,6 +280,41 @@ class LLMAdjudicator:
                     lines.append(f"- {fact}")
                 lines.append("")
 
+        # Web search results (if SearxNG is enabled)
+        if self._search_tool is not None:
+            artist_name = artist.get("name", "Unknown")
+            recording_title = evidence_bundle.get("recording_title", "")
+
+            # Only search if we have both artist and title
+            if artist_name != "Unknown" and recording_title:
+                try:
+                    from chart_binder.llm.searxng import SearxNGSearchTool
+
+                    if isinstance(self._search_tool, SearxNGSearchTool):
+                        log.debug(f"Performing web search for: {artist_name} - {recording_title}")
+                        search_response = self._search_tool.search_music_info(
+                            artist=artist_name,
+                            title=recording_title,
+                            max_results=5,
+                        )
+                        if search_response.results:
+                            lines.append("## Web Search Results")
+                            lines.append(
+                                f"Additional context from web search for '{artist_name} - {recording_title}':\n"
+                            )
+                            for i, result in enumerate(search_response.results[:5], 1):
+                                lines.append(f"{i}. {result.title}")
+                                if result.metadata.get("snippet"):
+                                    snippet = result.metadata["snippet"]
+                                    # Truncate long snippets
+                                    if len(snippet) > 150:
+                                        snippet = snippet[:150] + "..."
+                                    lines.append(f"   {snippet}")
+                                lines.append(f"   Source: {result.metadata.get('url', 'N/A')}")
+                                lines.append("")
+                except Exception as e:
+                    log.warning(f"Web search failed: {e}")
+
         lines.append("## Question")
         lines.append(
             "Based on the evidence above, which release group is the canonical premiere "

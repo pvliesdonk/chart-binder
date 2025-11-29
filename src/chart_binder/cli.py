@@ -476,11 +476,24 @@ def decide(
     if config.llm.enabled:
         from chart_binder.llm import LLMAdjudicator
 
-        adjudicator = LLMAdjudicator(config=config.llm)
+        # Initialize SearxNG web search if enabled
+        web_search = None
+        if config.llm.searxng.enabled:
+            from chart_binder.llm.searxng import SearxNGSearchTool
+
+            web_search = SearxNGSearchTool(
+                base_url=config.llm.searxng.url,
+                timeout=config.llm.searxng.timeout_s,
+            )
+            if web_search.is_available():
+                logger.info(f"SearxNG web search enabled at {config.llm.searxng.url}")
+            else:
+                logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
+                web_search = None
+
+        adjudicator = LLMAdjudicator(config=config.llm, search_tool=web_search)
         auto_accept_threshold = config.llm.auto_accept_threshold
-        logger.info(
-            f"LLM adjudication enabled (auto-accept threshold: {auto_accept_threshold})"
-        )
+        logger.info(f"LLM adjudication enabled (auto-accept threshold: {auto_accept_threshold})")
 
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
@@ -1854,6 +1867,7 @@ def llm() -> None:
     """LLM adjudication commands (Epic 13)."""
     pass
 
+
 @llm.command("status")
 @click.pass_context
 def llm_status(ctx: click.Context) -> None:
@@ -1899,6 +1913,7 @@ def llm_status(ctx: click.Context) -> None:
         click.echo(f"  Max Tokens: {result['max_tokens']}")
 
     sys.exit(ExitCode.SUCCESS)
+
 
 @canon.group()
 def review() -> None:
