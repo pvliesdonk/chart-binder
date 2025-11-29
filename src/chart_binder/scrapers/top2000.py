@@ -21,6 +21,8 @@ class Top2000Scraper(ChartScraper):
 
     API_NEW_PATTERN = "https://www.nporadio2.nl/api/charts/npo-radio-2-top-2000-van-{year}-12-25"
     API_OLD_PATTERN = "https://www.nporadio2.nl/api/charts/top-2000-van-{year}-12-25"
+    chart_db_id = "nl_top2000"
+    expected_entry_count = 2000
 
     TITLE_CORRECTIONS = {
         "peaceful easy feeling": (

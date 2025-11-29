@@ -22,6 +22,8 @@ class ZwaarsteScraper(ChartScraper):
     DEFAULT_URL_MAP: dict[int, str] = {
         2024: "https://communication.studiobrussel.be/de-zwaarste-lijst-2024-de-volledige-lijst",
     }
+    chart_db_id = "nl_538_zwaarste"
+    expected_entry_count = 150
 
     def __init__(self, cache: HttpCache, url_map: Mapping[int, str] | None = None):
         """

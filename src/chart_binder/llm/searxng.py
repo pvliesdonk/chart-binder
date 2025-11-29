@@ -12,7 +12,7 @@ This module provides:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -56,7 +56,9 @@ class SearxNGResponse:
             lines.append(f"   URL: {result.url}")
             if result.content:
                 # Truncate long snippets
-                snippet = result.content[:200] + "..." if len(result.content) > 200 else result.content
+                snippet = (
+                    result.content[:200] + "..." if len(result.content) > 200 else result.content
+                )
                 lines.append(f"   {snippet}")
             lines.append(f"   Source: {result.engine}")
 
@@ -530,8 +532,9 @@ def test_convert_to_search_response():
 
 def test_searxng_client_timeout_handling():
     """Test client handles timeout gracefully."""
+    from unittest.mock import patch
+
     import httpx
-    from unittest.mock import Mock, patch
 
     client = SearxNGClient(base_url="http://localhost:8080", timeout=0.001)
 
@@ -550,7 +553,6 @@ def test_searxng_client_timeout_handling():
 
 def test_searxng_client_malformed_response():
     """Test client handles malformed JSON response."""
-    import httpx
     from unittest.mock import Mock, patch
 
     client = SearxNGClient(base_url="http://localhost:8080")

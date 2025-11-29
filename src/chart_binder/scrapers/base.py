@@ -4,12 +4,55 @@ import hashlib
 import logging
 import re
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import httpx
 
 from chart_binder.http_cache import HttpCache
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ScrapeResult:
+    """Result of a scrape operation with validation info."""
+
+    entries: list[tuple[int, str, str]]
+    expected_count: int
+    chart_type: str
+    period: str
+    warnings: list[str]
+
+    @property
+    def actual_count(self) -> int:
+        return len(self.entries)
+
+    @property
+    def is_valid(self) -> bool:
+        """Check if scrape result passes sanity checks."""
+        if self.actual_count == 0:
+            return False
+        # Allow 10% tolerance for expected count
+        min_expected = int(self.expected_count * 0.9)
+        return self.actual_count >= min_expected
+
+    @property
+    def shortage(self) -> int:
+        """How many entries short of expected (0 if at or above expected)."""
+        return max(0, self.expected_count - self.actual_count)
+
+    def __str__(self) -> str:
+        status = "✔︎" if self.is_valid else "✘"
+        return f"{status} {self.chart_type} {self.period}: {self.actual_count}/{self.expected_count} entries"
+
+
+# Expected entry counts per chart type
+EXPECTED_ENTRY_COUNTS: dict[str, int] = {
+    "nl_top40": 40,  # Weekly Top 40
+    "nl_top40_jaar": 100,  # Year-end Top 100
+    "nl_top2000": 2000,  # NPO Top 2000
+    "nl_538_zwaarste": 150,  # 538 De Zwaarste Lijst (typically 150)
+}
 
 
 class ChartScraper(ABC):
@@ -19,6 +62,10 @@ class ChartScraper(ABC):
     Provides common infrastructure for fetching and parsing chart data.
     All requests go through `HttpCache` for offline-first operation.
     """
+
+    # Subclasses should override these
+    chart_db_id: str = ""  # ID used in charts.sqlite (e.g., "nl_top40")
+    expected_entry_count: int = 0  # Expected number of entries
 
     def __init__(self, chart_id: str, cache: HttpCache):
         self.chart_id = chart_id
@@ -60,6 +107,37 @@ class ChartScraper(ABC):
             List of (rank, artist, title) tuples
         """
         ...
+
+    def scrape_with_validation(self, period: str) -> ScrapeResult:
+        """
+        Scrape chart data and return result with validation info.
+
+        Performs the scrape and validates the result against expected entry counts.
+        """
+        entries = self.scrape(period)
+        warnings: list[str] = []
+
+        # Validate entries for suspicious patterns
+        issues = self._validate_entries(entries)
+        for issue_type, issue_entries in issues.items():
+            if issue_entries:
+                warnings.append(f"{issue_type}: {len(issue_entries)} entries")
+
+        result = ScrapeResult(
+            entries=entries,
+            expected_count=self.expected_entry_count,
+            chart_type=self.chart_db_id,
+            period=period,
+            warnings=warnings,
+        )
+
+        if not result.is_valid:
+            logger.warning(
+                f"Scrape validation failed for {self.chart_db_id} {period}: "
+                f"got {result.actual_count}, expected ~{result.expected_count}"
+            )
+
+        return result
 
     def _fetch_url(self, url: str) -> str | None:
         """
@@ -199,21 +277,15 @@ class ChartScraper(ABC):
 
         # Check for excessively long fields
         if len(title) > 200:
-            warnings.append(
-                f"Unusually long title ({len(title)} chars): {title[:50]}..."
-            )
+            warnings.append(f"Unusually long title ({len(title)} chars): {title[:50]}...")
 
         if len(artist) > 150:
-            warnings.append(
-                f"Unusually long artist ({len(artist)} chars): {artist[:50]}..."
-            )
+            warnings.append(f"Unusually long artist ({len(artist)} chars): {artist[:50]}...")
 
         # Check for excessive slashes (might indicate parsing issue)
         slash_count = title.count("/") + artist.count("/")
         if slash_count > 5:
-            warnings.append(
-                f"Excessive slashes detected ({slash_count}) - possible parsing issue"
-            )
+            warnings.append(f"Excessive slashes detected ({slash_count}) - possible parsing issue")
 
         # Check for numeric-only title
         if title.strip() and title.strip().isdigit():

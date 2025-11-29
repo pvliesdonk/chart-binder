@@ -49,9 +49,9 @@ Scraper: {self.scraper_id}
 Reason:  {self.reason}
 
 Entry:
-  Rank:   {self.entry.get('rank', 'N/A')}
-  Artist: {self.entry.get('artist', 'N/A')}
-  Title:  {self.entry.get('title', 'N/A')}
+  Rank:   {self.entry.get("rank", "N/A")}
+  Artist: {self.entry.get("artist", "N/A")}
+  Title:  {self.entry.get("title", "N/A")}
 
 To fix this:
 1. Add this entry to tests/fixtures/scraper_edge_cases.json
@@ -119,9 +119,7 @@ class TestEdgeCaseInfrastructure:
 
         for scraper_id, scraper_cases in edge_cases.items():
             for category in required_categories:
-                assert (
-                    category in scraper_cases
-                ), f"Missing category {category} in {scraper_id}"
+                assert category in scraper_cases, f"Missing category {category} in {scraper_id}"
 
 
 class TestTop40EdgeCases:
@@ -151,26 +149,24 @@ class TestTop40EdgeCases:
                 input_data["rank"], input_data["artist"], input_data["title"]
             )
 
-            assert (
-                len(result) == len(expected)
-            ), f"Edge case {case['id']}: Expected {len(expected)} entries, got {len(result)}"
+            assert len(result) == len(expected), (
+                f"Edge case {case['id']}: Expected {len(expected)} entries, got {len(result)}"
+            )
 
             for i, (actual, exp) in enumerate(zip(result, expected, strict=True)):
-                assert (
-                    actual[0] == exp["rank"]
-                ), f"Edge case {case['id']}: Wrong rank at index {i}. Expected {exp['rank']}, got {actual[0]}"
-                assert (
-                    actual[1] == exp["artist"]
-                ), f"Edge case {case['id']}: Wrong artist at index {i}. Expected {exp['artist']}, got {actual[1]}"
-                assert (
-                    actual[2] == exp["title"]
-                ), f"Edge case {case['id']}: Wrong title at index {i}. Expected {exp['title']}, got {actual[2]}"
+                assert actual[0] == exp["rank"], (
+                    f"Edge case {case['id']}: Wrong rank at index {i}. Expected {exp['rank']}, got {actual[0]}"
+                )
+                assert actual[1] == exp["artist"], (
+                    f"Edge case {case['id']}: Wrong artist at index {i}. Expected {exp['artist']}, got {actual[1]}"
+                )
+                assert actual[2] == exp["title"], (
+                    f"Edge case {case['id']}: Wrong title at index {i}. Expected {exp['title']}, got {actual[2]}"
+                )
 
     def test_malformed_entry_cases(self, scraper, edge_cases):
         """Test that malformed entries are handled correctly."""
-        cases = (
-            edge_cases.get("edge_cases", {}).get("t40", {}).get("malformed_entries", [])
-        )
+        cases = edge_cases.get("edge_cases", {}).get("t40", {}).get("malformed_entries", [])
 
         for case in cases:
             if case.get("status") != "handled":
@@ -186,9 +182,7 @@ class TestTop40EdgeCases:
             if expected_behavior == "skip":
                 # Scraper should still return something, but parser should skip
                 # This is more of a parser-level test
-                assert isinstance(
-                    result, list
-                ), f"Edge case {case['id']}: Should return a list"
+                assert isinstance(result, list), f"Edge case {case['id']}: Should return a list"
 
     def test_encoding_cases(self, scraper, edge_cases):
         """Test that encoding is preserved correctly."""
@@ -224,9 +218,7 @@ class TestTop40JaarEdgeCases:
 
     def test_split_entry_cases(self, scraper, edge_cases):
         """Test all known split entry edge cases for Top40Jaar."""
-        cases = (
-            edge_cases.get("edge_cases", {}).get("t40jaar", {}).get("split_entries", [])
-        )
+        cases = edge_cases.get("edge_cases", {}).get("t40jaar", {}).get("split_entries", [])
 
         if not cases:
             pytest.skip("No split entry cases defined for t40jaar yet")
@@ -252,9 +244,7 @@ class TestTop2000EdgeCases:
 
     def test_split_entry_cases(self, scraper, edge_cases):
         """Test all known split entry edge cases for Top2000."""
-        cases = (
-            edge_cases.get("edge_cases", {}).get("top2000", {}).get("split_entries", [])
-        )
+        cases = edge_cases.get("edge_cases", {}).get("top2000", {}).get("split_entries", [])
 
         if not cases:
             pytest.skip("No split entry cases defined for top2000 yet")
@@ -279,9 +269,7 @@ class TestZwaarsteEdgeCases:
 
     def test_split_entry_cases(self, scraper, edge_cases):
         """Test all known split entry edge cases for Zwaarste."""
-        cases = (
-            edge_cases.get("edge_cases", {}).get("zwaarste", {}).get("split_entries", [])
-        )
+        cases = edge_cases.get("edge_cases", {}).get("zwaarste", {}).get("split_entries", [])
 
         if not cases:
             pytest.skip("No split entry cases defined for zwaarste yet")
@@ -312,9 +300,9 @@ class TestValidationRules:
         entry = {"rank": 1, "artist": "Artist", "title": long_title}
 
         warnings = validate_entry(entry, rules)
-        assert any(
-            "exceeds" in w for w in warnings
-        ), f"Should warn about excessively long title. Got warnings: {warnings}"
+        assert any("exceeds" in w for w in warnings), (
+            f"Should warn about excessively long title. Got warnings: {warnings}"
+        )
 
     def test_html_tags_validation(self):
         """Test that HTML tags in text are flagged."""
@@ -325,9 +313,7 @@ class TestValidationRules:
         entry = {"rank": 1, "artist": "Artist", "title": "Title <span>text</span>"}
 
         warnings = validate_entry(entry, rules)
-        assert any(
-            "html" in w.lower() for w in warnings
-        ), "Should error on HTML tags in text"
+        assert any("html" in w.lower() for w in warnings), "Should error on HTML tags in text"
 
 
 class TestRegressionCases:

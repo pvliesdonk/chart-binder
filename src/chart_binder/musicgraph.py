@@ -1058,7 +1058,7 @@ def test_search_recordings_by_isrc_malformed_json(tmp_path):
     conn = db._get_connection()
     conn.execute(
         "INSERT INTO recording (mbid, title, isrcs_json, fetched_at) VALUES (?, ?, ?, ?)",
-        ("rec-1", "Test", "not valid json", time.time())
+        ("rec-1", "Test", "not valid json", time.time()),
     )
     conn.commit()
     conn.close()
@@ -1153,9 +1153,15 @@ def test_get_release_groups_for_recording_complex_chain(tmp_path):
     # Create multiple releases in each release group
     db.upsert_release("release-1", "Help! UK", release_group_mbid="rg-1", artist_mbid="artist-1")
     db.upsert_release("release-2", "Help! US", release_group_mbid="rg-1", artist_mbid="artist-1")
-    db.upsert_release("release-3", "Yesterday and Today", release_group_mbid="rg-2", artist_mbid="artist-1")
-    db.upsert_release("release-4", "Greatest Hits Vol 1", release_group_mbid="rg-3", artist_mbid="artist-1")
-    db.upsert_release("release-5", "Greatest Hits Vol 2", release_group_mbid="rg-3", artist_mbid="artist-1")
+    db.upsert_release(
+        "release-3", "Yesterday and Today", release_group_mbid="rg-2", artist_mbid="artist-1"
+    )
+    db.upsert_release(
+        "release-4", "Greatest Hits Vol 1", release_group_mbid="rg-3", artist_mbid="artist-1"
+    )
+    db.upsert_release(
+        "release-5", "Greatest Hits Vol 2", release_group_mbid="rg-3", artist_mbid="artist-1"
+    )
 
     # Link recording to all releases
     db.upsert_recording_release("recording-1", "release-1")
@@ -1196,10 +1202,7 @@ def test_concurrent_database_access(tmp_path):
         try:
             for i in range(start_idx, start_idx + count):
                 db.upsert_recording(
-                    f"rec-{i}",
-                    f"Song {i}",
-                    artist_mbid="artist-1",
-                    length_ms=100000 + i
+                    f"rec-{i}", f"Song {i}", artist_mbid="artist-1", length_ms=100000 + i
                 )
         except Exception as e:
             errors.append(e)

@@ -132,6 +132,7 @@ The main command is `canon` with several subcommands:
 | `canon cache status` | Show cache statistics |
 | `canon cache purge` | Clear caches |
 | `canon charts scrape` | Scrape charts from web |
+| `canon charts scrape-missing` | Scrape all missing periods |
 | `canon charts ingest` | Import chart data |
 | `canon charts link` | Link chart entries |
 | `canon charts export` | Export chart blob |

@@ -12,7 +12,6 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 EDGE_CASES_FILE = FIXTURES_DIR / "scraper_edge_cases.json"
@@ -167,7 +166,10 @@ def add_regression_html(
     data = load_edge_cases()
 
     if "regression_html" not in data:
-        data["regression_html"] = {"description": "HTML snippets that caused parsing issues", "cases": []}
+        data["regression_html"] = {
+            "description": "HTML snippets that caused parsing issues",
+            "cases": [],
+        }
 
     existing_ids = [case.get("id", "") for case in data["regression_html"]["cases"]]
 
@@ -261,7 +263,9 @@ def validate_entry(entry: dict, rules: list[dict] | None = None) -> list[str]:
             pattern = rule.get("pattern", r"^\d+$")
             title = entry.get("title", "")
             if re.match(pattern, title):
-                msg = f"[{action.upper()}] Title is numeric-only: '{title}' - likely a parsing error"
+                msg = (
+                    f"[{action.upper()}] Title is numeric-only: '{title}' - likely a parsing error"
+                )
                 warnings.append(msg)
 
         # HTML tags in text
@@ -389,9 +393,9 @@ Scraper: {scraper_id}
 Reason:  {reason}
 
 Entry:
-  Rank:   {entry.get('rank', 'N/A')}
-  Artist: {entry.get('artist', 'N/A')}
-  Title:  {entry.get('title', 'N/A')}
+  Rank:   {entry.get("rank", "N/A")}
+  Artist: {entry.get("artist", "N/A")}
+  Title:  {entry.get("title", "N/A")}
 
 Suggested Category: {suggested_category}
 
@@ -412,7 +416,7 @@ Quick add with Python:
 
 Or manually add to tests/fixtures/scraper_edge_cases.json:
 {{
-  "id": "{scraper_id}-{suggested_category.replace('_', '-')}-XXX",
+  "id": "{scraper_id}-{suggested_category.replace("_", "-")}-XXX",
   "description": "{reason}",
   "input": {entry},
   "expected": [...],  # Define expected behavior

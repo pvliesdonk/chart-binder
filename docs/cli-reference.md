@@ -281,6 +281,21 @@ canon charts scrape [OPTIONS] CHART_TYPE PERIOD
 | Option | Description |
 |--------|-------------|
 | `-o, --output PATH` | Output JSON file (optional) |
+| `--ingest` | Automatically ingest scraped data into database |
+| `--strict` | Fail if entry count is below expected (sanity check) |
+
+### Entry Count Validation
+
+Each chart type has an expected entry count. The scraper validates results and warns if counts are low:
+
+| Chart | Expected Entries |
+|-------|------------------|
+| `t40` | 40 |
+| `t40jaar` | 100 |
+| `top2000` | 2000 |
+| `zwaarste` | ~150 |
+
+With `--strict`, the command fails if entries are >10% below expected (possible edge case).
 
 ### Examples
 
@@ -288,25 +303,89 @@ canon charts scrape [OPTIONS] CHART_TYPE PERIOD
 # Scrape Dutch Top 40 week 1 of 2024
 canon charts scrape t40 2024-W01
 
+# Scrape and automatically ingest into database
+canon charts scrape t40 2024-W01 --ingest
+
+# Scrape with strict validation (fail on low count)
+canon charts scrape top2000 2024 --strict
+
 # Scrape year-end chart to file
 canon charts scrape t40jaar 2023 -o top40_2023.json
 
 # Scrape Top 2000 with JSON output
 canon -o json charts scrape top2000 2024
-
-# Scrape De Zwaarste Lijst
-canon charts scrape zwaarste 2024
 ```
 
 ### Output
 
-Without `-o` flag, displays first 10 entries. With `-o` flag, saves full results to JSON file:
+Without `-o` flag, displays first 10 entries with validation status. With `-o` flag, saves full results to JSON file.
 
-```json
-[
-  [1, "Artist One", "Song Title"],
-  [2, "Artist Two", "Another Song"]
-]
+Output shows actual/expected entry counts:
+```
+✔︎ Scraped 40/40 entries for t40 2024-W01
+```
+
+Warning if below expected:
+```
+⚠ Entry count sanity check failed: got 35, expected ~40 (shortage: 5)
+```
+
+---
+
+### canon charts scrape-missing
+
+Scrape all missing periods for a chart type.
+
+```bash
+canon charts scrape-missing [OPTIONS] CHART_TYPE
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `CHART_TYPE` | Chart to scrape: `t40`, `t40jaar`, `top2000`, `zwaarste` |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--start-year INT` | Start year (default: earliest available for chart) |
+| `--end-year INT` | End year (default: current year) |
+| `--ingest` | Automatically ingest scraped data |
+| `--strict` | Fail on entry count sanity check failures |
+| `--dry-run` | Show what would be scraped without scraping |
+
+### Examples
+
+```bash
+# Show what's missing for Top 40 weekly (dry run)
+canon charts scrape-missing t40 --start-year 2020 --dry-run
+
+# Scrape all missing year-end charts and ingest
+canon charts scrape-missing t40jaar --ingest
+
+# Scrape missing Top 2000 years from 1999-2024
+canon charts scrape-missing top2000 --start-year 1999 --end-year 2024 --ingest
+```
+
+### Output
+
+Shows progress for each period:
+```
+Chart: t40 (nl_top40)
+Range: 2020 - 2024
+Expected periods: 260
+Existing: 150
+Missing: 110
+
+Scraping 110 missing periods...
+  [1/110] 2020-W01: ✔︎ 40/40 entries
+  [2/110] 2020-W02: ✔︎ 40/40 entries
+  ...
+
+Summary: 110 scraped, 0 failed, 0 skipped
+Ingested: 110 runs
 ```
 
 ---

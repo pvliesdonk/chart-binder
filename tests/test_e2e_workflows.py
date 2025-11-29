@@ -7,7 +7,6 @@ ensuring all components work together correctly.
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -227,9 +226,7 @@ class TestCandidateDiscoveryE2E:
         isrc_candidates = builder.discover_by_isrc("GBAYE0601315")
 
         # Discover via fuzzy match (should find same recording)
-        fuzzy_candidates = builder.discover_by_title_artist_length(
-            "Yesterday", "Beatles", 125000
-        )
+        fuzzy_candidates = builder.discover_by_title_artist_length("Yesterday", "Beatles", 125000)
 
         # Combine candidates
         all_candidates = isrc_candidates + fuzzy_candidates

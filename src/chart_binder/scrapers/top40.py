@@ -17,6 +17,8 @@ class Top40Scraper(ChartScraper):
     """
 
     BASE_URL = "https://www.top40.nl"
+    chart_db_id = "nl_top40"
+    expected_entry_count = 40
 
     def __init__(self, cache: HttpCache):
         super().__init__("t40", cache)

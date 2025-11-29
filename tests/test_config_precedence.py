@@ -5,7 +5,6 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from chart_binder.cli import canon

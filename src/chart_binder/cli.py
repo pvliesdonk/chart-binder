@@ -178,7 +178,9 @@ def canon(
         hash_paths=cfg.logging.hash_paths,
     )
 
-    logger.debug(f"Logging configured: level={logging.getLevelName(log_level)}, hash_paths={cfg.logging.hash_paths}")
+    logger.debug(
+        f"Logging configured: level={logging.getLevelName(log_level)}, hash_paths={cfg.logging.hash_paths}"
+    )
 
     ctx.ensure_object(dict)
     ctx.obj["config"] = cfg
@@ -665,9 +667,16 @@ def charts() -> None:
 @click.argument("chart_type", type=click.Choice(["t40", "t40jaar", "top2000", "zwaarste"]))
 @click.argument("period")
 @click.option("--output", "-o", type=click.Path(path_type=Path), help="Output JSON file")
+@click.option("--ingest", is_flag=True, help="Automatically ingest scraped data into database")
+@click.option("--strict", is_flag=True, help="Fail if entry count is below expected")
 @click.pass_context
 def charts_scrape(
-    ctx: click.Context, chart_type: str, period: str, output: Path | None
+    ctx: click.Context,
+    chart_type: str,
+    period: str,
+    output: Path | None,
+    ingest: bool,
+    strict: bool,
 ) -> None:
     """
     Scrape chart data from web source.
@@ -677,66 +686,293 @@ def charts_scrape(
 
     Examples:
       canon charts scrape t40 2024-W01
-      canon charts scrape t40jaar 2023
-      canon charts scrape top2000 2024
+      canon charts scrape t40jaar 2023 --ingest
+      canon charts scrape top2000 2024 --strict
     """
     from chart_binder.http_cache import HttpCache
-    from chart_binder.scrapers import (
-        Top40JaarScraper,
-        Top40Scraper,
-        Top2000Scraper,
-        ZwaarsteScraper,
-    )
+    from chart_binder.scrapers import SCRAPER_REGISTRY
 
     config: Config = ctx.obj["config"]
     output_format: OutputFormat = ctx.obj["output"]
 
     cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
 
-    # Create appropriate scraper
-    scraper_map = {
-        "t40": Top40Scraper,
-        "t40jaar": Top40JaarScraper,
-        "top2000": Top2000Scraper,
-        "zwaarste": ZwaarsteScraper,
-    }
+    # Get scraper class and DB ID from registry
+    scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
 
-    scraper_cls = scraper_map[chart_type]
     with scraper_cls(cache) as scraper:
-        entries = scraper.scrape(period)
+        result = scraper.scrape_with_validation(period)
 
-    if not entries:
+    if not result.entries:
         click.echo(f"No entries found for {chart_type} {period}", err=True)
         sys.exit(ExitCode.NO_RESULTS)
 
-    # Convert to list of lists for JSON serialization
-    entries_list = [[rank, artist, title] for rank, artist, title in entries]
+    # Check entry count sanity
+    if not result.is_valid:
+        msg = (
+            f"⚠ Entry count sanity check failed: got {result.actual_count}, "
+            f"expected ~{result.expected_count} (shortage: {result.shortage})"
+        )
+        if strict:
+            click.echo(f"✘ {msg}", err=True)
+            click.echo("Possible edge case detected - check scraper for this period", err=True)
+            sys.exit(ExitCode.ERROR)
+        else:
+            click.echo(msg, err=True)
 
-    result = {
+    # Show warnings if any
+    if result.warnings:
+        for warning in result.warnings:
+            click.echo(f"⚠ {warning}", err=True)
+
+    # Convert to list of lists for JSON serialization
+    entries_list = [[rank, artist, title] for rank, artist, title in result.entries]
+
+    output_result = {
         "chart_type": chart_type,
+        "chart_db_id": chart_db_id,
         "period": period,
-        "entries_count": len(entries),
+        "entries_count": result.actual_count,
+        "expected_count": result.expected_count,
+        "is_valid": result.is_valid,
         "entries": entries_list,
     }
 
     if output:
         output.write_text(json.dumps(entries_list, indent=2, ensure_ascii=False))
         if output_format == OutputFormat.TEXT:
-            click.echo(f"✔︎ Scraped {len(entries)} entries to {output}")
+            click.echo(
+                f"✔︎ Scraped {result.actual_count}/{result.expected_count} entries to {output}"
+            )
         elif output_format == OutputFormat.JSON:
             click.echo(json.dumps({"status": "success", "output_file": str(output)}, indent=2))
     else:
         if output_format == OutputFormat.JSON:
-            click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+            click.echo(json.dumps(output_result, indent=2, ensure_ascii=False))
         else:
-            click.echo(f"✔︎ Scraped {len(entries)} entries for {chart_type} {period}")
+            status = "✔︎" if result.is_valid else "⚠"
+            click.echo(
+                f"{status} Scraped {result.actual_count}/{result.expected_count} entries for {chart_type} {period}"
+            )
             click.echo("\nFirst 10 entries:")
-            for rank, artist, title in entries[:10]:
+            for rank, artist, title in result.entries[:10]:
                 click.echo(f"  {rank:3d}. {artist} - {title}")
-            if len(entries) > 10:
-                click.echo(f"  ... and {len(entries) - 10} more")
+            if len(result.entries) > 10:
+                click.echo(f"  ... and {len(result.entries) - 10} more")
+
+    # Auto-ingest if requested
+    if ingest:
+        from chart_binder.charts_db import ChartsDB, ChartsETL
+
+        db = ChartsDB(config.charts_db.path)
+        etl = ChartsETL(db)
+
+        # Ensure chart exists
+        db.upsert_chart(
+            chart_id=chart_db_id,
+            name=f"{chart_type} chart",
+            frequency="weekly" if chart_type == "t40" else "yearly",
+            jurisdiction="NL",
+        )
+
+        # Ingest entries
+        entries_for_ingest = [(rank, artist, title) for rank, artist, title in result.entries]
+        run_id = etl.ingest_run(chart_db_id, period, entries_for_ingest)
+
+        if output_format == OutputFormat.TEXT:
+            click.echo(f"✔︎ Ingested {result.actual_count} entries (run_id: {run_id[:8]}...)")
+        elif output_format == OutputFormat.JSON:
+            click.echo(json.dumps({"ingested": True, "run_id": run_id}, indent=2))
 
     sys.exit(ExitCode.SUCCESS)
+
+
+@charts.command("scrape-missing")
+@click.argument("chart_type", type=click.Choice(["t40", "t40jaar", "top2000", "zwaarste"]))
+@click.option("--start-year", type=int, help="Start year (default: earliest available)")
+@click.option("--end-year", type=int, help="End year (default: current year)")
+@click.option("--ingest", is_flag=True, help="Automatically ingest scraped data")
+@click.option("--strict", is_flag=True, help="Fail on entry count sanity check failures")
+@click.option("--dry-run", is_flag=True, help="Show what would be scraped without scraping")
+@click.pass_context
+def charts_scrape_missing(
+    ctx: click.Context,
+    chart_type: str,
+    start_year: int | None,
+    end_year: int | None,
+    ingest: bool,
+    strict: bool,
+    dry_run: bool,
+) -> None:
+    """
+    Scrape all missing periods for a chart type.
+
+    Checks the database for existing runs and scrapes only missing periods.
+
+    Examples:
+      canon charts scrape-missing t40 --start-year 2020 --ingest
+      canon charts scrape-missing t40jaar --dry-run
+      canon charts scrape-missing top2000 --start-year 1999 --end-year 2024
+    """
+    import datetime
+
+    from chart_binder.charts_db import ChartsDB, ChartsETL
+    from chart_binder.http_cache import HttpCache
+    from chart_binder.scrapers import SCRAPER_REGISTRY
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    # Get scraper class and DB ID from registry
+    scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
+
+    # Determine year range
+    current_year = datetime.datetime.now().year
+    if end_year is None:
+        end_year = current_year
+
+    # Set default start years per chart type
+    default_start_years = {
+        "t40": 1965,  # Top 40 started in 1965
+        "t40jaar": 1965,
+        "top2000": 1999,  # Top 2000 started in 1999
+        "zwaarste": 2020,  # Limited URL map
+    }
+    if start_year is None:
+        start_year = default_start_years.get(chart_type, 2000)
+
+    # Get existing runs from database
+    db = ChartsDB(config.charts_db.path)
+    existing_runs = db.list_runs(chart_db_id)
+    existing_periods = {run["period"] for run in existing_runs}
+
+    # Generate all expected periods
+    expected_periods: list[str] = []
+    if chart_type == "t40":
+        # Weekly chart - generate YYYY-Www for each week
+        for year in range(start_year, end_year + 1):
+            # Approximately 52 weeks per year
+            for week in range(1, 53):
+                expected_periods.append(f"{year}-W{week:02d}")
+    else:
+        # Yearly charts
+        for year in range(start_year, end_year + 1):
+            expected_periods.append(str(year))
+
+    # Find missing periods
+    missing_periods = [p for p in expected_periods if p not in existing_periods]
+
+    if not missing_periods:
+        click.echo(f"✔︎ No missing periods for {chart_type} ({start_year}-{end_year})")
+        sys.exit(ExitCode.SUCCESS)
+
+    # Report
+    if output_format == OutputFormat.JSON:
+        result = {
+            "chart_type": chart_type,
+            "chart_db_id": chart_db_id,
+            "start_year": start_year,
+            "end_year": end_year,
+            "total_expected": len(expected_periods),
+            "existing": len(existing_periods),
+            "missing": len(missing_periods),
+            "missing_periods": missing_periods if dry_run else missing_periods[:10],
+        }
+        if dry_run:
+            click.echo(json.dumps(result, indent=2))
+            sys.exit(ExitCode.SUCCESS)
+    else:
+        click.echo(f"Chart: {chart_type} ({chart_db_id})")
+        click.echo(f"Range: {start_year} - {end_year}")
+        click.echo(f"Expected periods: {len(expected_periods)}")
+        click.echo(f"Existing: {len(existing_periods)}")
+        click.echo(f"Missing: {len(missing_periods)}")
+
+        if dry_run:
+            click.echo("\nMissing periods (first 20):")
+            for period in missing_periods[:20]:
+                click.echo(f"  {period}")
+            if len(missing_periods) > 20:
+                click.echo(f"  ... and {len(missing_periods) - 20} more")
+            sys.exit(ExitCode.SUCCESS)
+
+    # Actually scrape missing periods
+    cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
+    etl = ChartsETL(db) if ingest else None
+
+    # Ensure chart exists if ingesting
+    if ingest:
+        db.upsert_chart(
+            chart_id=chart_db_id,
+            name=f"{chart_type} chart",
+            frequency="weekly" if chart_type == "t40" else "yearly",
+            jurisdiction="NL",
+        )
+
+    scraped = 0
+    failed = 0
+    skipped = 0
+
+    click.echo(f"\nScraping {len(missing_periods)} missing periods...")
+
+    with scraper_cls(cache) as scraper:
+        for i, period in enumerate(missing_periods, 1):
+            try:
+                result = scraper.scrape_with_validation(period)
+
+                if not result.entries:
+                    skipped += 1
+                    if output_format == OutputFormat.TEXT:
+                        click.echo(f"  [{i}/{len(missing_periods)}] {period}: no data (skipped)")
+                    continue
+
+                if not result.is_valid and strict:
+                    failed += 1
+                    click.echo(
+                        f"  [{i}/{len(missing_periods)}] {period}: ✘ sanity check failed "
+                        f"({result.actual_count}/{result.expected_count})"
+                    )
+                    continue
+
+                scraped += 1
+                status = "✔︎" if result.is_valid else "⚠"
+                if output_format == OutputFormat.TEXT:
+                    click.echo(
+                        f"  [{i}/{len(missing_periods)}] {period}: {status} "
+                        f"{result.actual_count}/{result.expected_count} entries"
+                    )
+
+                # Ingest if requested
+                if ingest and etl:
+                    entries_for_ingest = [
+                        (rank, artist, title) for rank, artist, title in result.entries
+                    ]
+                    etl.ingest_run(chart_db_id, period, entries_for_ingest)
+
+            except Exception as e:
+                failed += 1
+                if output_format == OutputFormat.TEXT:
+                    click.echo(f"  [{i}/{len(missing_periods)}] {period}: ✘ error: {e}")
+
+    # Summary
+    if output_format == OutputFormat.JSON:
+        click.echo(
+            json.dumps(
+                {
+                    "scraped": scraped,
+                    "failed": failed,
+                    "skipped": skipped,
+                    "ingested": ingest,
+                },
+                indent=2,
+            )
+        )
+    else:
+        click.echo(f"\nSummary: {scraped} scraped, {failed} failed, {skipped} skipped")
+        if ingest:
+            click.echo(f"Ingested: {scraped} runs")
+
+    sys.exit(ExitCode.SUCCESS if failed == 0 else ExitCode.ERROR)
 
 
 @charts.command()

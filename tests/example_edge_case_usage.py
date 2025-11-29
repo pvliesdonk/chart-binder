@@ -19,8 +19,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tests.edge_case_helpers import (
-    add_edge_case,
-    add_regression_html,
     check_for_common_issues,
     format_edge_case_error,
     load_edge_cases,
@@ -226,9 +224,7 @@ def example_7_load_and_inspect():
 
     print("Scrapers with edge cases:")
     for scraper_id, cases in data.get("edge_cases", {}).items():
-        total_cases = sum(
-            len(v) if isinstance(v, list) else 0 for v in cases.values()
-        )
+        total_cases = sum(len(v) if isinstance(v, list) else 0 for v in cases.values())
         print(f"  {scraper_id}: {total_cases} cases")
 
         for category, items in cases.items():

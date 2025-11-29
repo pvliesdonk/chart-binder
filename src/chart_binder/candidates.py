@@ -123,7 +123,9 @@ class CandidateBuilder:
         Note: Currently returns empty list until DB query methods are implemented.
         See TODO markers in _find_recordings_by_fuzzy_match and _find_release_groups_for_recording.
         """
-        logger.info(f"Starting title/artist/length discovery: title={title}, artist={artist}, length={length_ms}")
+        logger.info(
+            f"Starting title/artist/length discovery: title={title}, artist={artist}, length={length_ms}"
+        )
 
         # Normalize inputs
         title_result = self.normalizer.normalize_title(title)
@@ -410,13 +412,15 @@ class CandidateBuilder:
                     logger.warning(f"Failed to parse isrcs_json for recording {rec['mbid']}")
                     isrcs = []
 
-            results.append({
-                "mbid": rec["mbid"],
-                "title": rec["title"],
-                "artist_mbid": rec.get("artist_mbid"),
-                "length_ms": rec.get("length_ms"),
-                "isrcs": isrcs,
-            })
+            results.append(
+                {
+                    "mbid": rec["mbid"],
+                    "title": rec["title"],
+                    "artist_mbid": rec.get("artist_mbid"),
+                    "length_ms": rec.get("length_ms"),
+                    "isrcs": isrcs,
+                }
+            )
 
         return results
 
@@ -434,14 +438,16 @@ class CandidateBuilder:
 
         results = []
         for rg in release_groups:
-            results.append({
-                "mbid": rg["mbid"],
-                "title": rg["title"],
-                "type": rg.get("type"),
-                "artist_mbid": rg.get("artist_mbid"),
-                "artist_name": rg.get("artist_name", ""),
-                "first_release_date": rg.get("first_release_date"),
-            })
+            results.append(
+                {
+                    "mbid": rg["mbid"],
+                    "title": rg["title"],
+                    "type": rg.get("type"),
+                    "artist_mbid": rg.get("artist_mbid"),
+                    "artist_name": rg.get("artist_name", ""),
+                    "first_release_date": rg.get("first_release_date"),
+                }
+            )
 
         return results
 
@@ -483,14 +489,16 @@ class CandidateBuilder:
                     logger.warning(f"Failed to parse isrcs_json for recording {rec['mbid']}")
                     isrcs = []
 
-            results.append({
-                "mbid": rec["mbid"],
-                "title": rec["title"],
-                "artist_mbid": rec.get("artist_mbid"),
-                "artist_name": rec.get("artist_name", ""),
-                "length_ms": rec.get("length_ms"),
-                "isrcs": isrcs,
-            })
+            results.append(
+                {
+                    "mbid": rec["mbid"],
+                    "title": rec["title"],
+                    "artist_mbid": rec.get("artist_mbid"),
+                    "artist_name": rec.get("artist_name", ""),
+                    "length_ms": rec.get("length_ms"),
+                    "isrcs": isrcs,
+                }
+            )
 
         return results
 
@@ -908,7 +916,9 @@ def test_evidence_hash_deterministic(tmp_path):
         length_ms=125000,
         isrcs_json='["GBAYE0601315"]',
     )
-    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", first_release_date="1965-08-06")
+    db.upsert_release_group(
+        "rg-1", "Help!", artist_mbid="artist-1", first_release_date="1965-08-06"
+    )
     db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
     db.upsert_recording_release("rec-1", "rel-1")
 
@@ -957,10 +967,14 @@ def test_discover_with_normalizer_edge_cases(tmp_path):
     db.upsert_artist("artist-2", "Madonna")
 
     # Various edge cases in titles
-    db.upsert_recording("rec-1", "Get Lucky (feat. Pharrell Williams)", artist_mbid="artist-1", length_ms=368000)
+    db.upsert_recording(
+        "rec-1", "Get Lucky (feat. Pharrell Williams)", artist_mbid="artist-1", length_ms=368000
+    )
     db.upsert_recording("rec-2", "Get Lucky (Radio Edit)", artist_mbid="artist-1", length_ms=250000)
     db.upsert_recording("rec-3", "Vogue (Live)", artist_mbid="artist-2", length_ms=320000)
-    db.upsert_recording("rec-4", "Vogue (David Morales Remix)", artist_mbid="artist-2", length_ms=480000)
+    db.upsert_recording(
+        "rec-4", "Vogue (David Morales Remix)", artist_mbid="artist-2", length_ms=480000
+    )
 
     db.upsert_release_group("rg-1", "Random Access Memories", artist_mbid="artist-1")
     db.upsert_release_group("rg-2", "Get Lucky (Single)", artist_mbid="artist-1")
@@ -986,7 +1000,10 @@ def test_discover_with_normalizer_edge_cases(tmp_path):
     assert len(candidates) >= 1
     # Should match the original or radio edit depending on length tolerance
     rec_titles = {c.title for c in candidates}
-    assert "Get Lucky (feat. Pharrell Williams)" in rec_titles or "Get Lucky (Radio Edit)" in rec_titles
+    assert (
+        "Get Lucky (feat. Pharrell Williams)" in rec_titles
+        or "Get Lucky (Radio Edit)" in rec_titles
+    )
 
     # Test with live recording
     candidates = builder.discover_by_title_artist_length("Vogue", "Madonna", 320000)
