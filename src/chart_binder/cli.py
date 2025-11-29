@@ -415,39 +415,44 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
 
                 # Source 1: Existing MB IDs from tags (as evidence, not gospel)
                 if tagset.ids.mb_recording_id:
-                    logger.debug(f"Fetching existing MB recording from tags: {tagset.ids.mb_recording_id}")
+                    logger.info(f"Fetching existing MB recording from tags: {tagset.ids.mb_recording_id}")
                     try:
                         fetcher.fetch_recording(tagset.ids.mb_recording_id)
+                        logger.info("Successfully fetched and hydrated tagged recording")
                     except Exception as e:
-                        logger.debug(f"Failed to fetch tagged recording: {e}")
+                        logger.warning(f"Failed to fetch tagged recording: {e}")
 
                 # Source 2: Search by fingerprint (most reliable for audio identity)
                 if fingerprint and duration_sec:
-                    logger.debug(f"Searching by fingerprint for {audio_file}")
+                    logger.info(f"Searching by fingerprint ({duration_sec}s)")
                     search_results = fetcher.search_recordings(
                         fingerprint=fingerprint,
                         duration_sec=duration_sec,
                     )
+                    logger.info(f"Fingerprint search returned {len(search_results)} results")
                     for result in search_results:
                         if result.get("recording_mbid"):
                             try:
                                 fetcher.fetch_recording(result["recording_mbid"])
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"Failed to fetch fingerprint result: {e}")
 
-                # Source 3: Search by title + artist (fallback for unfingerprinted)
+                # Source 3: Search by title + artist
                 if tagset.artist and tagset.title:
-                    logger.debug(f"Searching by title/artist: {tagset.artist} - {tagset.title}")
+                    logger.info(f"Searching MusicBrainz for: {tagset.artist} - {tagset.title}")
                     search_results = fetcher.search_recordings(
                         title=tagset.title,
                         artist=tagset.artist,
                     )
+                    logger.info(f"Title/artist search returned {len(search_results)} results")
                     for result in search_results[:5]:  # Limit hydration to top 5
                         if result.get("recording_mbid"):
+                            mbid = result["recording_mbid"]
+                            logger.info(f"Hydrating recording {mbid}")
                             try:
-                                fetcher.fetch_recording(result["recording_mbid"])
-                            except Exception:
-                                pass
+                                fetcher.fetch_recording(mbid)
+                            except Exception as e:
+                                logger.warning(f"Failed to fetch {mbid}: {e}")
 
                 # Discover all candidates from local DB (populated by fetches above)
                 length_ms = duration_sec * 1000 if duration_sec else None
