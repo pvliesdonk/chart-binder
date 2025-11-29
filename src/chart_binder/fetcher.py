@@ -28,8 +28,13 @@ CONFIDENCE_ISRC_SPOTIFY = 0.90  # ISRC is unique but Spotify metadata less canon
 CONFIDENCE_LINKED_MB_DISCOGS = 0.90  # Cross-referenced between MB and Discogs
 CONFIDENCE_BARCODE_DISCOGS = 0.85  # Barcode is reliable but may have variants
 CONFIDENCE_TEXT_SEARCH = 0.70  # Text search is fuzzy and may have false positives
+CONFIDENCE_TEXT_SEARCH_SPOTIFY = 0.68  # Spotify text search, middle ground
 CONFIDENCE_TEXT_SEARCH_DISCOGS = 0.65  # Discogs text search less canonical than MB
 # Note: AcoustID confidence comes directly from the API response
+
+# Cross-source confidence boosts (applied when entity found in multiple sources)
+CONFIDENCE_BOOST_MULTI_SOURCE = 0.10  # Boost when found in 2+ sources
+CONFIDENCE_BOOST_THREE_SOURCES = 0.15  # Boost when found in 3+ sources
 
 
 class FetchMode(Enum):
@@ -343,6 +348,84 @@ class UnifiedFetcher:
             },
         }
 
+    def fetch_spotify_track(self, spotify_track_id: str) -> dict[str, Any]:
+        """
+        Fetch Spotify track by ID and hydrate into database.
+
+        For Spotify-only data (no MB ID), uses synthetic IDs:
+        - Track: spotify-track-{id}
+        - Album: spotify-album-{id}
+        - Artist: spotify-artist-{name_normalized}
+
+        Args:
+            spotify_track_id: Spotify track ID
+
+        Returns:
+            Dict with track data
+        """
+        if not self.spotify_client:
+            raise ValueError("Spotify client not available (missing credentials)")
+
+        # Fetch full track data from Spotify
+        track = self.spotify_client.get_track(spotify_track_id)
+
+        # Create synthetic IDs for Spotify-only entities
+        synthetic_track_id = f"spotify-track-{track.id}"
+        synthetic_album_id = f"spotify-album-{track.album_id}" if track.album_id else None
+
+        # Normalize artist name for synthetic artist ID
+        artist_name = track.artist_name or "Unknown"
+        artist_normalized = artist_name.lower().replace(" ", "-").replace("&", "and")
+        synthetic_artist_id = f"spotify-artist-{artist_normalized}"
+
+        # Hydrate artist (Spotify-only)
+        self.db.upsert_artist(
+            mbid=synthetic_artist_id,
+            name=artist_name,
+            sort_name=artist_name,
+        )
+
+        # Hydrate album (release group equivalent)
+        if synthetic_album_id and track.album_name:
+            self.db.upsert_release_group(
+                mbid=synthetic_album_id,
+                title=track.album_name,
+                artist_mbid=synthetic_artist_id,
+                spotify_album_id=track.album_id,
+            )
+
+        # Hydrate release (same as album in Spotify's model)
+        if synthetic_album_id and track.album_name:
+            self.db.upsert_release(
+                mbid=synthetic_album_id,
+                title=track.album_name,
+                release_group_mbid=synthetic_album_id,
+                artist_mbid=synthetic_artist_id,
+            )
+
+        # Hydrate recording (track)
+        self.db.upsert_recording(
+            mbid=synthetic_track_id,
+            title=track.name,
+            artist_mbid=synthetic_artist_id,
+            length_ms=track.duration_ms,
+            isrcs_json=json.dumps([track.isrc]) if track.isrc else None,
+        )
+
+        # Link recording to release
+        if synthetic_album_id:
+            self.db.upsert_recording_release(synthetic_track_id, synthetic_album_id)
+
+        return {
+            "track": track,
+            "synthetic_ids": {
+                "recording": synthetic_track_id,
+                "release": synthetic_album_id,
+                "release_group": synthetic_album_id,
+                "artist": synthetic_artist_id,
+            },
+        }
+
     def search_recordings(
         self,
         isrc: str | None = None,
@@ -465,7 +548,69 @@ class UnifiedFetcher:
                             result_data["discogs_master_id"] = str(result["master_id"])
                         results.append(result_data)
 
-        # Sort by confidence
+            # Also try Spotify title + artist search
+            if self.spotify_client:
+                try:
+                    spotify_results = self.spotify_client.search_tracks(
+                        artist=artist, track=title, limit=10
+                    )
+                    for track in spotify_results[:10]:
+                        result_data = {
+                            "spotify_track_id": track.id,
+                            "title": track.name,
+                            "artist_name": track.artist_name,
+                            "source": "spotify_search",
+                            "confidence": CONFIDENCE_TEXT_SEARCH_SPOTIFY,
+                        }
+                        if track.isrc:
+                            result_data["isrc"] = track.isrc
+                        if track.album_id:
+                            result_data["spotify_album_id"] = track.album_id
+                        results.append(result_data)
+                except Exception:
+                    # Spotify search can fail due to missing credentials, skip silently
+                    pass
+
+        # Apply cross-source confidence boosts
+        # Group results by normalized title+artist to identify multi-source entities
+        from collections import defaultdict
+
+        def normalize_key(result: dict[str, Any]) -> str:
+            """Create normalized key for grouping similar results."""
+            title = result.get("title", "").lower().strip()
+            artist = result.get("artist_name", "").lower().strip()
+            return f"{artist}|{title}"
+
+        # Group results by normalized key
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for result in results:
+            key = normalize_key(result)
+            if key and key != "|":  # Skip empty keys
+                groups[key].append(result)
+
+        # Count unique sources per group and apply boosts
+        for key, group_results in groups.items():
+            sources = {r.get("source", "").split("_")[0] for r in group_results}  # e.g., "musicbrainz_search" → "musicbrainz"
+            source_count = len(sources)
+
+            if source_count >= 3:
+                # Found in 3+ sources (MB, Discogs, Spotify) - strong validation
+                for result in group_results:
+                    result["confidence"] = min(
+                        0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_THREE_SOURCES
+                    )
+                    result["multi_source"] = True
+                    result["source_count"] = source_count
+            elif source_count >= 2:
+                # Found in 2+ sources - moderate validation
+                for result in group_results:
+                    result["confidence"] = min(
+                        0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_MULTI_SOURCE
+                    )
+                    result["multi_source"] = True
+                    result["source_count"] = source_count
+
+        # Sort by confidence (after boosts applied)
         results.sort(key=lambda r: r.get("confidence", 0.0), reverse=True)
 
         return results

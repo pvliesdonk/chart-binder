@@ -484,7 +484,7 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                             except Exception as e:
                                 logger.debug(f"Failed to fetch fingerprint result: {e}")
 
-                # Source 3: Search by title + artist (both MB and Discogs)
+                # Source 3: Search by title + artist (MB, Discogs, and Spotify)
                 if tagset.artist and tagset.title:
                     logger.debug(f"Searching for: {tagset.artist} - {tagset.title}")
                     search_results = fetcher.search_recordings(
@@ -493,10 +493,11 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                     )
                     logger.debug(f"Title/artist search returned {len(search_results)} results")
 
-                    # Hydrate from both sources: top 5 MB + top 5 Discogs
+                    # Hydrate from all sources: top 5 MB + top 5 Discogs + top 5 Spotify
                     # This ensures we get evidence from multiple sources, not just highest confidence
                     mb_count = 0
                     discogs_count = 0
+                    spotify_count = 0
                     for result in search_results:
                         # Hydrate MusicBrainz results
                         if result.get("recording_mbid") and mb_count < 5:
@@ -516,12 +517,24 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                                 discogs_count += 1
                             except Exception as e:
                                 logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
+                        # Hydrate Spotify results
+                        elif result.get("spotify_track_id") and spotify_count < 5:
+                            spotify_id = result["spotify_track_id"]
+                            logger.debug(f"Hydrating Spotify track {spotify_id}")
+                            try:
+                                fetcher.fetch_spotify_track(spotify_id)
+                                spotify_count += 1
+                            except Exception as e:
+                                logger.debug(f"Failed to fetch Spotify track {spotify_id}: {e}")
 
-                        # Stop when we have enough from both sources
-                        if mb_count >= 5 and discogs_count >= 5:
+                        # Stop when we have enough from all sources
+                        if mb_count >= 5 and discogs_count >= 5 and spotify_count >= 5:
                             break
 
-                    logger.debug(f"Hydrated {mb_count} MB recordings and {discogs_count} Discogs releases")
+                    logger.debug(
+                        f"Hydrated {mb_count} MB recordings, {discogs_count} Discogs releases, "
+                        f"and {spotify_count} Spotify tracks"
+                    )
 
                 # Source 4: Search by barcode (Discogs)
                 if tagset.barcode:
