@@ -201,6 +201,84 @@ class DiscogsClient:
             barcode=barcode,
         )
 
+    def search_database(
+        self,
+        query: str | None = None,
+        artist: str | None = None,
+        title: str | None = None,
+        barcode: str | None = None,
+        year: int | None = None,
+        search_type: str = "release",
+        per_page: int = 50,
+    ) -> list[dict[str, Any]]:
+        """
+        Search Discogs database.
+
+        Uses the /database/search endpoint to find releases, masters, or artists.
+
+        Args:
+            query: Free-text search query
+            artist: Filter by artist name
+            title: Filter by release/master title
+            barcode: Search by barcode (UPC/EAN)
+            year: Filter by year
+            search_type: Type of search (release, master, artist, label)
+            per_page: Results per page (max 100)
+
+        Returns:
+            List of search result dictionaries with id, type, title, etc.
+        """
+        params: dict[str, Any] = {"type": search_type, "per_page": min(per_page, 100)}
+
+        if query:
+            params["q"] = query
+        if artist:
+            params["artist"] = artist
+        if title:
+            # Discogs uses "release_title" for releases, "title" for masters
+            if search_type == "release":
+                params["release_title"] = title
+            else:
+                params["title"] = title
+        if barcode:
+            params["barcode"] = barcode
+        if year:
+            params["year"] = str(year)
+
+        # Build query string manually
+        query_parts = [f"{k}={v}" for k, v in params.items()]
+        endpoint = f"database/search?{'&'.join(query_parts)}"
+
+        data = self._request(endpoint)
+        return data.get("results", [])
+
+    def search_by_barcode(self, barcode: str, limit: int = 5) -> list[DiscogsRelease]:
+        """
+        Search for releases by barcode and hydrate full release objects.
+
+        Convenience method that searches by barcode and returns full release data.
+
+        Args:
+            barcode: Barcode to search for (UPC/EAN)
+            limit: Maximum number of results to hydrate
+
+        Returns:
+            List of DiscogsRelease objects
+        """
+        results = self.search_database(barcode=barcode, search_type="release", per_page=limit)
+        releases = []
+
+        for result in results[:limit]:
+            if result.get("type") == "release" and result.get("id"):
+                try:
+                    release = self.get_release(result["id"])
+                    releases.append(release)
+                except Exception:
+                    # Skip releases that fail to hydrate
+                    continue
+
+        return releases
+
     def close(self) -> None:
         """Close the HTTP client."""
         self._client.close()
