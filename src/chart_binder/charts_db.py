@@ -831,7 +831,8 @@ class ChartsDB:
                         continue
 
                     key = (artist_norm, title_norm)
-                    contribution = total - rank
+                    # Spec: points = N - r + 1 (where N=total, r=rank)
+                    contribution = total - rank + 1
                     scores[key] = scores.get(key, 0.0) + contribution
 
             return scores
