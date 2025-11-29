@@ -707,8 +707,16 @@ def charts_scrape(
     # Get scraper class and DB ID from registry
     scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
 
+    # Get previous period's ranks for cross-reference validation if checking continuity
+    db_previous_ranks: dict[tuple[str, str], int] | None = None
+    prev_period: str | None = None
+    if check_continuity:
+        prev_period = db.get_adjacent_period(chart_db_id, period, direction=-1)
+        if prev_period:
+            db_previous_ranks = db.get_entries_with_ranks_by_period(chart_db_id, prev_period)
+
     with scraper_cls(cache) as scraper:
-        result = scraper.scrape_with_validation(period)
+        result = scraper.scrape_with_validation(period, db_previous_ranks=db_previous_ranks)
 
     if not result.entries:
         click.echo(f"No entries found for {chart_type} {period}", err=True)
@@ -727,29 +735,47 @@ def charts_scrape(
         else:
             click.echo(msg, err=True)
 
-    # Check continuity with previous run (for weekly charts)
-    if check_continuity and chart_type == "t40":
-        prev_period = db.get_adjacent_period(chart_db_id, period, direction=-1)
-        if prev_period:
-            prev_entries = db.get_entries_by_period(chart_db_id, prev_period)
-            if prev_entries:
-                overlap = calculate_overlap(result.entries, prev_entries)
-                result.continuity_overlap = overlap
-                result.continuity_reference = prev_period
+    # Check continuity with previous run
+    if check_continuity and prev_period:
+        prev_entries = db.get_entries_by_period(chart_db_id, prev_period)
+        if prev_entries:
+            overlap = calculate_overlap(result.entries, prev_entries)
+            result.continuity_overlap = overlap
+            result.continuity_reference = prev_period
 
-                if not result.continuity_valid:
-                    msg = (
-                        f"⚠ Continuity check failed: only {overlap:.0%} overlap with {prev_period} "
-                        f"(expected ≥50%)"
-                    )
-                    if strict:
-                        click.echo(f"✘ {msg}", err=True)
-                        click.echo("Possible scraping issue - data may be corrupted", err=True)
-                        sys.exit(ExitCode.ERROR)
-                    else:
-                        click.echo(msg, err=True)
-                elif output_format == OutputFormat.TEXT:
-                    click.echo(f"✔︎ Continuity check: {overlap:.0%} overlap with {prev_period}")
+            if not result.continuity_valid:
+                msg = (
+                    f"⚠ Continuity check failed: only {overlap:.0%} overlap with {prev_period} "
+                    f"(expected ≥50%)"
+                )
+                if strict:
+                    click.echo(f"✘ {msg}", err=True)
+                    click.echo("Possible scraping issue - data may be corrupted", err=True)
+                    sys.exit(ExitCode.ERROR)
+                else:
+                    click.echo(msg, err=True)
+            elif output_format == OutputFormat.TEXT:
+                click.echo(f"✔︎ Continuity check: {overlap:.0%} overlap with {prev_period}")
+
+        # Report position mismatches from cross-reference validation
+        if result.position_mismatches:
+            click.echo(
+                f"⚠ Position cross-reference: {len(result.position_mismatches)} mismatch(es) "
+                f"with {prev_period}",
+                err=True,
+            )
+            for artist, title, claimed, actual in result.position_mismatches[:5]:
+                click.echo(
+                    f"   {artist} - {title}: website says #{claimed}, database has #{actual}",
+                    err=True,
+                )
+            if len(result.position_mismatches) > 5:
+                click.echo(
+                    f"   ... and {len(result.position_mismatches) - 5} more",
+                    err=True,
+                )
+        elif result.rich_entries and output_format == OutputFormat.TEXT:
+            click.echo(f"✔︎ Position cross-reference: all positions match {prev_period}")
 
     # Show warnings if any
     if result.warnings:
@@ -768,6 +794,14 @@ def charts_scrape(
         "is_valid": result.is_valid,
         "continuity_overlap": result.continuity_overlap,
         "continuity_reference": result.continuity_reference,
+        "position_mismatches": (
+            [
+                {"artist": a, "title": t, "claimed": c, "actual": act}
+                for a, t, c, act in result.position_mismatches
+            ]
+            if result.position_mismatches
+            else None
+        ),
         "entries": entries_list,
     }
 

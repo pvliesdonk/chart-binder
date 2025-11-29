@@ -4,7 +4,7 @@ import logging
 import re
 
 from chart_binder.http_cache import HttpCache
-from chart_binder.scrapers.base import ChartScraper
+from chart_binder.scrapers.base import ChartScraper, ScrapedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,19 @@ class Top40JaarScraper(ChartScraper):
             return []
 
         return self._parse_html(html)
+
+    def scrape_rich(self, period: str) -> list[ScrapedEntry]:
+        """
+        Scrape year-end chart with metadata.
+
+        Note: Year-end charts don't have previous_position since they're
+        annual aggregates. Returns basic ScrapedEntry without position history.
+        """
+        entries = self.scrape(period)
+        return [
+            ScrapedEntry(rank=rank, artist=artist, title=title)
+            for rank, artist, title in entries
+        ]
 
     def _parse_html(self, html: str) -> list[tuple[int, str, str]]:
         """Parse Top40 year-end chart HTML page and extract chart entries."""

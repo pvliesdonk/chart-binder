@@ -212,14 +212,36 @@ class ChartScraper(ABC):
         """
         ...
 
-    def scrape_with_validation(self, period: str) -> ScrapeResult:
+    def scrape_with_validation(
+        self,
+        period: str,
+        db_previous_ranks: dict[tuple[str, str], int] | None = None,
+    ) -> ScrapeResult:
         """
         Scrape chart data and return result with validation info.
 
         Performs the scrape and validates the result against expected entry counts.
+        If db_previous_ranks is provided, also performs cross-reference validation
+        against the previous period's positions from the database.
+
+        Args:
+            period: Period to scrape
+            db_previous_ranks: Optional dict mapping (artist, title) to rank from
+                              the previous period in the database, for cross-reference
+                              validation
         """
         entries = self.scrape(period)
         warnings: list[str] = []
+        rich_entries: list[ScrapedEntry] | None = None
+        position_mismatches: list[tuple[str, str, int, int]] | None = None
+
+        # Try to get rich entries if scraper supports it
+        if db_previous_ranks is not None:
+            rich_entries = self.scrape_rich(period)
+            if rich_entries:
+                position_mismatches = cross_reference_previous_positions(
+                    rich_entries, db_previous_ranks
+                )
 
         # Validate entries for suspicious patterns
         issues = self._validate_entries(entries)
@@ -233,6 +255,8 @@ class ChartScraper(ABC):
             chart_type=self.chart_db_id,
             period=period,
             warnings=warnings,
+            rich_entries=rich_entries,
+            position_mismatches=position_mismatches,
         )
 
         if not result.is_valid:
@@ -242,6 +266,15 @@ class ChartScraper(ABC):
             )
 
         return result
+
+    def scrape_rich(self, period: str) -> list[ScrapedEntry]:
+        """
+        Scrape chart with full metadata (previous_position, weeks_on_chart).
+
+        Override in subclasses that support rich scraping.
+        Returns empty list by default.
+        """
+        return []
 
     def _fetch_url(self, url: str) -> str | None:
         """

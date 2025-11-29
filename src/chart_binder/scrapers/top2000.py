@@ -6,7 +6,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from chart_binder.http_cache import HttpCache
-from chart_binder.scrapers.base import ChartScraper
+from chart_binder.scrapers.base import ChartScraper, ScrapedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,100 @@ class Top2000Scraper(ChartScraper):
 
         logger.warning(f"No data found for Top 2000 {year}")
         return []
+
+    def scrape_rich(self, period: str) -> list[ScrapedEntry]:
+        """
+        Scrape Top 2000 chart with full metadata.
+
+        The NPO API may include lastYearPosition for cross-reference.
+        """
+        year = self._parse_year_period(period)
+
+        # Try API with rich data
+        entries = self._try_api_rich(year)
+        if entries:
+            return entries
+
+        # Fallback to basic entries
+        basic = self.scrape(period)
+        return [
+            ScrapedEntry(rank=rank, artist=artist, title=title)
+            for rank, artist, title in basic
+        ]
+
+    def _try_api_rich(self, year: int) -> list[ScrapedEntry]:
+        """Try to fetch from NPO API and capture previous position if available."""
+        url_new = self.API_NEW_PATTERN.format(year=year)
+        data = self._fetch_json(url_new)
+
+        if data is None:
+            url_old = self.API_OLD_PATTERN.format(year=year)
+            data = self._fetch_json(url_old)
+
+        if data is None:
+            return []
+
+        return self._parse_api_response_rich(data)
+
+    def _parse_api_response_rich(self, data: Any) -> list[ScrapedEntry]:
+        """Parse NPO API JSON response with full metadata."""
+        entries: list[ScrapedEntry] = []
+
+        if isinstance(data, dict):
+            items = data.get("data", data.get("items", data.get("chart", [])))
+            if isinstance(items, dict):
+                items = items.get("items", [])
+        else:
+            items = data
+
+        if not isinstance(items, list):
+            return []
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            rank = item.get("position") or item.get("rank") or item.get("pos")
+            artist = item.get("artist") or item.get("artistName") or ""
+            title = item.get("title") or item.get("trackTitle") or item.get("name") or ""
+
+            # Look for previous position in various formats
+            prev_pos = (
+                item.get("lastYearPosition")
+                or item.get("previousPosition")
+                or item.get("prev_position")
+                or item.get("lastYear")
+            )
+
+            if rank is None or not artist or not title:
+                continue
+
+            try:
+                rank = int(rank)
+            except (ValueError, TypeError):
+                continue
+
+            prev_pos_int: int | None = None
+            if prev_pos is not None:
+                try:
+                    prev_pos_int = int(prev_pos)
+                except (ValueError, TypeError):
+                    pass
+
+            artist = self._clean_text(str(artist))
+            title = self._clean_text(str(title))
+            title = self._apply_corrections(title)
+
+            entries.append(
+                ScrapedEntry(
+                    rank=rank,
+                    artist=artist,
+                    title=title,
+                    previous_position=prev_pos_int,
+                )
+            )
+
+        return entries
 
     def _try_api(self, year: int) -> list[tuple[int, str, str]]:
         """Try to fetch from NPO API (new pattern first, then old)."""

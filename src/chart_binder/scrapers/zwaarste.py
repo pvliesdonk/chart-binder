@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from html.parser import HTMLParser
 
 from chart_binder.http_cache import HttpCache
-from chart_binder.scrapers.base import ChartScraper
+from chart_binder.scrapers.base import ChartScraper, ScrapedEntry
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,19 @@ class ZwaarsteScraper(ChartScraper):
             return []
 
         return self._parse_html(html, year)
+
+    def scrape_rich(self, period: str) -> list[ScrapedEntry]:
+        """
+        Scrape De Zwaarste Lijst with full metadata.
+
+        Note: This chart is scraped from blog posts which typically don't
+        include previous year positions. Returns basic ScrapedEntry.
+        """
+        entries = self.scrape(period)
+        return [
+            ScrapedEntry(rank=rank, artist=artist, title=title)
+            for rank, artist, title in entries
+        ]
 
     def _parse_html(self, html: str, year: int) -> list[tuple[int, str, str]]:
         """Parse De Zwaarste Lijst HTML page."""
