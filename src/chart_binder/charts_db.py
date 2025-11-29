@@ -28,6 +28,7 @@ class LinkMethod(StrEnum):
     ISRC = "isrc"
     TITLE_ARTIST_YEAR = "title_artist_year"
     BUNDLE_RELEASE = "bundle_release"
+    MULTI_SOURCE = "multi_source"  # Multi-source search (MB, Discogs, Spotify)
     MANUAL = "manual"
     AUTO = "auto"  # Automatic normalization match
     ALIAS = "alias"  # Matched via alias_norm
@@ -54,7 +55,7 @@ class ChartEntry:
 
 @dataclass
 class ChartLink:
-    """Link between chart entry and work_key."""
+    """Link between chart entry and work_key with canonical IDs."""
 
     run_id: str
     rank: int
@@ -63,6 +64,11 @@ class ChartLink:
     confidence: float
     release_anchor_id: str | None = None
     side_designation: str | None = None  # A, B, AA, or None
+    recording_mbid: str | None = None
+    discogs_release_id: str | None = None
+    discogs_master_id: str | None = None
+    spotify_track_id: str | None = None
+    source: str | None = None  # Which source provided the match
 
 
 @dataclass
@@ -200,6 +206,11 @@ class ChartsDB:
                 confidence REAL NOT NULL,
                 release_anchor_id TEXT,
                 side_designation TEXT,
+                recording_mbid TEXT,
+                discogs_release_id TEXT,
+                discogs_master_id TEXT,
+                spotify_track_id TEXT,
+                source TEXT,
                 PRIMARY KEY (run_id, rank)
             );
 
@@ -225,6 +236,22 @@ class ChartsDB:
             CREATE INDEX IF NOT EXISTS idx_entry_song_entry ON chart_entry_song(entry_id);
             """
         )
+
+        # Additive migrations: Add canonical ID columns if they don't exist
+        # This handles migration from older schema versions
+        try:
+            conn.execute("SELECT recording_mbid FROM chart_link LIMIT 1")
+        except sqlite3.OperationalError:
+            # Columns don't exist, add them
+            conn.executescript(
+                """
+                ALTER TABLE chart_link ADD COLUMN recording_mbid TEXT;
+                ALTER TABLE chart_link ADD COLUMN discogs_release_id TEXT;
+                ALTER TABLE chart_link ADD COLUMN discogs_master_id TEXT;
+                ALTER TABLE chart_link ADD COLUMN spotify_track_id TEXT;
+                ALTER TABLE chart_link ADD COLUMN source TEXT;
+                """
+            )
 
         conn.commit()
         conn.close()
@@ -617,14 +644,20 @@ class ChartsDB:
                 cursor.execute(
                     """
                     INSERT INTO chart_link (run_id, rank, work_key, link_method, confidence,
-                        release_anchor_id, side_designation)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        release_anchor_id, side_designation, recording_mbid, discogs_release_id,
+                        discogs_master_id, spotify_track_id, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(run_id, rank) DO UPDATE SET
                         work_key = excluded.work_key,
                         link_method = excluded.link_method,
                         confidence = excluded.confidence,
                         release_anchor_id = excluded.release_anchor_id,
-                        side_designation = excluded.side_designation
+                        side_designation = excluded.side_designation,
+                        recording_mbid = excluded.recording_mbid,
+                        discogs_release_id = excluded.discogs_release_id,
+                        discogs_master_id = excluded.discogs_master_id,
+                        spotify_track_id = excluded.spotify_track_id,
+                        source = excluded.source
                     """,
                     (
                         link.run_id,
@@ -634,6 +667,11 @@ class ChartsDB:
                         link.confidence,
                         link.release_anchor_id,
                         link.side_designation,
+                        link.recording_mbid,
+                        link.discogs_release_id,
+                        link.discogs_master_id,
+                        link.spotify_track_id,
+                        link.source,
                     ),
                 )
             conn.commit()
@@ -1154,9 +1192,15 @@ class ChartsETL:
     AUTO_THRESHOLD = 0.85
     REVIEW_THRESHOLD = 0.60
 
-    def __init__(self, db: ChartsDB, normalizer: Normalizer | None = None):
+    def __init__(
+        self,
+        db: ChartsDB,
+        normalizer: Normalizer | None = None,
+        fetcher: Any | None = None,  # UnifiedFetcher, avoid circular import
+    ):
         self.db = db
         self.normalizer = normalizer or Normalizer()
+        self.fetcher = fetcher  # Optional: enables multi-source canonicalization
 
     def ingest(
         self,
@@ -1330,13 +1374,16 @@ class ChartsETL:
             title_tags=title_tags,
         )
 
-    def link(self, run_id: str, strategy: str = "title_artist_year") -> CoverageReport:
+    def link(self, run_id: str, strategy: str = "multi_source") -> CoverageReport:
         """
-        Link chart entries to work_keys.
+        Link chart entries to work_keys and canonical IDs.
 
         Args:
             run_id: Chart run to link
-            strategy: Linking strategy ('title_artist_year', 'bundle_release', etc.)
+            strategy: Linking strategy:
+                - 'multi_source': Use UnifiedFetcher for multi-source search (default, requires fetcher)
+                - 'title_artist_year': Legacy hash-based linking (no fetcher required)
+                - 'bundle_release': Bundle-based linking
 
         Returns:
             CoverageReport with linking results
@@ -1345,14 +1392,19 @@ class ChartsETL:
         links = []
 
         for entry in entries:
-            work_key, confidence, method = self._compute_link(entry, strategy)
+            link_result = self._compute_link(entry, strategy)
 
             link = ChartLink(
                 run_id=run_id,
                 rank=entry["rank"],
-                work_key=work_key,
-                link_method=method,
-                confidence=confidence,
+                work_key=link_result["work_key"],
+                link_method=link_result["method"],
+                confidence=link_result["confidence"],
+                recording_mbid=link_result.get("recording_mbid"),
+                discogs_release_id=link_result.get("discogs_release_id"),
+                discogs_master_id=link_result.get("discogs_master_id"),
+                spotify_track_id=link_result.get("spotify_track_id"),
+                source=link_result.get("source"),
             )
             links.append(link)
 
@@ -1360,24 +1412,38 @@ class ChartsETL:
 
         return self.db.get_coverage_report(run_id)
 
-    def _compute_link(
-        self, entry: dict[str, Any], strategy: str
-    ) -> tuple[str | None, float, LinkMethod]:
+    def _compute_link(self, entry: dict[str, Any], strategy: str) -> dict[str, Any]:
         """
-        Compute work_key link for an entry.
+        Compute work_key link and canonical IDs for an entry.
 
-        Returns (work_key, confidence, method).
+        Returns dict with:
+            - work_key: Hash-based work key (or None if below threshold)
+            - confidence: Confidence score
+            - method: LinkMethod enum
+            - recording_mbid: MusicBrainz recording ID (if found)
+            - discogs_release_id: Discogs release ID (if found)
+            - discogs_master_id: Discogs master ID (if found)
+            - spotify_track_id: Spotify track ID (if found)
+            - source: Which source provided the match
         """
         artist_norm = entry.get("artist_normalized", "")
         title_norm = entry.get("title_normalized", "")
 
         if not artist_norm or not title_norm:
-            return None, 0.0, LinkMethod.TITLE_ARTIST_YEAR
+            return {
+                "work_key": None,
+                "confidence": 0.0,
+                "method": LinkMethod.TITLE_ARTIST_YEAR,
+            }
 
-        # Generate work_key from normalized artist + title
+        # Generate work_key from normalized artist + title (always)
         work_key = self._generate_work_key(artist_norm, title_norm)
 
-        # Base confidence from normalization quality
+        # Multi-source search if fetcher is available and strategy allows
+        if strategy == "multi_source" and self.fetcher:
+            return self._compute_link_multi_source(entry, artist_norm, title_norm, work_key)
+
+        # Fallback to legacy hash-based linking
         confidence = self._compute_confidence(entry)
 
         # Determine method based on strategy
@@ -1390,7 +1456,80 @@ class ChartsETL:
         if confidence < self.REVIEW_THRESHOLD:
             work_key = None  # Reject - don't link
 
-        return work_key, confidence, method
+        return {
+            "work_key": work_key,
+            "confidence": confidence,
+            "method": method,
+        }
+
+    def _compute_link_multi_source(
+        self, entry: dict[str, Any], artist_norm: str, title_norm: str, work_key: str
+    ) -> dict[str, Any]:
+        """
+        Compute link using multi-source search via UnifiedFetcher.
+
+        Searches across MusicBrainz, Discogs, Spotify, and applies all
+        enhanced intelligence (popularity weighting, date validation, etc.).
+        """
+        # Type guard: fetcher should not be None when this method is called
+        if not self.fetcher:
+            return {
+                "work_key": work_key,
+                "confidence": 0.5,
+                "method": LinkMethod.TITLE_ARTIST_YEAR,
+            }
+
+        try:
+            # Search using normalized artist/title
+            results = self.fetcher.search_recordings(title=title_norm, artist=artist_norm)
+
+            if not results:
+                # No matches found, return with low confidence
+                return {
+                    "work_key": work_key,
+                    "confidence": 0.5,
+                    "method": LinkMethod.TITLE_ARTIST_YEAR,
+                }
+
+            # Take the top result (already sorted by confidence)
+            top_result = results[0]
+            confidence = top_result.get("confidence", 0.7)
+
+            # Extract canonical IDs from the result
+            result = {
+                "work_key": work_key,
+                "confidence": confidence,
+                "method": LinkMethod.MULTI_SOURCE,  # New method type
+                "source": top_result.get("source", "unknown"),
+            }
+
+            # Extract all available canonical IDs
+            if top_result.get("recording_mbid"):
+                result["recording_mbid"] = top_result["recording_mbid"]
+
+            if top_result.get("discogs_release_id"):
+                result["discogs_release_id"] = top_result["discogs_release_id"]
+
+            if top_result.get("discogs_master_id"):
+                result["discogs_master_id"] = top_result["discogs_master_id"]
+
+            if top_result.get("spotify_track_id"):
+                result["spotify_track_id"] = top_result["spotify_track_id"]
+
+            return result
+
+        except Exception as e:
+            # If multi-source search fails, fallback to hash-based
+            import logging
+
+            logging.warning(f"Multi-source search failed for {artist_norm} - {title_norm}: {e}")
+
+            # Return hash-based result
+            return {
+                "work_key": work_key,
+                "confidence": 0.6,
+                "method": LinkMethod.TITLE_ARTIST_YEAR,
+            }
 
     def _generate_work_key(self, artist_norm: str, title_norm: str) -> str:
         """Generate deterministic work_key from normalized artist + title."""

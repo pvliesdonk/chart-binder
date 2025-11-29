@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
 import sys
 from enum import StrEnum
@@ -1468,19 +1469,43 @@ def ingest(
 @click.argument("period")
 @click.option(
     "--strategy",
-    default="title_artist_year",
-    help="Linking strategy",
+    default="multi_source",
+    type=click.Choice(["multi_source", "title_artist_year", "bundle_release"]),
+    help="Linking strategy (default: multi_source)",
 )
 @click.pass_context
 def link(ctx: click.Context, chart_id: str, period: str, strategy: str) -> None:
-    """Link chart entries to work keys."""
+    """
+    Link chart entries to canonical recordings using multi-source search.
+
+    Uses UnifiedFetcher to search across MusicBrainz, Discogs, and Spotify
+    with all enhanced intelligence (popularity weighting, cross-source validation, etc.).
+
+    Examples:
+        canon charts link nl_top2000 2024
+        canon charts link nl_top2000 2024 --strategy title_artist_year
+    """
     from chart_binder.charts_db import ChartsDB, ChartsETL
+    from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
 
     config: Config = ctx.obj["config"]
     output_format: OutputFormat = ctx.obj["output"]
 
     db = ChartsDB(config.database.charts_path)
-    etl = ChartsETL(db)
+
+    # Create UnifiedFetcher if using multi_source strategy
+    fetcher = None
+    if strategy == "multi_source":
+        fetcher_config = FetcherConfig(
+            cache_dir=config.http_cache.directory,
+            db_path=config.database.music_graph_path,
+            mode=FetchMode.NORMAL,
+            spotify_client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+            spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+        )
+        fetcher = UnifiedFetcher(fetcher_config)
+
+    etl = ChartsETL(db, fetcher=fetcher)
 
     run = db.get_run_by_period(chart_id, period)
     if not run:
@@ -1488,6 +1513,10 @@ def link(ctx: click.Context, chart_id: str, period: str, strategy: str) -> None:
         sys.exit(ExitCode.NO_RESULTS)
 
     report = etl.link(run["run_id"], strategy=strategy)
+
+    # Close fetcher if we created one
+    if fetcher:
+        fetcher.close()
 
     result = {
         "chart_id": chart_id,
