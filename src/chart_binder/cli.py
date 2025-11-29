@@ -474,7 +474,7 @@ def decide(
     adjudicator = None
     auto_accept_threshold = 0.85
     if config.llm.enabled:
-        from chart_binder.llm import LLMAdjudicator
+        from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
         # Initialize SearxNG web search if enabled
         web_search = None
@@ -491,7 +491,7 @@ def decide(
                 logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
-        adjudicator = LLMAdjudicator(config=config.llm, search_tool=web_search)
+        adjudicator = AgentAdjudicator(config=config.llm, search_tool=web_search)
         auto_accept_threshold = config.llm.auto_accept_threshold
         logger.info(f"LLM adjudication enabled (auto-accept threshold: {auto_accept_threshold})")
 
