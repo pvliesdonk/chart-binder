@@ -59,6 +59,7 @@ class AgentAdjudicator:
                 model=config.model_id,
                 temperature=config.temperature,
                 num_predict=config.max_tokens,
+                num_ctx=32768,  # Large context window for tool calling
                 base_url=config.ollama_base_url,
                 # NOTE: Don't use format="json" with tools - it conflicts with tool calling
             )
