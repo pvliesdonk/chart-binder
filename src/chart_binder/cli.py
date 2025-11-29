@@ -390,9 +390,19 @@ def _get_or_calc_fingerprint(
 @click.option("--explain", is_flag=True, help="Show detailed decision rationale")
 @click.option("--no-persist", is_flag=True, help="Skip persisting decisions to database")
 @click.option("--quiet", "-q", is_flag=True, help="Show only summary, not per-file output")
+@click.option(
+    "--llm-adjudicate",
+    is_flag=True,
+    help="Automatically adjudicate INDETERMINATE decisions using LLM",
+)
 @click.pass_context
 def decide(
-    ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persist: bool, quiet: bool
+    ctx: click.Context,
+    paths: tuple[Path, ...],
+    explain: bool,
+    no_persist: bool,
+    quiet: bool,
+    llm_adjudicate: bool,
 ) -> None:
     """
     Make canonicalization decisions for audio files.
@@ -405,6 +415,10 @@ def decide(
 
     Use --quiet/-q for batch processing to show only progress and summary instead
     of detailed per-file output.
+
+    Use --llm-adjudicate to automatically adjudicate INDETERMINATE decisions using
+    the configured LLM. Requires LLM to be enabled in config. High-confidence LLM
+    decisions are auto-accepted; low-confidence decisions remain INDETERMINATE.
     """
     from chart_binder.candidates import CandidateBuilder, CandidateSet
     from chart_binder.decisions_db import DecisionsDB
@@ -412,7 +426,13 @@ def decide(
     from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
     from chart_binder.musicgraph import MusicGraphDB
     from chart_binder.normalize import Normalizer
-    from chart_binder.resolver import ConfigSnapshot, DecisionState, Resolver
+    from chart_binder.resolver import (
+        ConfigSnapshot,
+        CRGRationale,
+        DecisionState,
+        Resolver,
+        RRRationale,
+    )
     from chart_binder.tagging import verify
 
     logger = logging.getLogger(__name__)
@@ -457,11 +477,30 @@ def decide(
     normalizer = Normalizer()
     candidate_builder = CandidateBuilder(musicgraph_db, normalizer)
 
+    # Initialize LLM adjudicator if requested
+    adjudicator = None
+    auto_accept_threshold = 0.85
+    if llm_adjudicate:
+        if not config.llm.enabled:
+            click.echo(
+                "Warning: --llm-adjudicate requested but LLM is disabled in config. "
+                "Skipping LLM adjudication.",
+                err=True,
+            )
+        else:
+            from chart_binder.llm import LLMAdjudicator
+
+            adjudicator = LLMAdjudicator(config=config.llm)
+            auto_accept_threshold = config.llm.auto_accept_threshold
+            logger.info(
+                f"LLM adjudication enabled (auto-accept threshold: {auto_accept_threshold})"
+            )
+
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
 
     # Track statistics for quiet mode
-    stats = {"decided": 0, "indeterminate": 0, "errors": 0}
+    stats = {"decided": 0, "indeterminate": 0, "llm_adjudicated": 0, "errors": 0}
     total_files = len(audio_files)
 
     if quiet and output_format == OutputFormat.TEXT:
@@ -595,6 +634,51 @@ def decide(
 
                 decision = resolver.resolve(evidence_bundle)
 
+                # If decision is INDETERMINATE and LLM adjudication is enabled, try to adjudicate
+                llm_adjudicated = False
+                llm_confidence = None
+                llm_rationale = None
+                if decision.state == DecisionState.INDETERMINATE and adjudicator:
+                    logger.debug("Decision is INDETERMINATE, attempting LLM adjudication...")
+                    try:
+                        # Build decision trace dict from compact string
+                        decision_trace_dict: dict[str, Any] | None = None
+                        if decision.compact_tag:
+                            decision_trace_dict = {"trace_compact": decision.compact_tag}
+
+                        # Call LLM adjudicator
+                        from chart_binder.llm.adjudicator import AdjudicationOutcome
+
+                        adjudication_result = adjudicator.adjudicate(
+                            evidence_bundle, decision_trace_dict
+                        )
+
+                        llm_confidence = adjudication_result.confidence
+                        llm_rationale = adjudication_result.rationale
+
+                        # If high confidence, auto-accept and update decision
+                        if (
+                            adjudication_result.outcome != AdjudicationOutcome.ERROR
+                            and adjudication_result.confidence >= auto_accept_threshold
+                        ):
+                            decision.state = DecisionState.DECIDED
+                            decision.release_group_mbid = adjudication_result.crg_mbid
+                            decision.release_mbid = adjudication_result.rr_mbid
+                            decision.crg_rationale = CRGRationale.LLM_ADJUDICATION
+                            decision.rr_rationale = RRRationale.LLM_ADJUDICATION
+                            llm_adjudicated = True
+                            logger.info(
+                                f"LLM adjudicated: CRG={adjudication_result.crg_mbid}, "
+                                f"confidence={adjudication_result.confidence:.2f}"
+                            )
+                        else:
+                            logger.debug(
+                                f"LLM confidence {adjudication_result.confidence:.2f} "
+                                f"below threshold {auto_accept_threshold}, keeping INDETERMINATE"
+                            )
+                    except Exception as e:
+                        logger.warning(f"LLM adjudication failed: {e}")
+
                 # Extract metadata from decision trace (decided values)
                 artist_name = evidence_bundle.get("artist", {}).get("name", "Unknown")
                 artist_credits = None
@@ -681,7 +765,14 @@ def decide(
                     "crg_rationale": _get_rationale_value(decision.crg_rationale),
                     "rr_rationale": _get_rationale_value(decision.rr_rationale),
                     "compact_tag": decision.compact_tag,
+                    "llm_adjudicated": llm_adjudicated,
                 }
+
+                # Add LLM info if adjudication was attempted
+                if llm_confidence is not None:
+                    result["llm_confidence"] = llm_confidence
+                if llm_rationale is not None:
+                    result["llm_rationale"] = llm_rationale
 
                 if explain:
                     trace_dict: dict[str, Any] = {
@@ -698,6 +789,8 @@ def decide(
                 # Update statistics
                 if decision.state.value == "decided":
                     stats["decided"] += 1
+                    if llm_adjudicated:
+                        stats["llm_adjudicated"] += 1
                 else:
                     stats["indeterminate"] += 1
 
@@ -705,20 +798,27 @@ def decide(
                 if quiet and output_format == OutputFormat.TEXT:
                     if idx % 10 == 0 or idx == total_files:  # Update every 10 files or at end
                         pct = (idx / total_files) * 100
+                        llm_stat = f" 🤖{stats['llm_adjudicated']}" if adjudicator else ""
                         click.echo(
                             f"  Progress: {idx}/{total_files} ({pct:.1f}%) "
-                            f"[✔︎{stats['decided']} ∆{stats['indeterminate']} ✘{stats['errors']}]",
+                            f"[✔︎{stats['decided']}{llm_stat} ∆{stats['indeterminate']} ✘{stats['errors']}]",
                             err=True,
                         )
 
                 # Show detailed output if not quiet
                 if not quiet and output_format == OutputFormat.TEXT:
                     state_icon = "✔︎" if decision.state.value == "decided" else "∆"
+                    if llm_adjudicated:
+                        state_icon = "🤖"  # Robot emoji for LLM-adjudicated
                     click.echo(f"\n{state_icon} {audio_file}")
                     click.echo(f"  Artist: {artist_name}")
                     if recording_title:
                         click.echo(f"  Recording: {recording_title}")
                     click.echo(f"  State: {decision.state.value}")
+                    if llm_adjudicated:
+                        click.echo(f"  LLM Adjudicated: confidence={llm_confidence:.2f}")
+                        if llm_rationale:
+                            click.echo(f"  LLM Rationale: {llm_rationale[:100]}")
                     if decision.release_group_mbid:
                         click.echo(f"  CRG: {decision.release_group_mbid}")
                         if release_group_title:
@@ -766,6 +866,8 @@ def decide(
         # Print final summary in quiet mode
         click.echo(f"\n✓ Completed {total_files} files:")
         click.echo(f"  Decided:       {stats['decided']}")
+        if stats["llm_adjudicated"] > 0:
+            click.echo(f"    (via LLM):   {stats['llm_adjudicated']}")
         click.echo(f"  Indeterminate: {stats['indeterminate']}")
         if stats["errors"] > 0:
             click.echo(f"  Errors:        {stats['errors']}")
