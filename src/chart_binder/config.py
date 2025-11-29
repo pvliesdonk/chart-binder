@@ -53,6 +53,14 @@ class LLMProviderType(StrEnum):
     OPENAI = "openai"
 
 
+class SearxNGConfig(BaseModel):
+    """SearxNG search configuration."""
+
+    url: str = Field(default="http://localhost:8080")
+    timeout_s: float = Field(default=10.0, ge=1.0)
+    enabled: bool = Field(default=False)
+
+
 class LLMConfig(BaseModel):
     """LLM adjudication configuration (Epic 13)."""
 
@@ -87,6 +95,17 @@ class LLMConfig(BaseModel):
     # Review queue database path
     review_queue_path: Path = Field(default=Path("review_queue.sqlite"))
 
+    # SearxNG integration
+    searxng: SearxNGConfig = Field(default_factory=SearxNGConfig)
+
+
+class LoggingConfig(BaseModel):
+    """Logging configuration."""
+
+    level: str = Field(default="WARNING")  # DEBUG, INFO, WARNING, ERROR
+    format: str = Field(default="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    hash_paths: bool = Field(default=False)
+
 
 class Config(BaseModel):
     """
@@ -99,6 +118,7 @@ class Config(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     live_sources: LiveSourcesConfig = Field(default_factory=LiveSourcesConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
     offline_mode: bool = Field(default=False)
 
     @classmethod
@@ -184,6 +204,18 @@ class Config(BaseModel):
         if discogs_rate := os.getenv(f"{env_prefix}LIVE_SOURCES_DISCOGS_RATE_LIMIT"):
             live_sources["discogs_rate_limit"] = discogs_rate
 
+        # Cache TTLs
+        if cache_ttl_mb := os.getenv(f"{env_prefix}LIVE_SOURCES_CACHE_TTL_MUSICBRAINZ"):
+            live_sources["cache_ttl_musicbrainz"] = cache_ttl_mb
+        if cache_ttl_discogs := os.getenv(f"{env_prefix}LIVE_SOURCES_CACHE_TTL_DISCOGS"):
+            live_sources["cache_ttl_discogs"] = cache_ttl_discogs
+        if cache_ttl_spotify := os.getenv(f"{env_prefix}LIVE_SOURCES_CACHE_TTL_SPOTIFY"):
+            live_sources["cache_ttl_spotify"] = cache_ttl_spotify
+        if cache_ttl_wikidata := os.getenv(f"{env_prefix}LIVE_SOURCES_CACHE_TTL_WIKIDATA"):
+            live_sources["cache_ttl_wikidata"] = cache_ttl_wikidata
+        if cache_ttl_acoustid := os.getenv(f"{env_prefix}LIVE_SOURCES_CACHE_TTL_ACOUSTID"):
+            live_sources["cache_ttl_acoustid"] = cache_ttl_acoustid
+
         # LLM config
         llm = config_dict.setdefault("llm", {})
         if not isinstance(llm, dict):
@@ -200,14 +232,48 @@ class Config(BaseModel):
             llm["api_key_env"] = llm_api_key_env
         if llm_ollama_url := os.getenv(f"{env_prefix}LLM_OLLAMA_BASE_URL"):
             llm["ollama_base_url"] = llm_ollama_url
+        if llm_openai_url := os.getenv(f"{env_prefix}LLM_OPENAI_BASE_URL"):
+            llm["openai_base_url"] = llm_openai_url
         if llm_timeout := os.getenv(f"{env_prefix}LLM_TIMEOUT_S"):
             llm["timeout_s"] = llm_timeout
         if llm_max_tokens := os.getenv(f"{env_prefix}LLM_MAX_TOKENS"):
             llm["max_tokens"] = llm_max_tokens
+        if llm_temperature := os.getenv(f"{env_prefix}LLM_TEMPERATURE"):
+            llm["temperature"] = llm_temperature
         if llm_auto_accept := os.getenv(f"{env_prefix}LLM_AUTO_ACCEPT_THRESHOLD"):
             llm["auto_accept_threshold"] = llm_auto_accept
         if llm_review := os.getenv(f"{env_prefix}LLM_REVIEW_THRESHOLD"):
             llm["review_threshold"] = llm_review
+        if llm_prompt_version := os.getenv(f"{env_prefix}LLM_PROMPT_TEMPLATE_VERSION"):
+            llm["prompt_template_version"] = llm_prompt_version
+        if llm_review_queue := os.getenv(f"{env_prefix}LLM_REVIEW_QUEUE_PATH"):
+            llm["review_queue_path"] = llm_review_queue
+
+        # SearxNG config (nested under llm)
+        searxng = llm.setdefault("searxng", {})
+        if not isinstance(searxng, dict):
+            searxng = {}
+            llm["searxng"] = searxng
+
+        if searxng_url := os.getenv(f"{env_prefix}SEARXNG_URL"):
+            searxng["url"] = searxng_url
+        if searxng_timeout := os.getenv(f"{env_prefix}SEARXNG_TIMEOUT_S"):
+            searxng["timeout_s"] = searxng_timeout
+        if searxng_enabled := os.getenv(f"{env_prefix}SEARXNG_ENABLED"):
+            searxng["enabled"] = searxng_enabled.lower() in ("true", "1", "yes")
+
+        # Logging config
+        logging_config = config_dict.setdefault("logging", {})
+        if not isinstance(logging_config, dict):
+            logging_config = {}
+            config_dict["logging"] = logging_config
+
+        if log_level := os.getenv(f"{env_prefix}LOGGING_LEVEL"):
+            logging_config["level"] = log_level
+        if log_format := os.getenv(f"{env_prefix}LOGGING_FORMAT"):
+            logging_config["format"] = log_format
+        if log_hash_paths := os.getenv(f"{env_prefix}LOGGING_HASH_PATHS"):
+            logging_config["hash_paths"] = log_hash_paths.lower() in ("true", "1", "yes")
 
         return config_dict
 
@@ -302,3 +368,83 @@ def test_config_llm_env_overrides(
     assert config.llm.enabled is True
     assert config.llm.provider == "openai"
     assert config.llm.model_id == "gpt-4o"
+
+
+def test_config_searxng_defaults():
+    """Test SearxNG configuration defaults."""
+    config = Config()
+    assert config.llm.searxng.enabled is False
+    assert config.llm.searxng.url == "http://localhost:8080"
+    assert config.llm.searxng.timeout_s == 10.0
+
+
+def test_config_searxng_from_dict():
+    """Test SearxNG configuration from dict."""
+    config = Config.model_validate(
+        {
+            "llm": {
+                "searxng": {
+                    "enabled": True,
+                    "url": "http://searxng.example.com",
+                    "timeout_s": 15.0,
+                }
+            }
+        }
+    )
+    assert config.llm.searxng.enabled is True
+    assert config.llm.searxng.url == "http://searxng.example.com"
+    assert config.llm.searxng.timeout_s == 15.0
+
+
+def test_config_searxng_env_overrides(
+    monkeypatch,  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+):
+    """Test SearxNG configuration from environment variables."""
+    monkeypatch.setenv("CHART_BINDER_SEARXNG_ENABLED", "true")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_SEARXNG_URL", "http://search.local")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_SEARXNG_TIMEOUT_S", "20.0")  # pyright: ignore[reportUnknownMemberType]
+
+    config = Config.load()
+    assert config.llm.searxng.enabled is True
+    assert config.llm.searxng.url == "http://search.local"
+    assert config.llm.searxng.timeout_s == 20.0
+
+
+def test_config_all_llm_env_overrides(
+    monkeypatch,  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+):
+    """Test all LLM configuration options from environment variables."""
+    monkeypatch.setenv("CHART_BINDER_LLM_ENABLED", "true")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_PROVIDER", "openai")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_MODEL_ID", "gpt-4o-mini")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_OPENAI_BASE_URL", "https://api.custom.com/v1")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_TEMPERATURE", "0.7")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_PROMPT_TEMPLATE_VERSION", "v2")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LLM_REVIEW_QUEUE_PATH", "/tmp/reviews.db")  # pyright: ignore[reportUnknownMemberType]
+
+    config = Config.load()
+    assert config.llm.enabled is True
+    assert config.llm.provider == "openai"
+    assert config.llm.model_id == "gpt-4o-mini"
+    assert config.llm.openai_base_url == "https://api.custom.com/v1"
+    assert config.llm.temperature == 0.7
+    assert config.llm.prompt_template_version == "v2"
+    assert config.llm.review_queue_path == Path("/tmp/reviews.db")
+
+
+def test_config_live_sources_cache_ttl_env_overrides(
+    monkeypatch,  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+):
+    """Test live sources cache TTL configuration from environment variables."""
+    monkeypatch.setenv("CHART_BINDER_LIVE_SOURCES_CACHE_TTL_MUSICBRAINZ", "7200")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LIVE_SOURCES_CACHE_TTL_DISCOGS", "172800")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LIVE_SOURCES_CACHE_TTL_SPOTIFY", "14400")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LIVE_SOURCES_CACHE_TTL_WIKIDATA", "1209600")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_LIVE_SOURCES_CACHE_TTL_ACOUSTID", "43200")  # pyright: ignore[reportUnknownMemberType]
+
+    config = Config.load()
+    assert config.live_sources.cache_ttl_musicbrainz == 7200
+    assert config.live_sources.cache_ttl_discogs == 172800
+    assert config.live_sources.cache_ttl_spotify == 14400
+    assert config.live_sources.cache_ttl_wikidata == 1209600
+    assert config.live_sources.cache_ttl_acoustid == 43200

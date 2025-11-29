@@ -85,6 +85,18 @@ prompt_template_version = "v1"
 
 # Review queue database
 review_queue_path = "review_queue.sqlite"
+
+[llm.searxng]
+# SearxNG web search integration
+url = "http://localhost:8080"
+timeout_s = 10.0
+enabled = false
+
+[logging]
+# Logging configuration
+level = "WARNING"  # DEBUG, INFO, WARNING, ERROR
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+hash_paths = false  # Hash file paths for privacy
 ```
 
 ## Configuration Sections
@@ -148,6 +160,75 @@ Settings for AI-powered adjudication.
 | `prompt_template_version` | string | `v1` | Prompt template version |
 | `review_queue_path` | Path | `review_queue.sqlite` | Review queue database |
 
+### SearxNG Configuration
+
+Settings for web search integration with LLM.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `url` | string | `http://localhost:8080` | SearxNG instance URL |
+| `timeout_s` | float | 10.0 | Request timeout in seconds |
+| `enabled` | bool | false | Enable SearxNG integration |
+
+### Logging Configuration
+
+Controls application logging behavior.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `level` | string | `WARNING` | Log level: DEBUG, INFO, WARNING, ERROR |
+| `format` | string | (standard) | Python logging format string |
+| `hash_paths` | bool | false | Hash file paths in logs for privacy |
+
+## Command-Line Arguments
+
+All configuration options can also be set via CLI arguments, which have the highest precedence.
+
+Run `canon --help` to see all available options:
+
+```bash
+canon --help
+```
+
+### Key CLI Options
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `--config PATH` | Path | Path to TOML configuration file |
+| `--offline` | Flag | Run in offline mode (no network requests) |
+| `--db-music-graph PATH` | Path | Music graph database path |
+| `--db-charts PATH` | Path | Charts database path |
+| `--db-decisions PATH` | Path | Decisions database path |
+| `--cache-dir PATH` | Path | HTTP cache directory |
+| `--cache-ttl INTEGER` | Int | Cache TTL in seconds |
+| `--no-cache` | Flag | Disable HTTP caching |
+| `--llm-provider [ollama\|openai]` | Choice | LLM provider |
+| `--llm-model TEXT` | String | LLM model ID |
+| `--llm-enabled / --llm-disabled` | Flag | Enable/disable LLM adjudication |
+| `--llm-temperature FLOAT` | Float | LLM temperature (0.0-2.0) |
+| `--searxng-url TEXT` | String | SearxNG instance URL |
+| `--searxng-enabled / --searxng-disabled` | Flag | Enable/disable SearxNG |
+| `-v / -vv` | Flag | Increase verbosity (INFO/DEBUG) |
+
+### CLI Examples
+
+```bash
+# Use custom database paths
+canon --db-music-graph /data/music.db --db-charts /data/charts.db scan /music
+
+# Override LLM settings
+canon --llm-enabled --llm-model gpt-4o-mini decide /music
+
+# Disable caching for a single run
+canon --no-cache scan /music
+
+# Enable debug logging
+canon -vv scan /music
+
+# Combine TOML config with CLI overrides
+canon --config prod.toml --llm-temperature 0.5 decide /music
+```
+
 ## Environment Variables
 
 All configuration options can be overridden via environment variables. Environment variables take precedence over config file values.
@@ -191,6 +272,16 @@ All configuration options can be overridden via environment variables. Environme
 | `CHART_BINDER_LIVE_SOURCES_ACOUSTID_RATE_LIMIT` | AcoustID rate limit |
 | `CHART_BINDER_LIVE_SOURCES_DISCOGS_RATE_LIMIT` | Discogs rate limit |
 
+### Cache TTLs
+
+| Variable | Description |
+|----------|-------------|
+| `CHART_BINDER_LIVE_SOURCES_CACHE_TTL_MUSICBRAINZ` | MusicBrainz cache TTL (seconds) |
+| `CHART_BINDER_LIVE_SOURCES_CACHE_TTL_DISCOGS` | Discogs cache TTL (seconds) |
+| `CHART_BINDER_LIVE_SOURCES_CACHE_TTL_SPOTIFY` | Spotify cache TTL (seconds) |
+| `CHART_BINDER_LIVE_SOURCES_CACHE_TTL_WIKIDATA` | Wikidata cache TTL (seconds) |
+| `CHART_BINDER_LIVE_SOURCES_CACHE_TTL_ACOUSTID` | AcoustID cache TTL (seconds) |
+
 ### LLM Settings
 
 | Variable | Description |
@@ -200,10 +291,30 @@ All configuration options can be overridden via environment variables. Environme
 | `CHART_BINDER_LLM_MODEL_ID` | Model identifier |
 | `CHART_BINDER_LLM_API_KEY_ENV` | API key env var name |
 | `CHART_BINDER_LLM_OLLAMA_BASE_URL` | Ollama base URL |
+| `CHART_BINDER_LLM_OPENAI_BASE_URL` | OpenAI base URL |
 | `CHART_BINDER_LLM_TIMEOUT_S` | Request timeout |
 | `CHART_BINDER_LLM_MAX_TOKENS` | Max tokens |
+| `CHART_BINDER_LLM_TEMPERATURE` | Temperature (0.0-2.0) |
 | `CHART_BINDER_LLM_AUTO_ACCEPT_THRESHOLD` | Auto-accept threshold |
 | `CHART_BINDER_LLM_REVIEW_THRESHOLD` | Review threshold |
+| `CHART_BINDER_LLM_PROMPT_TEMPLATE_VERSION` | Prompt template version |
+| `CHART_BINDER_LLM_REVIEW_QUEUE_PATH` | Review queue database path |
+
+### SearxNG Settings
+
+| Variable | Description |
+|----------|-------------|
+| `CHART_BINDER_SEARXNG_URL` | SearxNG instance URL |
+| `CHART_BINDER_SEARXNG_TIMEOUT_S` | Request timeout (seconds) |
+| `CHART_BINDER_SEARXNG_ENABLED` | Enable SearxNG (`true`/`false`) |
+
+### Logging Settings
+
+| Variable | Description |
+|----------|-------------|
+| `CHART_BINDER_LOGGING_LEVEL` | Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `CHART_BINDER_LOGGING_FORMAT` | Python logging format string |
+| `CHART_BINDER_LOGGING_HASH_PATHS` | Hash file paths in logs (`true`/`false`) |
 
 ## Common Configuration Scenarios
 

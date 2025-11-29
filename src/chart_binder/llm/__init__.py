@@ -23,6 +23,12 @@ from chart_binder.llm.providers import (
 )
 from chart_binder.llm.review_queue import ReviewAction, ReviewItem, ReviewQueue, ReviewSource
 from chart_binder.llm.search_tool import SearchResult, SearchTool
+from chart_binder.llm.searxng import (
+    SearxNGClient,
+    SearxNGResponse,
+    SearxNGResult,
+    SearxNGSearchTool,
+)
 
 __all__ = [
     # Providers
@@ -37,6 +43,11 @@ __all__ = [
     # Search tool
     "SearchTool",
     "SearchResult",
+    # SearxNG
+    "SearxNGClient",
+    "SearxNGResponse",
+    "SearxNGResult",
+    "SearxNGSearchTool",
     # Review queue
     "ReviewQueue",
     "ReviewItem",

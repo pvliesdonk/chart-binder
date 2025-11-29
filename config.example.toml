@@ -1,0 +1,181 @@
+# Chart-Binder Configuration Example
+# ====================================
+# All options can also be set via environment variables (CHART_BINDER_<SECTION>_<KEY>)
+# or CLI arguments (--option-name)
+#
+# Precedence order: CLI Arguments > Environment Variables > Config File > Defaults
+
+# HTTP Cache Configuration
+# -------------------------
+# Controls caching of HTTP requests to external APIs
+[http_cache]
+# Cache directory path (relative or absolute)
+directory = ".cache/http"
+
+# Cache TTL in seconds (86400 = 24 hours)
+ttl_seconds = 86400
+
+# Enable or disable HTTP caching
+enabled = true
+
+
+# Database Configuration
+# -----------------------
+# Paths to SQLite database files
+[database]
+# Music graph database (MusicBrainz entities, works, recordings)
+music_graph_path = "musicgraph.sqlite"
+
+# Charts database (chart runs, entries, linkage)
+charts_path = "charts.sqlite"
+
+# Decisions database (canonicalization decisions, drift tracking)
+decisions_path = "decisions.sqlite"
+
+
+# Live Sources Configuration
+# ---------------------------
+# API credentials and rate limits for external music databases
+[live_sources]
+
+## API Credentials
+## ---------------
+## These should preferably be set via environment variables for security:
+## - ACOUSTID_API_KEY
+## - DISCOGS_TOKEN
+## - SPOTIFY_CLIENT_ID
+## - SPOTIFY_CLIENT_SECRET
+
+# acoustid_api_key = "your-acoustid-api-key"
+# discogs_token = "your-discogs-token"
+# spotify_client_id = "your-spotify-client-id"
+# spotify_client_secret = "your-spotify-client-secret"
+
+## Rate Limits
+## -----------
+# MusicBrainz: requests per second
+musicbrainz_rate_limit = 1.0
+
+# AcoustID: requests per second
+acoustid_rate_limit = 3.0
+
+# Discogs: requests per minute
+discogs_rate_limit = 25
+
+## Cache TTLs (seconds)
+## --------------------
+# MusicBrainz cache TTL (3600 = 1 hour)
+cache_ttl_musicbrainz = 3600
+
+# Discogs cache TTL (86400 = 24 hours)
+cache_ttl_discogs = 86400
+
+# Spotify cache TTL (7200 = 2 hours)
+cache_ttl_spotify = 7200
+
+# Wikidata cache TTL (604800 = 7 days)
+cache_ttl_wikidata = 604800
+
+# AcoustID cache TTL (86400 = 24 hours)
+cache_ttl_acoustid = 86400
+
+
+# LLM Configuration (Epic 13)
+# ----------------------------
+# LLM-based adjudication for INDETERMINATE decisions
+[llm]
+
+## Core Settings
+## -------------
+# Enable or disable LLM adjudication
+enabled = false
+
+# LLM provider: "ollama" (local) or "openai" (cloud)
+provider = "ollama"
+
+# Model ID (provider-specific)
+# Ollama examples: llama3.2, mistral, phi3, qwen2.5
+# OpenAI examples: gpt-4o, gpt-4o-mini, gpt-4-turbo
+model_id = "llama3.2"
+
+## API Configuration
+## -----------------
+# Environment variable name for OpenAI API key
+# Set via: export OPENAI_API_KEY="sk-..."
+api_key_env = "OPENAI_API_KEY"
+
+# Ollama base URL (local server)
+ollama_base_url = "http://localhost:11434"
+
+# OpenAI base URL (or compatible API endpoint)
+openai_base_url = "https://api.openai.com/v1"
+
+## Request Settings
+## ----------------
+# Request timeout in seconds
+timeout_s = 30.0
+
+# Maximum tokens in LLM response
+max_tokens = 1024
+
+# Temperature (0.0 = deterministic, 2.0 = very creative)
+# For adjudication, lower is better (0.0-0.3)
+temperature = 0.0
+
+## Confidence Thresholds
+## ---------------------
+# Auto-accept threshold (0.0-1.0)
+# Decisions with confidence >= this are automatically accepted
+auto_accept_threshold = 0.85
+
+# Review threshold (0.0-1.0)
+# Decisions with confidence >= this but < auto_accept go to human review
+# Decisions with confidence < this are rejected
+review_threshold = 0.60
+
+## Prompt Configuration
+## --------------------
+# Prompt template version for A/B testing
+prompt_template_version = "v1"
+
+## Review Queue
+## ------------
+# Path to review queue database
+review_queue_path = "review_queue.sqlite"
+
+
+# SearxNG Configuration (LLM Web Search)
+# ---------------------------------------
+# SearxNG integration for LLM context enrichment
+[llm.searxng]
+
+# SearxNG instance URL
+url = "http://localhost:8080"
+
+# Request timeout in seconds
+timeout_s = 10.0
+
+# Enable or disable SearxNG integration
+enabled = false
+
+
+# Logging Configuration
+# ----------------------
+# Controls application logging behavior
+[logging]
+
+# Log level: DEBUG, INFO, WARNING, ERROR
+level = "WARNING"
+
+# Log format string (Python logging format)
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Hash file paths in logs for privacy (useful in shared environments)
+hash_paths = false
+
+
+# Offline Mode
+# ------------
+# Run without making network requests (uses only cached/local data)
+# This is a top-level boolean, not in a section
+# offline_mode = false

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import sys
 from enum import StrEnum
@@ -10,6 +11,7 @@ from typing import Any
 import click
 
 from chart_binder.config import Config
+from chart_binder.safe_logging import configure_safe_logging
 
 # Supported audio file extensions
 AUDIO_EXTENSIONS = ("*.mp3", "*.flac", "*.ogg", "*.m4a")
@@ -69,6 +71,23 @@ def _get_rationale_value(rationale: Any) -> str | None:
     default="text",
     help="Output format",
 )
+@click.option("-v", "--verbose", count=True, help="Increase verbosity (-v for INFO, -vv for DEBUG)")
+# Database options
+@click.option("--db-music-graph", type=click.Path(path_type=Path), help="Music graph database path")
+@click.option("--db-charts", type=click.Path(path_type=Path), help="Charts database path")
+@click.option("--db-decisions", type=click.Path(path_type=Path), help="Decisions database path")
+# Cache options
+@click.option("--cache-dir", type=click.Path(path_type=Path), help="HTTP cache directory")
+@click.option("--cache-ttl", type=int, help="Cache TTL in seconds")
+@click.option("--no-cache", is_flag=True, help="Disable HTTP caching")
+# LLM options
+@click.option("--llm-provider", type=click.Choice(["ollama", "openai"]), help="LLM provider")
+@click.option("--llm-model", help="LLM model ID")
+@click.option("--llm-enabled/--llm-disabled", default=None, help="Enable/disable LLM adjudication")
+@click.option("--llm-temperature", type=float, help="LLM temperature (0.0-2.0)")
+# SearxNG options
+@click.option("--searxng-url", help="SearxNG instance URL")
+@click.option("--searxng-enabled/--searxng-disabled", default=None, help="Enable/disable SearxNG")
 @click.pass_context
 def canon(
     ctx: click.Context,
@@ -77,6 +96,19 @@ def canon(
     frozen: bool,
     refresh: bool,
     output: str,
+    verbose: int,
+    db_music_graph: Path | None,
+    db_charts: Path | None,
+    db_decisions: Path | None,
+    cache_dir: Path | None,
+    cache_ttl: int | None,
+    no_cache: bool,
+    llm_provider: str | None,
+    llm_model: str | None,
+    llm_enabled: bool | None,
+    llm_temperature: float | None,
+    searxng_url: str | None,
+    searxng_enabled: bool | None,
 ) -> None:
     """
     Chart-Binder: Charts-aware audio tagger.
@@ -84,9 +116,69 @@ def canon(
     Pick the most canonical release, link MB/Discogs/Spotify IDs,
     and embed compact chart history.
     """
+    logger = logging.getLogger(__name__)
+
+    # Load config (TOML + env vars)
     cfg = Config.load(config)
+    if config:
+        logger.info(f"Loaded config from {config}")
+
+    # Apply CLI overrides (highest precedence: CLI > Env > Config File > Defaults)
     if offline or frozen:
         cfg.offline_mode = True
+
+    # Database overrides
+    if db_music_graph:
+        cfg.database.music_graph_path = db_music_graph
+    if db_charts:
+        cfg.database.charts_path = db_charts
+    if db_decisions:
+        cfg.database.decisions_path = db_decisions
+
+    # Cache overrides
+    if cache_dir:
+        cfg.http_cache.directory = cache_dir
+    if cache_ttl is not None:
+        cfg.http_cache.ttl_seconds = cache_ttl
+    if no_cache:
+        cfg.http_cache.enabled = False
+
+    # LLM overrides
+    if llm_enabled is not None:
+        cfg.llm.enabled = llm_enabled
+    if llm_provider:
+        cfg.llm.provider = llm_provider  # type: ignore[assignment]
+    if llm_model:
+        cfg.llm.model_id = llm_model
+    if llm_temperature is not None:
+        cfg.llm.temperature = llm_temperature
+
+    # SearxNG overrides
+    if searxng_url:
+        cfg.llm.searxng.url = searxng_url
+    if searxng_enabled is not None:
+        cfg.llm.searxng.enabled = searxng_enabled
+
+    # Configure logging with CLI > Config precedence
+    # If CLI verbose flag is provided, use it; otherwise use config setting
+    if verbose > 0:
+        # CLI flag takes precedence
+        if verbose >= 2:
+            log_level = logging.DEBUG
+        else:
+            log_level = logging.INFO
+    else:
+        # Use config file setting
+        level_str = cfg.logging.level.upper()
+        log_level = getattr(logging, level_str, logging.WARNING)
+
+    configure_safe_logging(
+        level=log_level,
+        format_string=cfg.logging.format,
+        hash_paths=cfg.logging.hash_paths,
+    )
+
+    logger.debug(f"Logging configured: level={logging.getLevelName(log_level)}, hash_paths={cfg.logging.hash_paths}")
 
     ctx.ensure_object(dict)
     ctx.obj["config"] = cfg
@@ -108,9 +200,13 @@ def scan(ctx: click.Context, paths: tuple[Path, ...]) -> None:
     """
     from chart_binder.tagging import verify
 
+    logger = logging.getLogger(__name__)
+    logger.info(f"Running scan command on {len(paths)} path(s)")
+
     output_format = ctx.obj["output"]
     results = []
     audio_files = _collect_audio_files(paths)
+    logger.debug(f"Collected {len(audio_files)} audio files")
 
     for audio_file in audio_files:
         try:
@@ -167,6 +263,9 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
     from chart_binder.resolver import ConfigSnapshot, Resolver
     from chart_binder.tagging import verify
 
+    logger = logging.getLogger(__name__)
+    logger.info(f"Running decide command on {len(paths)} path(s), explain={explain}")
+
     output_format = ctx.obj["output"]
     results: list[dict[str, Any]] = []
 
@@ -177,6 +276,7 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool) -> None:
     )
     resolver = Resolver(resolver_config)
     audio_files = _collect_audio_files(paths)
+    logger.debug(f"Collected {len(audio_files)} audio files")
 
     for audio_file in audio_files:
         try:
@@ -559,6 +659,84 @@ def coverage_missing(ctx: click.Context, chart_id: str, period: str, threshold: 
 def charts() -> None:
     """Manage chart data."""
     pass
+
+
+@charts.command("scrape")
+@click.argument("chart_type", type=click.Choice(["t40", "t40jaar", "top2000", "zwaarste"]))
+@click.argument("period")
+@click.option("--output", "-o", type=click.Path(path_type=Path), help="Output JSON file")
+@click.pass_context
+def charts_scrape(
+    ctx: click.Context, chart_type: str, period: str, output: Path | None
+) -> None:
+    """
+    Scrape chart data from web source.
+
+    CHART_TYPE: Chart to scrape (t40, t40jaar, top2000, zwaarste)
+    PERIOD: Period to scrape (YYYY-Www for weekly, YYYY for yearly)
+
+    Examples:
+      canon charts scrape t40 2024-W01
+      canon charts scrape t40jaar 2023
+      canon charts scrape top2000 2024
+    """
+    from chart_binder.http_cache import HttpCache
+    from chart_binder.scrapers import (
+        Top40JaarScraper,
+        Top40Scraper,
+        Top2000Scraper,
+        ZwaarsteScraper,
+    )
+
+    config: Config = ctx.obj["config"]
+    output_format: OutputFormat = ctx.obj["output"]
+
+    cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
+
+    # Create appropriate scraper
+    scraper_map = {
+        "t40": Top40Scraper,
+        "t40jaar": Top40JaarScraper,
+        "top2000": Top2000Scraper,
+        "zwaarste": ZwaarsteScraper,
+    }
+
+    scraper_cls = scraper_map[chart_type]
+    with scraper_cls(cache) as scraper:
+        entries = scraper.scrape(period)
+
+    if not entries:
+        click.echo(f"No entries found for {chart_type} {period}", err=True)
+        sys.exit(ExitCode.NO_RESULTS)
+
+    # Convert to list of lists for JSON serialization
+    entries_list = [[rank, artist, title] for rank, artist, title in entries]
+
+    result = {
+        "chart_type": chart_type,
+        "period": period,
+        "entries_count": len(entries),
+        "entries": entries_list,
+    }
+
+    if output:
+        output.write_text(json.dumps(entries_list, indent=2, ensure_ascii=False))
+        if output_format == OutputFormat.TEXT:
+            click.echo(f"✔︎ Scraped {len(entries)} entries to {output}")
+        elif output_format == OutputFormat.JSON:
+            click.echo(json.dumps({"status": "success", "output_file": str(output)}, indent=2))
+    else:
+        if output_format == OutputFormat.JSON:
+            click.echo(json.dumps(result, indent=2, ensure_ascii=False))
+        else:
+            click.echo(f"✔︎ Scraped {len(entries)} entries for {chart_type} {period}")
+            click.echo("\nFirst 10 entries:")
+            for rank, artist, title in entries[:10]:
+                click.echo(f"  {rank:3d}. {artist} - {title}")
+            if len(entries) > 10:
+                click.echo(f"  ... and {len(entries) - 10} more")
+
+    sys.exit(ExitCode.SUCCESS)
 
 
 @charts.command()

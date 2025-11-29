@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import Any
 
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.normalize import Normalizer
+
+logger = logging.getLogger(__name__)
 
 
 class DiscoveryMethod(StrEnum):
@@ -78,9 +81,11 @@ class CandidateBuilder:
         Note: Currently returns empty list until DB query methods are implemented.
         See TODO markers in _find_recordings_by_isrc and _find_release_groups_for_recording.
         """
+        logger.info(f"Starting ISRC discovery for: {isrc}")
         candidates = []
 
         recordings = self._find_recordings_by_isrc(isrc)
+        logger.debug(f"Found {len(recordings)} recordings for ISRC {isrc}")
 
         for rec in recordings:
             release_groups = self._find_release_groups_for_recording(rec["mbid"])
@@ -104,6 +109,7 @@ class CandidateBuilder:
                     )
                 )
 
+        logger.info(f"ISRC discovery complete: found {len(candidates)} candidates")
         return candidates
 
     def discover_by_title_artist_length(
@@ -117,6 +123,8 @@ class CandidateBuilder:
         Note: Currently returns empty list until DB query methods are implemented.
         See TODO markers in _find_recordings_by_fuzzy_match and _find_release_groups_for_recording.
         """
+        logger.info(f"Starting title/artist/length discovery: title={title}, artist={artist}, length={length_ms}")
+
         # Normalize inputs
         title_result = self.normalizer.normalize_title(title)
         artist_result = self.normalizer.normalize_artist(artist)
@@ -124,9 +132,14 @@ class CandidateBuilder:
         title_core = title_result.core
         artist_core = artist_result.core
 
+        logger.debug(f"Normalized: title_core={title_core}, artist_core={artist_core}")
+
         # Length bucket: ±10% tolerance
         length_min = int(length_ms * 0.9) if length_ms else None
         length_max = int(length_ms * 1.1) if length_ms else None
+
+        if length_ms:
+            logger.debug(f"Length range: {length_min}ms - {length_max}ms (±10% of {length_ms}ms)")
 
         # Find recordings by fuzzy match
         recordings = self._find_recordings_by_fuzzy_match(
@@ -151,48 +164,190 @@ class CandidateBuilder:
                     )
                 )
 
+        logger.info(f"Title/artist/length discovery complete: found {len(candidates)} candidates")
         return candidates
 
     def build_evidence_bundle(self, candidate_set: CandidateSet) -> EvidenceBundle:
         """
         Construct evidence bundle v1 from candidate set.
 
-        TODO: Gather full evidence for decision rules
-        Currently includes minimal fields:
-        - recordings: mbid, title, length_ms (deduplicated)
-        - release_groups: mbid only (deduplicated)
-        - provenance: sources_used, discovery_methods (sorted)
-
-        Full implementation should include:
-        - artist.begin_area_country, wikidata_country
-        - recording.flags (is_live, is_remix, etc.)
-        - release_group.primary_type, secondary_types, first_release_date, labels, countries
-        - releases within each RG with flags (is_official, is_promo, etc.)
+        Gathers comprehensive evidence including:
+        - artist.begin_area_country, wikidata_qid
+        - recording.flags (is_live, is_remix, etc.), isrcs
+        - release_group.type, secondary_types, first_release_date, labels, countries
         - timeline_facts (earliest_soundtrack_date, earliest_album_date, etc.)
+        - provenance: sources_used, discovery_methods (sorted)
         """
+        logger.info(f"Building evidence bundle from {len(candidate_set.candidates)} candidates")
         bundle = EvidenceBundle()
 
-        # TODO: Expand to full evidence bundle fields per spec
-        # Deduplicate recordings by mbid
+        # Gather artist info from first candidate with artist_mbid
+        artist_mbid = None
+        for c in candidate_set.candidates:
+            if c.artist_mbid:
+                artist_mbid = c.artist_mbid
+                break
+
+        if artist_mbid:
+            logger.debug(f"Fetching artist data for {artist_mbid}")
+            artist_data = self.db.get_artist(artist_mbid)
+            if artist_data:
+                bundle.artist = {
+                    "mbid": artist_data["mbid"],
+                    "name": artist_data["name"],
+                    "begin_area_country": artist_data.get("begin_area_country"),
+                    "wikidata_qid": artist_data.get("wikidata_qid"),
+                }
+                logger.info(f"Added artist: {artist_data['name']}")
+
+        # Deduplicate and enrich recordings
         recordings_map: dict[str, dict[str, Any]] = {}
         for c in candidate_set.candidates:
             if c.recording_mbid not in recordings_map:
-                recordings_map[c.recording_mbid] = {
-                    "mbid": c.recording_mbid,
-                    "title": c.title,
-                    "length_ms": c.length_ms,
-                }
-        bundle.recordings = list(recordings_map.values())
+                # Fetch full recording data from DB
+                rec_data = self.db.get_recording(c.recording_mbid)
+                if rec_data:
+                    # Parse flags from JSON
+                    flags = {}
+                    if rec_data.get("flags_json"):
+                        try:
+                            flags = json.loads(rec_data["flags_json"])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse flags_json for recording {c.recording_mbid}"
+                            )
 
-        # Deduplicate release_groups by mbid
+                    # Parse ISRCs from JSON
+                    isrcs = []
+                    if rec_data.get("isrcs_json"):
+                        try:
+                            isrcs = json.loads(rec_data["isrcs_json"])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse isrcs_json for recording {c.recording_mbid}"
+                            )
+
+                    recordings_map[c.recording_mbid] = {
+                        "mbid": rec_data["mbid"],
+                        "title": rec_data["title"],
+                        "artist_mbid": rec_data.get("artist_mbid"),
+                        "length_ms": rec_data.get("length_ms"),
+                        "isrcs": isrcs,
+                        "flags": flags,
+                        "disambiguation": rec_data.get("disambiguation"),
+                    }
+                else:
+                    # Fallback to candidate data if DB fetch fails
+                    recordings_map[c.recording_mbid] = {
+                        "mbid": c.recording_mbid,
+                        "title": c.title,
+                        "artist_mbid": c.artist_mbid,
+                        "length_ms": c.length_ms,
+                        "isrcs": c.isrcs,
+                        "flags": {},
+                    }
+
+        bundle.recordings = list(recordings_map.values())
+        logger.info(f"Added {len(bundle.recordings)} unique recording(s)")
+
+        # Deduplicate and enrich release_groups
         release_groups_map: dict[str, dict[str, Any]] = {}
         for c in candidate_set.candidates:
             if c.release_group_mbid not in release_groups_map:
-                release_groups_map[c.release_group_mbid] = {"mbid": c.release_group_mbid}
+                # Fetch full release_group data from DB
+                rg_data = self.db.get_release_group(c.release_group_mbid)
+                if rg_data:
+                    # Parse secondary types from JSON
+                    secondary_types = []
+                    if rg_data.get("secondary_types_json"):
+                        try:
+                            secondary_types = json.loads(rg_data["secondary_types_json"])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse secondary_types_json for RG {c.release_group_mbid}"
+                            )
+
+                    # Parse labels from JSON
+                    labels = []
+                    if rg_data.get("labels_json"):
+                        try:
+                            labels = json.loads(rg_data["labels_json"])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse labels_json for RG {c.release_group_mbid}"
+                            )
+
+                    # Parse countries from JSON
+                    countries = []
+                    if rg_data.get("countries_json"):
+                        try:
+                            countries = json.loads(rg_data["countries_json"])
+                        except json.JSONDecodeError:
+                            logger.warning(
+                                f"Failed to parse countries_json for RG {c.release_group_mbid}"
+                            )
+
+                    release_groups_map[c.release_group_mbid] = {
+                        "mbid": rg_data["mbid"],
+                        "title": rg_data["title"],
+                        "artist_mbid": rg_data.get("artist_mbid"),
+                        "type": rg_data.get("type"),
+                        "secondary_types": secondary_types,
+                        "first_release_date": rg_data.get("first_release_date"),
+                        "labels": labels,
+                        "countries": countries,
+                        "disambiguation": rg_data.get("disambiguation"),
+                    }
+                else:
+                    # Fallback to minimal data
+                    release_groups_map[c.release_group_mbid] = {
+                        "mbid": c.release_group_mbid,
+                        "type": None,
+                        "secondary_types": [],
+                        "first_release_date": None,
+                        "labels": [],
+                        "countries": [],
+                    }
+
         bundle.release_groups = list(release_groups_map.values())
+        logger.info(f"Added {len(bundle.release_groups)} unique release group(s)")
+
+        # Build timeline facts (earliest dates for different types)
+        timeline_facts = {}
+        earliest_album_date = None
+        earliest_single_date = None
+        earliest_soundtrack_date = None
+
+        for rg in bundle.release_groups:
+            first_date = rg.get("first_release_date")
+            if not first_date:
+                continue
+
+            rg_type = rg.get("type")
+            if rg_type == "Album":
+                if not earliest_album_date or first_date < earliest_album_date:
+                    earliest_album_date = first_date
+            elif rg_type == "Single":
+                if not earliest_single_date or first_date < earliest_single_date:
+                    earliest_single_date = first_date
+
+            # Check secondary types for Soundtrack
+            if "Soundtrack" in rg.get("secondary_types", []):
+                if not earliest_soundtrack_date or first_date < earliest_soundtrack_date:
+                    earliest_soundtrack_date = first_date
+
+        if earliest_album_date:
+            timeline_facts["earliest_album_date"] = earliest_album_date
+        if earliest_single_date:
+            timeline_facts["earliest_single_date"] = earliest_single_date
+        if earliest_soundtrack_date:
+            timeline_facts["earliest_soundtrack_date"] = earliest_soundtrack_date
+
+        bundle.timeline_facts = timeline_facts
+        logger.debug(f"Timeline facts: {timeline_facts}")
 
         bundle.provenance = {
-            "sources_used": ["MB"],  # TODO: Track actual sources used (MB, Discogs, Spotify)
+            "sources_used": ["MB"],  # Currently only MusicBrainz
             # Sort discovery_methods for deterministic hashing
             "discovery_methods": sorted({c.discovery_method for c in candidate_set.candidates}),
         }
@@ -200,6 +355,10 @@ class CandidateBuilder:
         # Hash the evidence bundle
         bundle.evidence_hash = self._hash_evidence(bundle)
 
+        logger.info(
+            f"Evidence bundle built: {len(bundle.recordings)} recordings, "
+            f"{len(bundle.release_groups)} release groups, hash={bundle.evidence_hash[:12]}"
+        )
         return bundle
 
     def _hash_evidence(self, bundle: EvidenceBundle) -> str:
@@ -232,31 +391,59 @@ class CandidateBuilder:
         """
         Find recordings by ISRC in musicgraph DB.
 
-        TODO: Implement ISRC lookup query
-        Expected query:
-            SELECT * FROM recording
-            WHERE json_extract(isrcs_json, '$') LIKE '%' || ? || '%'
-
-        Returns empty list until implemented.
+        Returns:
+            List of dicts with: mbid, title, artist_mbid, length_ms, isrcs (parsed list)
         """
-        # TODO: Implement DB query for ISRC lookup
-        return []
+        logger.debug(f"Searching for recordings with ISRC: {isrc}")
+
+        recordings = self.db.search_recordings_by_isrc(isrc)
+        logger.info(f"Found {len(recordings)} recording(s) for ISRC {isrc}")
+
+        results = []
+        for rec in recordings:
+            # Parse ISRCs from JSON
+            isrcs = []
+            if rec.get("isrcs_json"):
+                try:
+                    isrcs = json.loads(rec["isrcs_json"])
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse isrcs_json for recording {rec['mbid']}")
+                    isrcs = []
+
+            results.append({
+                "mbid": rec["mbid"],
+                "title": rec["title"],
+                "artist_mbid": rec.get("artist_mbid"),
+                "length_ms": rec.get("length_ms"),
+                "isrcs": isrcs,
+            })
+
+        return results
 
     def _find_release_groups_for_recording(self, recording_mbid: str) -> list[dict[str, Any]]:
         """
         Find release groups that contain this recording.
 
-        TODO: Implement release_group lookup via recording_release join
-        Expected query:
-            SELECT DISTINCT rg.* FROM release_group rg
-            JOIN release r ON r.release_group_mbid = rg.mbid
-            JOIN recording_release rr ON rr.release_mbid = r.mbid
-            WHERE rr.recording_mbid = ?
-
-        Returns empty list until implemented.
+        Returns:
+            List of dicts with: mbid, title, type, artist_mbid, artist_name, first_release_date
         """
-        # TODO: Implement DB join query for release_group discovery
-        return []
+        logger.debug(f"Searching for release groups containing recording: {recording_mbid}")
+
+        release_groups = self.db.get_release_groups_for_recording(recording_mbid)
+        logger.info(f"Found {len(release_groups)} release group(s) for recording {recording_mbid}")
+
+        results = []
+        for rg in release_groups:
+            results.append({
+                "mbid": rg["mbid"],
+                "title": rg["title"],
+                "type": rg.get("type"),
+                "artist_mbid": rg.get("artist_mbid"),
+                "artist_name": rg.get("artist_name", ""),
+                "first_release_date": rg.get("first_release_date"),
+            })
+
+        return results
 
     def _find_recordings_by_fuzzy_match(
         self,
@@ -268,15 +455,269 @@ class CandidateBuilder:
         """
         Find recordings by fuzzy title+artist+length match.
 
-        TODO: Implement fuzzy matching query
-        Options:
-        1. Pre-normalized title_core/artist_core columns (requires schema change)
-        2. Full-scan normalization (slow but works with current schema)
-        3. Work key index (optimal, requires schema change)
-
-        For now, consider option 2 with LIMIT for initial implementation.
-
-        Returns empty list until implemented.
+        Returns:
+            List of dicts with: mbid, title, artist_mbid, artist_name, length_ms, isrcs (parsed list)
         """
-        # TODO: Implement fuzzy matching query (consider performance implications)
-        return []
+        logger.debug(
+            f"Fuzzy search: title={title_core}, artist={artist_core}, "
+            f"length={length_min}-{length_max}"
+        )
+
+        recordings = self.db.search_recordings_fuzzy(
+            title=title_core,
+            artist_name=artist_core,
+            length_min=length_min,
+            length_max=length_max,
+            limit=100,
+        )
+        logger.info(f"Found {len(recordings)} recording(s) via fuzzy match")
+
+        results = []
+        for rec in recordings:
+            # Parse ISRCs from JSON
+            isrcs = []
+            if rec.get("isrcs_json"):
+                try:
+                    isrcs = json.loads(rec["isrcs_json"])
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse isrcs_json for recording {rec['mbid']}")
+                    isrcs = []
+
+            results.append({
+                "mbid": rec["mbid"],
+                "title": rec["title"],
+                "artist_mbid": rec.get("artist_mbid"),
+                "artist_name": rec.get("artist_name", ""),
+                "length_ms": rec.get("length_ms"),
+                "isrcs": isrcs,
+            })
+
+        return results
+
+
+## Tests
+
+
+def test_candidate_builder_isrc_discovery(tmp_path):
+    """Test ISRC-based candidate discovery."""
+    from chart_binder.normalize import Normalizer
+
+    # Setup DB with test data
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "The Beatles")
+    db.upsert_recording(
+        "rec-1",
+        "Yesterday",
+        artist_mbid="artist-1",
+        length_ms=125000,
+        isrcs_json='["GBAYE0601315"]',
+    )
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+    db.upsert_recording_release("rec-1", "rel-1")
+
+    # Test discovery
+    normalizer = Normalizer()
+    builder = CandidateBuilder(db, normalizer)
+    candidates = builder.discover_by_isrc("GBAYE0601315")
+
+    assert len(candidates) == 1
+    assert candidates[0].recording_mbid == "rec-1"
+    assert candidates[0].release_group_mbid == "rg-1"
+    assert candidates[0].title == "Yesterday"
+    assert "GBAYE0601315" in candidates[0].isrcs
+    assert candidates[0].discovery_method == DiscoveryMethod.ISRC
+
+
+def test_candidate_builder_title_artist_length_discovery(tmp_path):
+    """Test title+artist+length fuzzy discovery."""
+    from chart_binder.normalize import Normalizer
+
+    # Setup DB with test data
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "The Beatles")
+    db.upsert_recording(
+        "rec-1",
+        "Yesterday",
+        artist_mbid="artist-1",
+        length_ms=125000,
+        isrcs_json='["GBAYE0601315"]',
+    )
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+    db.upsert_recording_release("rec-1", "rel-1")
+
+    # Test discovery with fuzzy match
+    normalizer = Normalizer()
+    builder = CandidateBuilder(db, normalizer)
+    candidates = builder.discover_by_title_artist_length("Yesterday", "Beatles", 125000)
+
+    assert len(candidates) == 1
+    assert candidates[0].recording_mbid == "rec-1"
+    assert candidates[0].discovery_method == DiscoveryMethod.TITLE_ARTIST_LENGTH
+
+
+def test_candidate_builder_evidence_bundle(tmp_path):
+    """Test comprehensive evidence bundle building."""
+    from chart_binder.normalize import Normalizer
+
+    # Setup DB with test data
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist(
+        "artist-1",
+        "The Beatles",
+        begin_area_country="GB",
+        wikidata_qid="Q1299",
+    )
+    db.upsert_recording(
+        "rec-1",
+        "Yesterday",
+        artist_mbid="artist-1",
+        length_ms=125000,
+        isrcs_json='["GBAYE0601315"]',
+        flags_json='{"is_live": false, "is_remix": false}',
+    )
+    db.upsert_release_group(
+        "rg-1",
+        "Help!",
+        artist_mbid="artist-1",
+        type="Album",
+        first_release_date="1965-08-06",
+        secondary_types_json='["Soundtrack"]',
+        labels_json='["Parlophone"]',
+        countries_json='["GB", "US"]',
+    )
+    db.upsert_release_group(
+        "rg-2",
+        "Yesterday",
+        artist_mbid="artist-1",
+        type="Single",
+        first_release_date="1965-09-13",
+    )
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+    db.upsert_release("rel-2", "Yesterday", release_group_mbid="rg-2")
+    db.upsert_recording_release("rec-1", "rel-1")
+    db.upsert_recording_release("rec-1", "rel-2")
+
+    # Build candidate set
+    normalizer = Normalizer()
+    builder = CandidateBuilder(db, normalizer)
+    candidates = builder.discover_by_isrc("GBAYE0601315")
+
+    candidate_set = CandidateSet(
+        file_path=None,
+        candidates=candidates,
+        normalized_title="yesterday",
+        normalized_artist="beatles",
+        length_ms=125000,
+    )
+
+    # Build evidence bundle
+    bundle = builder.build_evidence_bundle(candidate_set)
+
+    # Verify artist data
+    assert bundle.artist["mbid"] == "artist-1"
+    assert bundle.artist["name"] == "The Beatles"
+    assert bundle.artist["begin_area_country"] == "GB"
+    assert bundle.artist["wikidata_qid"] == "Q1299"
+
+    # Verify recording data
+    assert len(bundle.recordings) == 1
+    rec = bundle.recordings[0]
+    assert rec["mbid"] == "rec-1"
+    assert rec["title"] == "Yesterday"
+    assert rec["length_ms"] == 125000
+    assert "GBAYE0601315" in rec["isrcs"]
+    assert rec["flags"]["is_live"] is False
+    assert rec["flags"]["is_remix"] is False
+
+    # Verify release_group data
+    assert len(bundle.release_groups) == 2
+    rg_map = {rg["mbid"]: rg for rg in bundle.release_groups}
+
+    assert "rg-1" in rg_map
+    rg1 = rg_map["rg-1"]
+    assert rg1["type"] == "Album"
+    assert rg1["first_release_date"] == "1965-08-06"
+    assert "Soundtrack" in rg1["secondary_types"]
+    assert "Parlophone" in rg1["labels"]
+    assert "GB" in rg1["countries"]
+    assert "US" in rg1["countries"]
+
+    assert "rg-2" in rg_map
+    rg2 = rg_map["rg-2"]
+    assert rg2["type"] == "Single"
+    assert rg2["first_release_date"] == "1965-09-13"
+
+    # Verify timeline facts
+    assert bundle.timeline_facts["earliest_album_date"] == "1965-08-06"
+    assert bundle.timeline_facts["earliest_single_date"] == "1965-09-13"
+    assert bundle.timeline_facts["earliest_soundtrack_date"] == "1965-08-06"
+
+    # Verify provenance
+    assert "MB" in bundle.provenance["sources_used"]
+    assert DiscoveryMethod.ISRC in bundle.provenance["discovery_methods"]
+
+    # Verify hash is generated
+    assert len(bundle.evidence_hash) == 64  # SHA256 hex digest
+
+
+def test_candidate_builder_no_recordings_found(tmp_path):
+    """Test behavior when no recordings are found."""
+    from chart_binder.normalize import Normalizer
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    normalizer = Normalizer()
+    builder = CandidateBuilder(db, normalizer)
+
+    # Search for non-existent ISRC
+    candidates = builder.discover_by_isrc("NONEXISTENT123")
+    assert len(candidates) == 0
+
+    # Search for non-existent title/artist
+    candidates = builder.discover_by_title_artist_length("NonExistent", "Artist", 100000)
+    assert len(candidates) == 0
+
+
+def test_candidate_builder_json_parse_errors(tmp_path):
+    """Test handling of malformed JSON in database fields."""
+    from chart_binder.normalize import Normalizer
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    db.upsert_artist("artist-1", "Test Artist")
+    db.upsert_recording(
+        "rec-1",
+        "Test Song",
+        artist_mbid="artist-1",
+        isrcs_json="invalid json",  # Malformed JSON
+        flags_json="{not valid json}",  # Malformed JSON
+    )
+    db.upsert_release_group(
+        "rg-1",
+        "Test Album",
+        artist_mbid="artist-1",
+        secondary_types_json="[invalid",  # Malformed JSON
+    )
+    db.upsert_release("rel-1", "Test Album", release_group_mbid="rg-1")
+    db.upsert_recording_release("rec-1", "rel-1")
+
+    normalizer = Normalizer()
+    builder = CandidateBuilder(db, normalizer)
+
+    # Should handle JSON parse errors gracefully
+    candidates = builder.discover_by_title_artist_length("Test Song", "Test Artist", None)
+
+    # Should still find the recording despite JSON errors
+    assert len(candidates) == 1
+
+    # Build evidence bundle
+    candidate_set = CandidateSet(candidates=candidates)
+    bundle = builder.build_evidence_bundle(candidate_set)
+
+    # Should have fallback values for failed JSON parsing
+    assert len(bundle.recordings) == 1
+    assert bundle.recordings[0]["isrcs"] == []  # Empty due to parse failure
+    assert bundle.recordings[0]["flags"] == {}  # Empty due to parse failure
+
+    assert len(bundle.release_groups) == 1
+    assert bundle.release_groups[0]["secondary_types"] == []  # Empty due to parse failure
