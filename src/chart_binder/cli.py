@@ -390,7 +390,9 @@ def _get_or_calc_fingerprint(
 @click.option("--no-persist", is_flag=True, help="Skip persisting decisions to database")
 @click.option("--quiet", "-q", is_flag=True, help="Show only summary, not per-file output")
 @click.pass_context
-def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persist: bool, quiet: bool) -> None:
+def decide(
+    ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persist: bool, quiet: bool
+) -> None:
     """
     Make canonicalization decisions for audio files.
 
@@ -764,7 +766,7 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
         click.echo(f"\n✓ Completed {total_files} files:")
         click.echo(f"  Decided:       {stats['decided']}")
         click.echo(f"  Indeterminate: {stats['indeterminate']}")
-        if stats['errors'] > 0:
+        if stats["errors"] > 0:
             click.echo(f"  Errors:        {stats['errors']}")
 
     sys.exit(ExitCode.SUCCESS if results else ExitCode.NO_RESULTS)

@@ -388,9 +388,15 @@ class Resolver:
         if not earliest_soundtracks:
             return None
 
-        # Tie-breaker: label authority → artist origin country presence → lexicographic MBID
+        # Tie-breaker: label authority → artist origin country presence
         # TODO: Implement label authority and country tie-breakers
-        selected = sorted(earliest_soundtracks, key=lambda c: c["rg_mbid"])[0]
+        # If still tied, defer to LLM adjudicator
+
+        # If multiple soundtracks with same earliest date, return INDETERMINATE
+        if len(earliest_soundtracks) > 1:
+            return None  # Let later rules handle it, or fall through to INDETERMINATE
+
+        selected = earliest_soundtracks[0]
 
         return {
             "state": DecisionState.DECIDED,
@@ -437,9 +443,12 @@ class Resolver:
                     if c["primary_type"] == "Album" and c["first_release_date"]
                 ]
                 if album_candidates:
-                    earliest_album = min(
-                        album_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
-                    )
+                    earliest_album = min(album_candidates, key=lambda c: c["first_release_date"])
+                    # Check for ties
+                    earliest_date = earliest_album["first_release_date"]
+                    tied = [c for c in album_candidates if c["first_release_date"] == earliest_date]
+                    if len(tied) > 1:
+                        return None  # Let later rules or INDETERMINATE handle it
                     return {
                         "state": DecisionState.DECIDED,
                         "crg_mbid": earliest_album["rg_mbid"],
@@ -459,8 +468,15 @@ class Resolver:
                 ]
                 if single_ep_candidates:
                     earliest_single = min(
-                        single_ep_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
+                        single_ep_candidates, key=lambda c: c["first_release_date"]
                     )
+                    # Check for ties
+                    earliest_date = earliest_single["first_release_date"]
+                    tied = [
+                        c for c in single_ep_candidates if c["first_release_date"] == earliest_date
+                    ]
+                    if len(tied) > 1:
+                        return None  # Let later rules or INDETERMINATE handle it
                     return {
                         "state": DecisionState.DECIDED,
                         "crg_mbid": earliest_single["rg_mbid"],
@@ -489,9 +505,12 @@ class Resolver:
         # Check if Live is earliest
         if not non_live_candidates:
             # Only Live candidates exist
-            earliest_live = min(
-                live_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
-            )
+            earliest_live = min(live_candidates, key=lambda c: c["first_release_date"])
+            # Check for ties
+            earliest_date = earliest_live["first_release_date"]
+            tied = [c for c in live_candidates if c["first_release_date"] == earliest_date]
+            if len(tied) > 1:
+                return None  # Let later rules or INDETERMINATE handle it
             return {
                 "state": DecisionState.DECIDED,
                 "crg_mbid": earliest_live["rg_mbid"],
@@ -504,9 +523,11 @@ class Resolver:
         earliest_non_live_date = min(c["first_release_date"] for c in non_live_candidates)
 
         if earliest_live_date < earliest_non_live_date:
-            earliest_live = min(
-                live_candidates, key=lambda c: (c["first_release_date"], c["rg_mbid"])
-            )
+            earliest_live = min(live_candidates, key=lambda c: c["first_release_date"])
+            # Check for ties
+            tied = [c for c in live_candidates if c["first_release_date"] == earliest_live_date]
+            if len(tied) > 1:
+                return None  # Let later rules or INDETERMINATE handle it
             return {
                 "state": DecisionState.DECIDED,
                 "crg_mbid": earliest_live["rg_mbid"],
@@ -603,16 +624,28 @@ class Resolver:
         # 1. Presence of artist origin country in RG's releases
         # 2. Label authority
         # 3. Country precedence
+        # If still tied, defer to LLM adjudicator
 
-        # For now, use deterministic lexicographic on mbid
-        selected = min(earliest_candidates, key=lambda c: c["rg_mbid"])
+        # If multiple candidates with same earliest date, return INDETERMINATE
+        # to allow LLM adjudicator to break the tie
+        if len(earliest_candidates) > 1:
+            return {
+                "state": DecisionState.INDETERMINATE,
+                "rationale": CRGRationale.INDETERMINATE,
+                "missing_facts": [
+                    f"tie_between_{len(earliest_candidates)}_release_groups_with_same_earliest_date"
+                ],
+                "earliest_date": earliest_date,
+                "tied_candidates": [c["rg_mbid"] for c in earliest_candidates],
+            }
+
+        selected = earliest_candidates[0]
 
         return {
             "state": DecisionState.DECIDED,
             "crg_mbid": selected["rg_mbid"],
             "rationale": CRGRationale.EARLIEST_OFFICIAL,
             "first_release_date": selected["first_release_date"],
-            "tie_breaker": "lexicographic_mbid",
         }
 
     def _select_rr(
@@ -679,9 +712,18 @@ class Resolver:
                 # Select earliest among origin country releases
                 origin_with_dates = [r for r in origin_releases if r.get("date")]
                 if origin_with_dates:
-                    earliest_origin = min(
-                        origin_with_dates, key=lambda r: (r["date"], r["mb_release_id"])
-                    )
+                    earliest_origin = min(origin_with_dates, key=lambda r: r["date"])
+                    # Check for ties
+                    earliest_date = earliest_origin["date"]
+                    tied = [r for r in origin_with_dates if r["date"] == earliest_date]
+                    if len(tied) > 1:
+                        # Multiple releases on same date - return INDETERMINATE
+                        return {
+                            "state": DecisionState.INDETERMINATE,
+                            "missing_facts": [
+                                f"tie_between_{len(tied)}_origin_country_releases_on_same_date"
+                            ],
+                        }
                     return {
                         "state": DecisionState.DECIDED,
                         "rr_mbid": earliest_origin["mb_release_id"],
@@ -697,14 +739,22 @@ class Resolver:
                 "missing_facts": ["no_release_dates"],
             }
 
-        earliest_release = min(releases_with_dates, key=lambda r: (r["date"], r["mb_release_id"]))
+        earliest_release = min(releases_with_dates, key=lambda r: r["date"])
+
+        # Check for ties
+        earliest_date = earliest_release["date"]
+        tied = [r for r in releases_with_dates if r["date"] == earliest_date]
+        if len(tied) > 1:
+            # Multiple releases on same date - return INDETERMINATE
+            # TODO: Implement label authority, format, catalog number tie-breakers
+            return {
+                "state": DecisionState.INDETERMINATE,
+                "missing_facts": [f"tie_between_{len(tied)}_worldwide_releases_on_same_date"],
+            }
 
         # Step 4: Reissue/remaster guard
         # TODO: Implement reissue detection and guard logic
         # For now, accept earliest_release as-is
-
-        # Step 5: Tie-breakers (if multiple releases with same date)
-        # TODO: Implement label authority, format, catalog number tie-breakers
 
         return {
             "state": DecisionState.DECIDED,
