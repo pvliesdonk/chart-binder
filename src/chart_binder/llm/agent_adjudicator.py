@@ -276,7 +276,8 @@ class AgentAdjudicator:
                             else:
                                 parts.append(f"[{country}]")
                         if r.get("mb_release_id"):
-                            parts.append(f"({r['mb_release_id'][:8]}...)")
+                            # Show full MBID so LLM can return it correctly
+                            parts.append(f"(MBID: {r['mb_release_id']})")
                         lines.append(f"     - {' '.join(parts)}")
                 lines.append("")
 
