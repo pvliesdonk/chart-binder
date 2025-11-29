@@ -523,6 +523,25 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
 
                 decision = resolver.resolve(evidence_bundle)
 
+                # Extract artist and title information from evidence bundle
+                artist_name = evidence_bundle.get("artist", {}).get("name", "Unknown")
+                recording_title = None
+                release_group_title = None
+                selected_release_title = None
+
+                if evidence_bundle.get("recording_candidates"):
+                    rec = evidence_bundle["recording_candidates"][0]
+                    recording_title = rec.get("title")
+
+                    if rec.get("rg_candidates"):
+                        rg = rec["rg_candidates"][0]
+                        release_group_title = rg.get("title")
+
+                # Extract selected release title from decision trace
+                if decision.decision_trace.rr_selection:
+                    release_data = decision.decision_trace.rr_selection.get("release", {})
+                    selected_release_title = release_data.get("title")
+
                 # Persist decision to database if fingerprint available
                 if decisions_db and fingerprint and duration_sec:
                     file_id = DecisionsDB.generate_file_id(fingerprint, duration_sec)
@@ -571,6 +590,10 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                 result = {
                     "file": str(audio_file),
                     "state": decision.state.value,
+                    "artist": artist_name,
+                    "recording_title": recording_title,
+                    "release_group_title": release_group_title,
+                    "selected_release_title": selected_release_title,
                     "crg_mbid": decision.release_group_mbid,
                     "rr_mbid": decision.release_mbid,
                     "crg_rationale": _get_rationale_value(decision.crg_rationale),
@@ -593,12 +616,19 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                 if output_format == OutputFormat.TEXT:
                     state_icon = "✔︎" if decision.state.value == "decided" else "∆"
                     click.echo(f"\n{state_icon} {audio_file}")
+                    click.echo(f"  Artist: {artist_name}")
+                    if recording_title:
+                        click.echo(f"  Recording: {recording_title}")
                     click.echo(f"  State: {decision.state.value}")
                     if decision.release_group_mbid:
                         click.echo(f"  CRG: {decision.release_group_mbid}")
+                        if release_group_title:
+                            click.echo(f"       Title: {release_group_title}")
                         click.echo(f"       ({decision.crg_rationale})")
                     if decision.release_mbid:
                         click.echo(f"  RR:  {decision.release_mbid}")
+                        if selected_release_title:
+                            click.echo(f"       Title: {selected_release_title}")
                         click.echo(f"       ({decision.rr_rationale})")
                     click.echo(f"  Trace: {decision.compact_tag}")
                     if explain:
