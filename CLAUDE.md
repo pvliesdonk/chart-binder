@@ -42,8 +42,8 @@ This document provides guidance for AI agents working on the chart-binder projec
 ### Running Commands
 
 ```bash
-# Install dependencies
-uv sync
+# Install dependencies (including dev dependencies)
+uv sync --all-extras
 
 # Run linter
 uv run python devtools/lint.py
