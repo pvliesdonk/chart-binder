@@ -392,6 +392,11 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
         cache_dir=cache_dir,
         db_path=musicgraph_path,
         mode=FetchMode.NORMAL,
+        # Pass API credentials from config
+        acoustid_api_key=config.live_sources.acoustid_api_key,
+        discogs_token=config.live_sources.discogs_token,
+        spotify_client_id=config.live_sources.spotify_client_id,
+        spotify_client_secret=config.live_sources.spotify_client_secret,
     )
 
     # Initialize CandidateBuilder for evidence bundle construction
