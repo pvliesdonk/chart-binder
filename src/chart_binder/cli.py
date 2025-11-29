@@ -386,8 +386,8 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
     resolver = Resolver(resolver_config)
 
     # Initialize UnifiedFetcher for multi-source lookups
-    cache_dir = config.database.cache_path.parent / "http_cache"
-    musicgraph_path = config.database.musicgraph_path
+    cache_dir = config.http_cache.directory
+    musicgraph_path = config.database.music_graph_path
     fetcher_config = FetcherConfig(
         cache_dir=cache_dir,
         db_path=musicgraph_path,
