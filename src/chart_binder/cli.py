@@ -55,13 +55,21 @@ def _get_rationale_value(rationale: Any) -> str | None:
     return rationale.value if hasattr(rationale, "value") else str(rationale)
 
 
-def _convert_evidence_bundle(bundle: Any, audio_file: Path, tagset: Any) -> dict[str, Any]:
+def _convert_evidence_bundle(
+    bundle: Any, audio_file: Path, tagset: Any, musicgraph_db: Any = None
+) -> dict[str, Any]:
     """
     Convert EvidenceBundle dataclass to dict format expected by resolver.
 
     The resolver expects a specific structure with recording_candidates containing
     rg_candidates, while EvidenceBundle has a flatter structure. This bridges
     the two formats.
+
+    Args:
+        bundle: EvidenceBundle from CandidateBuilder
+        audio_file: Path to the audio file
+        tagset: TagSet from reading the file
+        musicgraph_db: MusicGraphDB instance for fetching releases
     """
     # Build recording_candidates from the bundle's recordings and release_groups
     recording_candidates = []
@@ -69,6 +77,39 @@ def _convert_evidence_bundle(bundle: Any, audio_file: Path, tagset: Any) -> dict
     # Group release groups by recording
     rg_by_recording: dict[str, list[dict[str, Any]]] = {}
     for rg in bundle.release_groups:
+        rg_mbid = rg.get("mbid")
+
+        # Fetch releases for this release group from the database
+        releases_data = []
+        if musicgraph_db and rg_mbid:
+            db_releases = musicgraph_db.get_releases_in_group(rg_mbid)
+            for rel in db_releases:
+                # Parse flags from JSON if present
+                flags = {}
+                flags_json = rel.get("flags_json")
+                if flags_json:
+                    try:
+                        flags = json.loads(flags_json)
+                    except json.JSONDecodeError:
+                        pass
+
+                # Default to official if no flags
+                if "is_official" not in flags:
+                    flags["is_official"] = True
+
+                releases_data.append(
+                    {
+                        "mb_release_id": rel.get("mbid"),
+                        "title": rel.get("title"),
+                        "date": rel.get("date"),
+                        "country": rel.get("country"),
+                        "label": rel.get("label"),
+                        "format": rel.get("format"),
+                        "barcode": rel.get("barcode"),
+                        "flags": flags,
+                    }
+                )
+
         # Find which recording this RG is associated with
         # For now, associate all RGs with all recordings (will be refined later)
         for rec in bundle.recordings:
@@ -77,12 +118,12 @@ def _convert_evidence_bundle(bundle: Any, audio_file: Path, tagset: Any) -> dict
                 rg_by_recording[rec_mbid] = []
             rg_by_recording[rec_mbid].append(
                 {
-                    "mb_rg_id": rg.get("mbid"),
+                    "mb_rg_id": rg_mbid,
                     "title": rg.get("title"),
                     "primary_type": rg.get("type"),
                     "secondary_types": rg.get("secondary_types", []),
                     "first_release_date": rg.get("first_release_date"),
-                    "releases": [],  # Would be populated from release data
+                    "releases": releases_data,
                 }
             )
 
@@ -476,7 +517,9 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                 evidence_bundle_obj = candidate_builder.build_evidence_bundle(candidate_set)
 
                 # Convert EvidenceBundle to dict format expected by resolver
-                evidence_bundle = _convert_evidence_bundle(evidence_bundle_obj, audio_file, tagset)
+                evidence_bundle = _convert_evidence_bundle(
+                    evidence_bundle_obj, audio_file, tagset, musicgraph_db
+                )
 
                 decision = resolver.resolve(evidence_bundle)
 
