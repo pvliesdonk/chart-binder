@@ -155,6 +155,9 @@ class UnifiedFetcher:
         """
         Fetch recording by MusicBrainz ID and hydrate into database.
 
+        Fetches the recording with all its releases and release groups,
+        then hydrates the entire chain into the local database.
+
         Args:
             mbid: MusicBrainz recording ID
 
@@ -173,36 +176,75 @@ class UnifiedFetcher:
                 )
             return {"recording": recording_data}
 
-        # Fetch from MusicBrainz
-        recording = self.mb_client.get_recording(mbid)
+        # Fetch recording with all releases and release groups
+        data = self.mb_client.get_recording_with_releases(mbid)
 
-        # Hydrate artist if present
-        if recording.artist_mbid:
-            artist = self.mb_client.get_artist(recording.artist_mbid)
-            self.db.upsert_artist(
-                mbid=artist.mbid,
-                name=artist.name,
-                sort_name=artist.sort_name,
-                begin_area_country=artist.begin_area_country,
-                disambiguation=artist.disambiguation,
-            )
+        # Extract and hydrate artist
+        artist_mbid = None
+        if "artist-credit" in data and data["artist-credit"]:
+            first_artist = data["artist-credit"][0]
+            if "artist" in first_artist:
+                artist_mbid = first_artist["artist"].get("id")
+                artist_name = first_artist["artist"].get("name")
+                if artist_mbid:
+                    # Fetch full artist data
+                    artist = self.mb_client.get_artist(artist_mbid)
+                    self.db.upsert_artist(
+                        mbid=artist.mbid,
+                        name=artist.name,
+                        sort_name=artist.sort_name,
+                        begin_area_country=artist.begin_area_country,
+                        disambiguation=artist.disambiguation,
+                    )
 
-            # Enrich with Wikidata if available
-            # TODO: Link MusicBrainz to Wikidata QID
-            # For now, skip Wikidata enrichment
+        # Extract ISRCs
+        isrcs = [isrc["isrc"] for isrc in data.get("isrc-list", [])]
 
         # Hydrate recording
         self.db.upsert_recording(
-            mbid=recording.mbid,
-            title=recording.title,
-            artist_mbid=recording.artist_mbid,
-            length_ms=recording.length_ms,
-            isrcs_json=json.dumps(recording.isrcs) if recording.isrcs else None,
-            disambiguation=recording.disambiguation,
+            mbid=data["id"],
+            title=data.get("title", ""),
+            artist_mbid=artist_mbid,
+            length_ms=data.get("length"),
+            isrcs_json=json.dumps(isrcs) if isrcs else None,
+            disambiguation=data.get("disambiguation"),
         )
 
+        # Hydrate releases and release groups
+        for release in data.get("release-list", []):
+            release_mbid = release.get("id")
+            if not release_mbid:
+                continue
+
+            # Get release group from release
+            rg = release.get("release-group", {})
+            rg_mbid = rg.get("id")
+
+            if rg_mbid:
+                # Hydrate release group
+                self.db.upsert_release_group(
+                    mbid=rg_mbid,
+                    title=rg.get("title", ""),
+                    artist_mbid=artist_mbid,
+                    type=rg.get("primary-type"),
+                    first_release_date=rg.get("first-release-date"),
+                    secondary_types_json=json.dumps(rg.get("secondary-type-list", [])),
+                )
+
+            # Hydrate release
+            self.db.upsert_release(
+                mbid=release_mbid,
+                title=release.get("title", ""),
+                release_group_mbid=rg_mbid,
+                date=release.get("date"),
+                country=release.get("country"),
+            )
+
+            # Link recording to release
+            self.db.upsert_recording_release(data["id"], release_mbid)
+
         return {
-            "recording": recording,
+            "recording": data,
         }
 
     def search_recordings(

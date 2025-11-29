@@ -145,13 +145,19 @@ class MusicBrainzClient:
         sorted_items = sorted(params.items())
         return "&".join(f"{k}={v}" for k, v in sorted_items)
 
-    def get_recording(self, mbid: str, include_isrcs: bool = True) -> MusicBrainzRecording:
+    def get_recording(
+        self,
+        mbid: str,
+        include_isrcs: bool = True,
+        include_releases: bool = False,
+    ) -> MusicBrainzRecording:
         """
         Get recording by MBID.
 
         Args:
             mbid: MusicBrainz recording ID
             include_isrcs: Whether to include ISRC codes
+            include_releases: Whether to include releases (and their release groups)
 
         Returns:
             MusicBrainzRecording object
@@ -159,6 +165,9 @@ class MusicBrainzClient:
         inc = ["artists"]
         if include_isrcs:
             inc.append("isrcs")
+        if include_releases:
+            inc.append("releases")
+            inc.append("release-groups")
 
         params = {"inc": "+".join(inc)}
         data = self._request(f"recording/{mbid}", params)
@@ -184,6 +193,15 @@ class MusicBrainzClient:
             isrcs=isrcs,
             disambiguation=data.get("disambiguation"),
         )
+
+    def get_recording_with_releases(self, mbid: str) -> dict[str, Any]:
+        """
+        Get recording with all releases and release groups.
+
+        Returns raw API response dict for full hydration.
+        """
+        params = {"inc": "artists+isrcs+releases+release-groups"}
+        return self._request(f"recording/{mbid}", params)
 
     def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:
         """
