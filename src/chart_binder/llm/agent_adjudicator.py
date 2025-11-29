@@ -242,9 +242,18 @@ class AgentAdjudicator:
                     if rg_mbid and rg_mbid not in rg_map:
                         rg_map[rg_mbid] = rg
 
-            # Show release groups
+            # Show release groups with annotations
+            origin_country = artist.get("country", "")
             for i, (rg_mbid, rg) in enumerate(rg_map.items(), 1):
-                lines.append(f"{i}. **{rg.get('title', 'Unknown')}**")
+                title = rg.get("title", "Unknown")
+                is_compilation = "Compilation" in rg.get("secondary_types", [])
+
+                # Add warning emoji for compilations
+                if is_compilation:
+                    lines.append(f"{i}. **{title}** ⚠️ COMPILATION")
+                else:
+                    lines.append(f"{i}. **{title}**")
+
                 lines.append(f"   - RG MBID: {rg_mbid}")
                 lines.append(f"   - Type: {rg.get('primary_type', 'Unknown')}")
                 if rg.get("secondary_types"):
@@ -252,7 +261,7 @@ class AgentAdjudicator:
                 if rg.get("first_release_date"):
                     lines.append(f"   - First Release: {rg['first_release_date']}")
 
-                # Show a few releases
+                # Show releases with origin country highlighting
                 releases = rg.get("releases", [])
                 if releases:
                     lines.append("   - Sample Releases:")
@@ -261,20 +270,55 @@ class AgentAdjudicator:
                         if r.get("date"):
                             parts.append(r["date"])
                         if r.get("country"):
-                            parts.append(f"[{r['country']}]")
+                            country = r["country"]
+                            if country == origin_country:
+                                parts.append(f"[{country}] ✓ ORIGIN")
+                            else:
+                                parts.append(f"[{country}]")
                         if r.get("mb_release_id"):
                             parts.append(f"({r['mb_release_id'][:8]}...)")
                         lines.append(f"     - {' '.join(parts)}")
                 lines.append("")
 
-        # Timeline facts
+        # Timeline facts with gap calculation
         timeline = evidence_bundle.get("timeline_facts", {})
         if timeline:
-            lines.append("## Timeline")
-            if timeline.get("earliest_album_date"):
-                lines.append(f"- Earliest Album: {timeline['earliest_album_date']}")
-            if timeline.get("earliest_single_date"):
-                lines.append(f"- Earliest Single/EP: {timeline['earliest_single_date']}")
+            lines.append("## Timeline Analysis")
+
+            earliest_album = timeline.get("earliest_album_date")
+            earliest_single = timeline.get("earliest_single_date")
+
+            if earliest_single:
+                lines.append(f"- Earliest Single/EP: {earliest_single}")
+            if earliest_album:
+                lines.append(f"- Earliest Album: {earliest_album}")
+
+            # Calculate gap if both exist
+            if earliest_single and earliest_album:
+                try:
+                    from datetime import datetime
+
+                    # Parse dates (handle YYYY-MM and YYYY-MM-DD)
+                    def parse_date(date_str: str) -> datetime:
+                        if len(date_str) == 7:  # YYYY-MM
+                            return datetime.strptime(date_str, "%Y-%m")
+                        else:  # YYYY-MM-DD
+                            return datetime.strptime(date_str, "%Y-%m-%d")
+
+                    single_date = parse_date(earliest_single)
+                    album_date = parse_date(earliest_album)
+                    gap_days = (album_date - single_date).days
+
+                    lines.append(f"\n**GAP: {gap_days} days**")
+                    if gap_days <= 90 and gap_days > 0:
+                        lines.append("→ Single is within 90-day lead window → **PREFER ALBUM**")
+                    elif gap_days > 90:
+                        lines.append("→ Single is >90 days before album → Prefer single")
+                    elif gap_days < 0:
+                        lines.append("→ Album came first")
+                except Exception:
+                    pass  # If date parsing fails, skip calculation
+
             lines.append("")
 
         # Missing facts
@@ -300,7 +344,9 @@ class AgentAdjudicator:
             )
             lines.append("")
 
-        lines.append("**IMPORTANT**: Return your final answer as a JSON object (you may use tools first if needed):")
+        lines.append(
+            "**IMPORTANT**: Return your final answer as a JSON object (you may use tools first if needed):"
+        )
         lines.append("```json")
         lines.append("{")
         lines.append('  "crg_mbid": "selected release group MBID",')

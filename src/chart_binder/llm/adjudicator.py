@@ -65,14 +65,32 @@ Your task is to analyze evidence about a recording and determine:
 1. The Canonical Release Group (CRG): The authoritative release group where this recording first appeared
 2. The Representative Release (RR): The specific release within the CRG to use for metadata
 
-Guidelines:
-- Prefer the earliest official release, not bootlegs or compilations
-- Consider the release type: singles/EPs often precede album releases as true premieres
-- If a single was released as a promotional lead single before an album (within 90 days), prefer the album
-- Live recordings should only be CRG if no studio version exists
-- Soundtracks take precedence if the recording was created for the soundtrack
-- Remixes should link to their original single/EP release, not the parent album
-- For the representative release, prefer releases from the artist's origin country
+CRITICAL DECISION RULES (apply in order):
+
+1. **Compilations are never canonical** - Exclude any release group with "Secondary: Compilation"
+
+2. **Lead Single Window Rule (90 days)**:
+   - If the earliest single/EP is within 90 days BEFORE an album, choose the ALBUM as CRG
+   - Only if the single is >90 days before the album should you choose the single
+   - Example: Single Oct 1974, Album Nov 1 1974 = ~30 days = Choose ALBUM
+
+3. **Soundtrack Exception**: If the recording was created specifically for a soundtrack, the soundtrack is CRG
+
+4. **Live vs Studio**: Live recordings are only CRG if no studio version exists
+
+5. **Remixes**: Link to the original single/EP release, not remix compilations
+
+6. **Representative Release Selection**:
+   - Within the chosen CRG, select the specific release (RR)
+   - PREFER releases from the artist's origin country (check "Origin Country" field)
+   - If origin country unavailable, prefer earliest release in the CRG
+
+REASONING PROCESS:
+Step 1: Eliminate all compilations
+Step 2: Identify earliest single/EP and earliest album dates
+Step 3: Calculate days between them - if ≤90 days, prefer album
+Step 4: Within chosen CRG, find releases matching origin country
+Step 5: State your confidence (0.0-1.0)
 
 You must respond in valid JSON format with these exact fields:
 {
