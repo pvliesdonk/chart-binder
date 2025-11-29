@@ -22,6 +22,9 @@ class ScrapeResult:
     chart_type: str
     period: str
     warnings: list[str]
+    # Continuity validation
+    continuity_overlap: float | None = None  # Overlap % with reference run
+    continuity_reference: str | None = None  # Reference period used
 
     @property
     def actual_count(self) -> int:
@@ -37,13 +40,57 @@ class ScrapeResult:
         return self.actual_count >= min_expected
 
     @property
+    def continuity_valid(self) -> bool:
+        """Check if continuity with previous run is acceptable."""
+        if self.continuity_overlap is None:
+            return True  # No reference to compare
+        # For weekly charts, expect at least 50% overlap
+        # For yearly charts, this doesn't apply
+        return self.continuity_overlap >= 0.5
+
+    @property
     def shortage(self) -> int:
         """How many entries short of expected (0 if at or above expected)."""
         return max(0, self.expected_count - self.actual_count)
 
     def __str__(self) -> str:
         status = "✔︎" if self.is_valid else "✘"
-        return f"{status} {self.chart_type} {self.period}: {self.actual_count}/{self.expected_count} entries"
+        base = f"{status} {self.chart_type} {self.period}: {self.actual_count}/{self.expected_count} entries"
+        if self.continuity_overlap is not None:
+            cont_status = "✔︎" if self.continuity_valid else "⚠"
+            base += f" [{cont_status} {self.continuity_overlap:.0%} overlap]"
+        return base
+
+
+def calculate_overlap(
+    current_entries: list[tuple[int, str, str]],
+    reference_entries: list[tuple[str, str]],
+) -> float:
+    """
+    Calculate overlap percentage between current scrape and reference entries.
+
+    Args:
+        current_entries: List of (rank, artist, title) from current scrape
+        reference_entries: List of (artist, title) from reference run
+
+    Returns:
+        Overlap percentage (0.0 to 1.0)
+    """
+    if not reference_entries:
+        return 1.0  # No reference, assume OK
+
+    # Normalize for comparison (lowercase, strip whitespace)
+    def normalize(s: str) -> str:
+        return s.lower().strip()
+
+    current_set = {(normalize(artist), normalize(title)) for _, artist, title in current_entries}
+    reference_set = {(normalize(artist), normalize(title)) for artist, title in reference_entries}
+
+    if not reference_set:
+        return 1.0
+
+    overlap = len(current_set & reference_set)
+    return overlap / len(reference_set)
 
 
 # Expected entry counts per chart type

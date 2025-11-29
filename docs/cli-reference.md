@@ -282,7 +282,8 @@ canon charts scrape [OPTIONS] CHART_TYPE PERIOD
 |--------|-------------|
 | `-o, --output PATH` | Output JSON file (optional) |
 | `--ingest` | Automatically ingest scraped data into database |
-| `--strict` | Fail if entry count is below expected (sanity check) |
+| `--strict` | Fail if entry count or continuity check fails |
+| `--check-continuity` | Validate overlap with previous run (weekly charts) |
 
 ### Entry Count Validation
 
@@ -297,6 +298,23 @@ Each chart type has an expected entry count. The scraper validates results and w
 
 With `--strict`, the command fails if entries are >10% below expected (possible edge case).
 
+### Continuity Validation
+
+For weekly charts (`t40`), use `--check-continuity` to verify overlap with the previous week:
+
+- Compares current entries against previous run in database
+- Expects ≥50% overlap (songs don't all change at once)
+- Low overlap indicates possible scraping error or data corruption
+
+```
+✔︎ Continuity check: 85% overlap with 2024-W01
+```
+
+Warning if below threshold:
+```
+⚠ Continuity check failed: only 20% overlap with 2024-W01 (expected ≥50%)
+```
+
 ### Examples
 
 ```bash
@@ -308,6 +326,12 @@ canon charts scrape t40 2024-W01 --ingest
 
 # Scrape with strict validation (fail on low count)
 canon charts scrape top2000 2024 --strict
+
+# Scrape with continuity check (requires previous week in DB)
+canon charts scrape t40 2024-W02 --check-continuity --ingest
+
+# Full validation: count + continuity + auto-ingest
+canon charts scrape t40 2024-W03 --strict --check-continuity --ingest
 
 # Scrape year-end chart to file
 canon charts scrape t40jaar 2023 -o top40_2023.json

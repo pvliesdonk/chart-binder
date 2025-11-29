@@ -10,6 +10,7 @@ __all__ = [
     "ChartScraper",
     "ScrapeResult",
     "EXPECTED_ENTRY_COUNTS",
+    "calculate_overlap",
     "Top40Scraper",
     "Top40JaarScraper",
     "Top2000Scraper",
@@ -17,7 +18,12 @@ __all__ = [
     "SCRAPER_REGISTRY",
 ]
 
-from chart_binder.scrapers.base import EXPECTED_ENTRY_COUNTS, ChartScraper, ScrapeResult
+from chart_binder.scrapers.base import (
+    EXPECTED_ENTRY_COUNTS,
+    ChartScraper,
+    ScrapeResult,
+    calculate_overlap,
+)
 from chart_binder.scrapers.top40 import Top40Scraper
 from chart_binder.scrapers.top40_jaar import Top40JaarScraper
 from chart_binder.scrapers.top2000 import Top2000Scraper

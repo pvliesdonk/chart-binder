@@ -397,6 +397,63 @@ class ChartsDB:
         finally:
             conn.close()
 
+    def get_entries_by_period(
+        self, chart_id: str, period: str
+    ) -> list[tuple[str, str]] | None:
+        """
+        Get entries for a chart by period.
+
+        Returns list of (artist_raw, title_raw) tuples, or None if run doesn't exist.
+        Useful for continuity validation.
+        """
+        run = self.get_run_by_period(chart_id, period)
+        if not run:
+            return None
+
+        entries = self.list_entries(run["run_id"])
+        return [(e["artist_raw"], e["title_raw"]) for e in entries]
+
+    def get_adjacent_period(
+        self, chart_id: str, period: str, direction: int = -1
+    ) -> str | None:
+        """
+        Get the adjacent existing period (previous or next).
+
+        Args:
+            chart_id: Chart ID
+            period: Current period
+            direction: -1 for previous, +1 for next
+
+        Returns:
+            Adjacent period string or None if not found
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            if direction < 0:
+                cursor.execute(
+                    """
+                    SELECT period FROM chart_run
+                    WHERE chart_id = ? AND period < ?
+                    ORDER BY period DESC LIMIT 1
+                    """,
+                    (chart_id, period),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT period FROM chart_run
+                    WHERE chart_id = ? AND period > ?
+                    ORDER BY period ASC LIMIT 1
+                    """,
+                    (chart_id, period),
+                )
+            row = cursor.fetchone()
+            return row["period"] if row else None
+        finally:
+            conn.close()
+
     # Chart link management
 
     def add_link(

@@ -669,6 +669,9 @@ def charts() -> None:
 @click.option("--output", "-o", type=click.Path(path_type=Path), help="Output JSON file")
 @click.option("--ingest", is_flag=True, help="Automatically ingest scraped data into database")
 @click.option("--strict", is_flag=True, help="Fail if entry count is below expected")
+@click.option(
+    "--check-continuity", is_flag=True, help="Validate overlap with previous run (weekly charts)"
+)
 @click.pass_context
 def charts_scrape(
     ctx: click.Context,
@@ -677,6 +680,7 @@ def charts_scrape(
     output: Path | None,
     ingest: bool,
     strict: bool,
+    check_continuity: bool,
 ) -> None:
     """
     Scrape chart data from web source.
@@ -688,14 +692,17 @@ def charts_scrape(
       canon charts scrape t40 2024-W01
       canon charts scrape t40jaar 2023 --ingest
       canon charts scrape top2000 2024 --strict
+      canon charts scrape t40 2024-W02 --check-continuity --ingest
     """
+    from chart_binder.charts_db import ChartsDB, ChartsETL
     from chart_binder.http_cache import HttpCache
-    from chart_binder.scrapers import SCRAPER_REGISTRY
+    from chart_binder.scrapers import SCRAPER_REGISTRY, calculate_overlap
 
     config: Config = ctx.obj["config"]
     output_format: OutputFormat = ctx.obj["output"]
 
     cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
+    db = ChartsDB(config.charts_db.path)
 
     # Get scraper class and DB ID from registry
     scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
@@ -720,6 +727,30 @@ def charts_scrape(
         else:
             click.echo(msg, err=True)
 
+    # Check continuity with previous run (for weekly charts)
+    if check_continuity and chart_type == "t40":
+        prev_period = db.get_adjacent_period(chart_db_id, period, direction=-1)
+        if prev_period:
+            prev_entries = db.get_entries_by_period(chart_db_id, prev_period)
+            if prev_entries:
+                overlap = calculate_overlap(result.entries, prev_entries)
+                result.continuity_overlap = overlap
+                result.continuity_reference = prev_period
+
+                if not result.continuity_valid:
+                    msg = (
+                        f"⚠ Continuity check failed: only {overlap:.0%} overlap with {prev_period} "
+                        f"(expected ≥50%)"
+                    )
+                    if strict:
+                        click.echo(f"✘ {msg}", err=True)
+                        click.echo("Possible scraping issue - data may be corrupted", err=True)
+                        sys.exit(ExitCode.ERROR)
+                    else:
+                        click.echo(msg, err=True)
+                elif output_format == OutputFormat.TEXT:
+                    click.echo(f"✔︎ Continuity check: {overlap:.0%} overlap with {prev_period}")
+
     # Show warnings if any
     if result.warnings:
         for warning in result.warnings:
@@ -735,6 +766,8 @@ def charts_scrape(
         "entries_count": result.actual_count,
         "expected_count": result.expected_count,
         "is_valid": result.is_valid,
+        "continuity_overlap": result.continuity_overlap,
+        "continuity_reference": result.continuity_reference,
         "entries": entries_list,
     }
 
@@ -762,9 +795,6 @@ def charts_scrape(
 
     # Auto-ingest if requested
     if ingest:
-        from chart_binder.charts_db import ChartsDB, ChartsETL
-
-        db = ChartsDB(config.charts_db.path)
         etl = ChartsETL(db)
 
         # Ensure chart exists
