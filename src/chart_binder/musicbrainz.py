@@ -181,8 +181,8 @@ class MusicBrainzClient:
                 artist_mbid = first_artist["artist"].get("id")
                 artist_name = first_artist["artist"].get("name")
 
-        # Extract ISRCs
-        isrcs = [isrc["isrc"] for isrc in data.get("isrc-list", [])]
+        # Extract ISRCs (API returns simple list of strings)
+        isrcs = data.get("isrcs", [])
 
         return MusicBrainzRecording(
             mbid=data["id"],
@@ -232,7 +232,7 @@ class MusicBrainzClient:
             artist_name=artist_name,
             type=data.get("primary-type"),
             first_release_date=data.get("first-release-date"),
-            secondary_types=data.get("secondary-type-list", []),
+            secondary_types=data.get("secondary-types", []),
             disambiguation=data.get("disambiguation"),
         )
 
@@ -265,8 +265,8 @@ class MusicBrainzClient:
 
         # Extract label info
         label = None
-        if "label-info-list" in data and data["label-info-list"]:
-            first_label = data["label-info-list"][0]
+        if "label-info" in data and data["label-info"]:
+            first_label = data["label-info"][0]
             if "label" in first_label and first_label["label"]:
                 label = first_label["label"].get("name")
 
@@ -302,8 +302,8 @@ class MusicBrainzClient:
             # Try to get country code
             if "country" in data["begin-area"]:
                 begin_area_country = data["begin-area"]["country"]
-            elif "iso-3166-1-code-list" in data["begin-area"]:
-                codes = data["begin-area"]["iso-3166-1-code-list"]
+            elif "iso-3166-1-codes" in data["begin-area"]:
+                codes = data["begin-area"]["iso-3166-1-codes"]
                 if codes:
                     begin_area_country = codes[0]
 
@@ -361,8 +361,8 @@ class MusicBrainzClient:
                     artist_mbid = first_artist["artist"].get("id")
                     artist_name = first_artist["artist"].get("name")
 
-            # Extract ISRCs
-            isrcs = [isrc["isrc"] for isrc in rec.get("isrc-list", [])]
+            # Extract ISRCs (API returns simple list of strings)
+            isrcs = rec.get("isrcs", [])
 
             results.append(
                 MusicBrainzRecording(
