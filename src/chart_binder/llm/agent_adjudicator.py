@@ -329,6 +329,33 @@ class AgentAdjudicator:
                 json_start = content.index("```") + 3
                 json_end = content.index("```", json_start)
                 content = content[json_start:json_end].strip()
+            else:
+                # Try to extract JSON object by finding { and }
+                if "{" in content and "}" in content:
+                    json_start = content.index("{")
+                    # Find the matching closing brace
+                    brace_count = 0
+                    json_end = json_start
+                    for i in range(json_start, len(content)):
+                        if content[i] == "{":
+                            brace_count += 1
+                        elif content[i] == "}":
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
+                    content = content[json_start:json_end].strip()
+
+            # Strip JSON comments (// style) - they're not valid JSON
+            lines = content.split("\n")
+            cleaned_lines = []
+            for line in lines:
+                # Remove inline comments
+                if "//" in line:
+                    line = line[: line.index("//")].rstrip()
+                if line.strip():  # Only add non-empty lines
+                    cleaned_lines.append(line)
+            content = "\n".join(cleaned_lines)
 
             # Parse JSON
             data = json.loads(content)
