@@ -1,0 +1,866 @@
+2025-11-29 20:43:02,135 - chart_binder.cli - DEBUG - Logging configured: level=DEBUG, hash_paths=False
+2025-11-29 20:43:02,137 - chart_binder.cli - INFO - Running decide command on 1 path(s), explain=True
+2025-11-29 20:43:02,137 - chart_binder.cli - DEBUG - Initialized decisions DB at decisions.sqlite
+2025-11-29 20:43:02,137 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-29 20:43:02,138 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-29 20:43:02,138 - chart_binder.cli - INFO - LLM adjudication enabled (auto-accept threshold: 0.85)
+2025-11-29 20:43:02,138 - chart_binder.cli - DEBUG - Collected 1 audio files
+2025-11-29 20:43:02,138 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-29 20:43:02,138 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-29 20:43:02,364 - chart_binder.cli - DEBUG - Calculated fingerprint for /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac: 180s
+2025-11-29 20:43:02,364 - chart_binder.cli - DEBUG - Searching by fingerprint (180s)
+2025-11-29 20:43:02,365 - chart_binder.cli - DEBUG - Fingerprint search returned 8 results
+2025-11-29 20:43:17,402 - chart_binder.cli - DEBUG - Searching for: Queen - Killer Queen
+2025-11-29 20:43:18,373 - httpcore.connection - DEBUG - connect_tcp.started host='accounts.spotify.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-29 20:43:18,391 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa93d0606e0>
+2025-11-29 20:43:18,392 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7fa93d25f930> server_hostname='accounts.spotify.com' timeout=30.0
+2025-11-29 20:43:18,409 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa93d1734d0>
+2025-11-29 20:43:18,410 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'POST']>
+2025-11-29 20:43:18,411 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 20:43:18,411 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'POST']>
+2025-11-29 20:43:18,411 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 20:43:18,411 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
+2025-11-29 20:43:18,455 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Sat, 29 Nov 2025 19:43:18 GMT'), (b'request-id', b'5dcee6c2-b7b4-4d18-88d3-c4a0d80dcbef'), (b'content-type', b'application/json'), (b'set-cookie', b'__Host-device_id=AQBKqHaLWrkPC2YmhZVF8vMi-ty4xfp5bCY8BJ74vpPuG7WnfjPICDquHt4TX0HoeSluYOXyLefTdORbEfa2xV4XA5DbFhrUCFk;Version=1;Path=/;Max-Age=2147483647;Secure;HttpOnly;SameSite=Lax'), (b'set-cookie', b'sp_tr=false;Version=1;Domain=accounts.spotify.com;Path=/;Secure;SameSite=Lax'), (b'server', b'envoy'), (b'x-envoy-upstream-service-time', b'6'), (b'via', b'HTTP/1.1 fringe, HTTP/2 edgeproxy, 1.1 google'), (b'strict-transport-security', b'max-age=31536000'), (b'x-content-type-options', b'nosniff'), (b'alt-svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'content-encoding', b'gzip'), (b'vary', b'Accept-Encoding'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-11-29 20:43:18,457 - httpx - INFO - HTTP Request: POST https://accounts.spotify.com/api/token "HTTP/1.1 200 OK"
+2025-11-29 20:43:18,458 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'POST']>
+2025-11-29 20:43:18,459 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 20:43:18,459 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 20:43:18,460 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 20:43:18,462 - httpcore.connection - DEBUG - connect_tcp.started host='api.spotify.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-29 20:43:18,499 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa93d08c2d0>
+2025-11-29 20:43:18,499 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7fa93d25f930> server_hostname='api.spotify.com' timeout=30.0
+2025-11-29 20:43:18,539 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa93d07c510>
+2025-11-29 20:43:18,539 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-29 20:43:18,540 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 20:43:18,540 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-29 20:43:18,540 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 20:43:18,540 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-29 20:43:18,988 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'content-type', b'application/json; charset=utf-8'), (b'cache-control', b'public, max-age=0'), (b'etag', b'"MC-IjUyYWJmMThlNDRjMjgwYTk1MzEyYTU0MTdmNTkyN2RhIg=="'), (b'x-robots-tag', b'noindex, nofollow'), (b'access-control-allow-origin', b'*'), (b'access-control-allow-headers', b'Accept, App-Platform, Authorization, Content-Type, Origin, Retry-After, Spotify-App-Version, X-Cloud-Trace-Context, client-token, content-access-token'), (b'access-control-allow-methods', b'GET, POST, OPTIONS, PUT, DELETE, PATCH'), (b'access-control-allow-credentials', b'true'), (b'access-control-max-age', b'604800'), (b'content-encoding', b'gzip'), (b'strict-transport-security', b'max-age=31536000'), (b'x-content-type-options', b'nosniff'), (b'alt-svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'date', b'Sat, 29 Nov 2025 19:43:18 GMT'), (b'server', b'envoy'), (b'via', b'HTTP/2 edgeproxy, 1.1 google'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-11-29 20:43:18,989 - httpx - INFO - HTTP Request: GET https://api.spotify.com/v1/search?q=artist%3A%22Queen%22+track%3A%22Killer+Queen%22&type=track&limit=10 "HTTP/1.1 200 OK"
+2025-11-29 20:43:18,989 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-29 20:43:18,991 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 20:43:18,991 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 20:43:18,992 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 20:43:18,993 - chart_binder.cli - DEBUG - Title/artist search returned 20 results
+2025-11-29 20:43:18,993 - chart_binder.cli - DEBUG - Hydrating MB recording ac47cec1-4596-46f5-8224-9ca3f6df3d60
+2025-11-29 20:43:20,400 - chart_binder.cli - DEBUG - Hydrating MB recording ea64d867-5c42-46d9-9ed3-8d3bac32e1a3
+2025-11-29 20:43:22,405 - chart_binder.cli - DEBUG - Hydrating MB recording 0e977493-8cc2-4e6e-bae5-a03c3b558060
+2025-11-29 20:43:24,408 - chart_binder.cli - DEBUG - Hydrating MB recording 838b67f0-701d-4caf-9881-9e29c9be36b0
+2025-11-29 20:43:26,409 - chart_binder.cli - DEBUG - Hydrating MB recording df54178f-ec26-4ff1-9ee9-26e7f4ee4597
+2025-11-29 20:43:28,402 - chart_binder.cli - DEBUG - Hydrating Discogs release 822629
+2025-11-29 20:43:28,418 - chart_binder.cli - DEBUG - Hydrating Discogs release 6458613
+2025-11-29 20:43:28,434 - chart_binder.cli - DEBUG - Hydrating Discogs release 12788363
+2025-11-29 20:43:28,446 - chart_binder.cli - DEBUG - Hydrating Discogs release 650513
+2025-11-29 20:43:28,461 - chart_binder.cli - DEBUG - Hydrating Discogs release 6460983
+2025-11-29 20:43:28,477 - chart_binder.cli - DEBUG - Hydrated 5 MB recordings, 5 Discogs releases, and 0 Spotify tracks
+2025-11-29 20:43:28,477 - chart_binder.candidates - INFO - Starting title/artist/length discovery: title=Killer Queen, artist=Queen, length=180000
+2025-11-29 20:43:28,478 - chart_binder.candidates - DEBUG - Normalized: title_core=killer queen, artist_core=queen
+2025-11-29 20:43:28,478 - chart_binder.candidates - DEBUG - Length range: 162000ms - 198000ms (±10% of 180000ms)
+2025-11-29 20:43:28,479 - chart_binder.candidates - DEBUG - Fuzzy search: title=killer queen, artist=queen, length=162000-198000
+2025-11-29 20:43:28,479 - chart_binder.musicgraph - DEBUG - Fuzzy search: title=killer queen, artist=queen, length=162000-198000, limit=100
+2025-11-29 20:43:28,479 - chart_binder.musicgraph - DEBUG - Fuzzy search returned 7 recordings
+2025-11-29 20:43:28,479 - chart_binder.candidates - INFO - Found 7 recording(s) via fuzzy match
+2025-11-29 20:43:28,479 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 33ea8d72-141a-485d-88b0-9a1d3bdac8e5
+2025-11-29 20:43:28,479 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 33ea8d72-141a-485d-88b0-9a1d3bdac8e5
+2025-11-29 20:43:28,479 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 3f680381-432d-4489-b36d-63b322b136c1
+2025-11-29 20:43:28,479 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 3f680381-432d-4489-b36d-63b322b136c1
+2025-11-29 20:43:28,479 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 5d500acc-e103-4558-bca6-0309902914f2
+2025-11-29 20:43:28,480 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 5d500acc-e103-4558-bca6-0309902914f2
+2025-11-29 20:43:28,480 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 7b3d96c9-3e22-4337-be32-f8a26b816685
+2025-11-29 20:43:28,480 - chart_binder.candidates - INFO - Found 5 release group(s) for recording 7b3d96c9-3e22-4337-be32-f8a26b816685
+2025-11-29 20:43:28,480 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: aafdfae8-7ef3-474c-bab9-84fecf9e2d19
+2025-11-29 20:43:28,480 - chart_binder.candidates - INFO - Found 1 release group(s) for recording aafdfae8-7ef3-474c-bab9-84fecf9e2d19
+2025-11-29 20:43:28,480 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f4539477-edf5-4055-b91c-10da8a8bc00f
+2025-11-29 20:43:28,480 - chart_binder.candidates - INFO - Found 2 release group(s) for recording f4539477-edf5-4055-b91c-10da8a8bc00f
+2025-11-29 20:43:28,480 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: fe7ce1c9-5d61-488a-a461-ec3d00086c1b
+2025-11-29 20:43:28,481 - chart_binder.candidates - INFO - Found 1 release group(s) for recording fe7ce1c9-5d61-488a-a461-ec3d00086c1b
+2025-11-29 20:43:28,481 - chart_binder.candidates - INFO - Title/artist/length discovery complete: found 12 candidates
+2025-11-29 20:43:28,481 - chart_binder.candidates - INFO - Building evidence bundle from 12 candidates
+2025-11-29 20:43:28,481 - chart_binder.candidates - DEBUG - Fetching artist data for 0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-29 20:43:28,481 - chart_binder.musicgraph - DEBUG - Querying artist: mbid=0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-29 20:43:28,481 - chart_binder.musicgraph - DEBUG - Artist query result: found
+2025-11-29 20:43:28,481 - chart_binder.candidates - INFO - Added artist: Queen
+2025-11-29 20:43:28,482 - chart_binder.candidates - INFO - Added 7 unique recording(s)
+2025-11-29 20:43:28,483 - chart_binder.candidates - INFO - Added 10 unique release group(s)
+2025-11-29 20:43:28,483 - chart_binder.candidates - DEBUG - Timeline facts: {'earliest_album_date': '1974-11-01', 'earliest_single_date': '1974-10'}
+2025-11-29 20:43:28,483 - chart_binder.candidates - INFO - Evidence bundle built: 7 recordings, 10 release groups, hash=cd854ab89054
+2025-11-29 20:43:28,486 - chart_binder.cli - DEBUG - Decision is INDETERMINATE, attempting LLM adjudication...
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - LLM Adjudication Prompt:
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - ======================================================================
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - SYSTEM PROMPT:
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - You are a music metadata expert specialized in determining the canonical release for recordings.
+
+Your task is to analyze evidence about a recording and determine:
+1. The Canonical Release Group (CRG): The authoritative release group where this recording first appeared
+2. The Representative Release (RR): The specific release within the CRG to use for metadata
+
+Guidelines:
+- Prefer the earliest official release, not bootlegs or compilations
+- Consider the release type: singles/EPs often precede album releases as true premieres
+- If a single was released as a promotional lead single before an album (within 90 days), prefer the album
+- Live recordings should only be CRG if no studio version exists
+- Soundtracks take precedence if the recording was created for the soundtrack
+- Remixes should link to their original single/EP release, not the parent album
+- For the representative release, prefer releases from the artist's origin country
+
+You must respond in valid JSON format with these exact fields:
+{
+  "crg_mbid": "the release group MBID you selected",
+  "rr_mbid": "the release MBID you selected within the CRG",
+  "confidence": 0.0 to 1.0,
+  "rationale": "brief explanation of your reasoning"
+}
+
+If you cannot determine the canonical release with reasonable confidence, set confidence below 0.60 and explain why.
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - ======================================================================
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - USER PROMPT:
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - # Recording Evidence
+
+## Artist
+- Name: Queen
+- MBID: 0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+- Origin Country: GB
+
+## Recording Candidates
+
+### Recording 1
+- Title: Killer Queen
+- MBID: 33ea8d72-141a-485d-88b0-9a1d3bdac8e5
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+### Recording 2
+- Title: Killer Queen
+- MBID: 3f680381-432d-4489-b36d-63b322b136c1
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+### Recording 3
+- Title: Killer Queen
+- MBID: 5d500acc-e103-4558-bca6-0309902914f2
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+### Recording 4
+- Title: Killer Queen
+- MBID: 7b3d96c9-3e22-4337-be32-f8a26b816685
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+### Recording 5
+- Title: Killer Queen
+- MBID: aafdfae8-7ef3-474c-bab9-84fecf9e2d19
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+### Recording 6
+- Title: Killer Queen
+- MBID: f4539477-edf5-4055-b91c-10da8a8bc00f
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+### Recording 7
+- Title: Killer Queen
+- MBID: fe7ce1c9-5d61-488a-a461-ec3d00086c1b
+
+#### Release Group Candidates:
+
+1. **Killer Queen**
+   - RG MBID: c62156a9-ee53-3023-b525-9b5ba428be72
+   - Type: Single
+   - First Release Date: 1974-10
+   - Releases:
+     - a17c9476... (1983) [US]
+     - 9bfad0af... (1974-10) [BE]
+     - cc25cb9d... (1974) [US]
+     - a2d12ee8... (1974) [GB]
+     - 86df0a31... (1974) [PT]
+
+2. **Jewels**
+   - RG MBID: 515b1954-22cb-40b0-8998-7c5a4926824d
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2004
+   - Releases:
+     - 355eff3d... (2004) [JP]
+
+3. **Greatest Hits**
+   - RG MBID: 69ce61c8-127f-3809-95d8-62fdf3ae1347
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981-11-03
+   - Releases:
+     - 5032df80... (1981) [DE]
+     - bab57bb1... (1981-11-03) [US]
+     - 0668d85b... (1981) [JP]
+     - fcb78d0d... (1981) [DE]
+     - 37a87252... (1981) [GB]
+
+4. **Queen**
+   - RG MBID: e7ad7dc7-2605-4e4d-9ce1-84a6392b33ca
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 1981
+   - Releases:
+     - 24af3cd5... (1981) [XG]
+
+5. **Killer Queen / You’re My Best Friend**
+   - RG MBID: 178f6e5d-b1f4-4ff8-b830-02823a79270f
+   - Type: Single
+   - First Release Date: 1984
+   - Releases:
+     - 264c9a98... (1984) [GB]
+
+6. **Sheer Heart Attack**
+   - RG MBID: 002ed683-3327-3df0-88c8-318746089925
+   - Type: Album
+   - First Release Date: 1974-11-01
+   - Releases:
+     - 8b75d351... (1974-11-01) [GB]
+     - 41cbd00b... (1974-11-08) [CA]
+     - 9c8a310a... (1974-11) [US]
+     - 74b1551d... (1974) [CA]
+     - a39776a4... (1974) [GB]
+
+7. **Who Wants to Live Forever**
+   - RG MBID: e19c3d91-531d-389b-b5b4-4de96127e88b
+   - Type: Single
+   - First Release Date: 1986
+   - Releases:
+     - ff1b6fa0... (1986) [XE]
+
+8. **De pré historie: De jaren ’70, vol. 2 (De ultieme 10 CD collectie)**
+   - RG MBID: b56b1477-0e01-4810-bd0f-7bac310f6c79
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2019-06-07
+   - Releases:
+     - 7d021a7f... (2019-06-07) [BE]
+
+9. **De tijdloze**
+   - RG MBID: a4653b23-db03-460b-9163-2346e26f318c
+   - Type: None
+   - Secondary Types: Compilation
+   - First Release Date: 2024
+   - Releases:
+     - cda4e017... (2024) [BE]
+
+10. **NOW Yearbook ’74**
+   - RG MBID: 23b7a1de-4443-4f3e-8172-fc067b05eae4
+   - Type: Album
+   - Secondary Types: Compilation
+   - First Release Date: 2024-05-03
+   - Releases:
+     - cfb93d12... (2024-05-03) [GB]
+
+## Timeline Facts
+- Earliest Album: 1974-11-01
+
+## Question
+Based on the evidence above, which release group is the canonical premiere for this recording, and which release within it should be the representative release?
+2025-11-29 20:43:28,487 - chart_binder.llm.adjudicator - DEBUG - ======================================================================
+2025-11-29 20:43:28,493 - httpcore.connection - DEBUG - connect_tcp.started host='athena.int.liesdonk.nl' port=11434 local_address=None timeout=30.0 socket_options=None
+2025-11-29 20:43:28,496 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7fa93d07cc30>
+2025-11-29 20:43:28,496 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'POST']>
+2025-11-29 20:43:28,496 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-29 20:43:28,496 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'POST']>
+2025-11-29 20:43:28,496 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-29 20:43:28,496 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
+2025-11-29 20:43:31,920 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Content-Type', b'application/json; charset=utf-8'), (b'Date', b'Sat, 29 Nov 2025 19:43:31 GMT'), (b'Content-Length', b'1048')])
+2025-11-29 20:43:31,920 - httpx - INFO - HTTP Request: POST http://athena.int.liesdonk.nl:11434/api/chat "HTTP/1.1 200 OK"
+2025-11-29 20:43:31,920 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'POST']>
+2025-11-29 20:43:31,920 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-29 20:43:31,920 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-29 20:43:31,920 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-29 20:43:31,921 - chart_binder.llm.adjudicator - DEBUG - Raw LLM Response:
+2025-11-29 20:43:31,921 - chart_binder.llm.adjudicator - DEBUG - ======================================================================
+2025-11-29 20:43:31,921 - chart_binder.llm.adjudicator - DEBUG - {
+  "model": "llama3.2",
+  "created_at": "2025-11-29T19:43:31.919531182Z",
+  "message": {
+    "role": "assistant",
+    "content": "Unfortunately, I don't have enough information to accurately determine the canonical premiere or representative release for this specific recording. The provided data appears to be incomplete, as there are multiple instances of the same recording with different release groups and dates.\n\nTo provide a reliable answer, more detailed information about the recording's history, including its original release date, label, and catalog number, would be necessary. Additionally, it would be helpful to know which release group is considered the most authoritative or widely recognized by fans, collectors, and the band itself.\n\nIf you have any additional context or clarification regarding this recording, I'd be happy to try and assist you further."
+  },
+  "done": true,
+  "done_reason": "stop",
+  "total_duration": 3422839477,
+  "load_duration": 291133491,
+  "prompt_eval_count": 4096,
+  "prompt_eval_duration": 1358548014,
+  "eval_count": 130,
+  "eval_duration": 1497574986
+}
+2025-11-29 20:43:31,921 - chart_binder.llm.adjudicator - DEBUG - ======================================================================
+2025-11-29 20:43:31,921 - chart_binder.llm.adjudicator - WARNING - Failed to parse LLM response as JSON: Expecting value: line 1 column 1 (char 0)
+2025-11-29 20:43:31,921 - chart_binder.cli - DEBUG - LLM confidence 0.00 below threshold 0.85, keeping INDETERMINATE
+2025-11-29 20:43:31,940 - chart_binder.cli - DEBUG - Persisted decision for /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac (file_id=26b2a47e8f76768f...)
+
+∆ /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac
+  Artist: Queen
+  State: indeterminate
+  Trace: evh=31d4e557;crg=;rr=;src=mb;cfg=lw90,rg10
+
+Decision Trace
+==================================================
+Ruleset Version: 1.0
+Evidence Hash: 31d4e55741770c60...
+Artist Origin Country: GB
+
+CRG Selection:
+  Rule Applied: unknown
+
+RR Selection:
+
+Candidates Considered: 70
+  1. Single RG c62156a9...
+      First date: 1974-10
+  2. Album RG 515b1954...
+      First date: 2004
+  3. Album RG 69ce61c8...
+      First date: 1981-11-03
+  4. Album RG e7ad7dc7...
+      First date: 1981
+  5. Single RG 178f6e5d...
+      First date: 1984
+
+Missing Facts:
+  - tie_between_7_release_groups_with_same_earliest_date
+
+Config:
+  Lead Window: 90 days
+  Reissue Gap: 10 years
+
+Missing Facts:
+  - tie_between_7_release_groups_with_same_earliest_date
+2025-11-29 20:43:31,941 - httpcore.connection - DEBUG - close.started
+2025-11-29 20:43:31,941 - httpcore.connection - DEBUG - close.complete
+2025-11-29 20:43:31,941 - httpcore.connection - DEBUG - close.started
+2025-11-29 20:43:31,941 - httpcore.connection - DEBUG - close.complete
