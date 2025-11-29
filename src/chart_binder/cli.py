@@ -1766,6 +1766,246 @@ def llm() -> None:
     pass
 
 
+@llm.command("batch-adjudicate")
+@click.option("--limit", type=int, help="Maximum number of decisions to process")
+@click.option(
+    "--auto-accept-threshold",
+    type=float,
+    help="Auto-accept decisions with confidence >= this threshold",
+)
+@click.option(
+    "--review-threshold",
+    type=float,
+    help="Add to review queue with confidence >= this threshold",
+)
+@click.option("--rate-limit", type=int, help="Maximum requests per minute")
+@click.option("--dry-run", is_flag=True, help="Show what would be done without processing")
+@click.option("--resume", "resume_session", help="Resume a previous batch session")
+@click.option("--force", is_flag=True, help="Process even if LLM is disabled in config")
+@click.option("--skip-reviewed", is_flag=True, help="Skip decisions already in review queue")
+@click.pass_context
+def llm_batch_adjudicate(
+    ctx: click.Context,
+    limit: int | None,
+    auto_accept_threshold: float | None,
+    review_threshold: float | None,
+    rate_limit: int | None,
+    dry_run: bool,
+    resume_session: str | None,
+    force: bool,
+    skip_reviewed: bool,
+) -> None:
+    """Batch adjudicate all INDETERMINATE decisions using LLM.
+
+    This command processes multiple INDETERMINATE decisions in batch,
+    using the LLM adjudicator to suggest canonical release groups.
+
+    Results are handled based on confidence thresholds:
+    - High confidence (>= auto-accept): Update decision directly
+    - Medium confidence (>= review): Add to human review queue
+    - Low confidence (< review): Keep as INDETERMINATE
+
+    The process includes:
+    - Rate limiting to respect API limits
+    - Progress tracking
+    - Resume capability for interrupted sessions
+    - Cost estimation before starting
+
+    Examples:
+
+        # Process all INDETERMINATE decisions
+        charts llm batch-adjudicate
+
+        # Process first 100 with custom thresholds
+        charts llm batch-adjudicate --limit 100 --auto-accept-threshold 0.90
+
+        # Resume an interrupted session
+        charts llm batch-adjudicate --resume batch_20250115_abc123
+
+        # Dry run to see what would happen
+        charts llm batch-adjudicate --dry-run
+    """
+
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.llm import LLMAdjudicator
+    from chart_binder.llm.batch import BatchProcessor
+    from chart_binder.llm.review_queue import ReviewQueue
+
+    config: Config = ctx.obj["config"]
+
+    # Check if LLM is enabled
+    if not config.llm.enabled and not force:
+        click.echo("LLM adjudication is disabled. Use --force to override.", err=True)
+        sys.exit(ExitCode.ERROR)
+
+    # Load decisions database
+    decisions_db = DecisionsDB(config.database.decisions_path)
+
+    # Create adjudicator
+    adjudicator = LLMAdjudicator(config=config.llm)
+
+    # Create review queue
+    review_queue = ReviewQueue(config.llm.review_queue_path)
+
+    # Use config thresholds if not specified
+    if auto_accept_threshold is None:
+        auto_accept_threshold = config.llm.auto_accept_threshold
+    if review_threshold is None:
+        review_threshold = config.llm.review_threshold
+    if rate_limit is None:
+        rate_limit = 10  # Default to 10 req/min
+
+    # Create batch processor
+    processor = BatchProcessor(
+        decisions_db=decisions_db,
+        adjudicator=adjudicator,
+        review_queue=review_queue,
+        auto_accept_threshold=auto_accept_threshold,
+        review_threshold=review_threshold,
+        rate_limit_per_min=rate_limit,
+    )
+
+    # Handle resume
+    if resume_session:
+        session = processor.get_session(resume_session)
+        if not session:
+            click.echo(f"Session not found: {resume_session}", err=True)
+            sys.exit(ExitCode.ERROR)
+
+        click.echo(f"Resuming session: {resume_session}")
+        click.echo(f"  Progress: {session.processed_count}/{session.total_count}")
+        click.echo(f"  Accepted: {session.accepted_count}")
+        click.echo(f"  Reviewed: {session.reviewed_count}")
+        click.echo(f"  Rejected: {session.rejected_count}")
+        click.echo(f"  Errors: {session.error_count}")
+        click.echo()
+
+        processed_file_ids = processor.get_processed_file_ids(resume_session)
+        session_id = resume_session
+    else:
+        processed_file_ids = set()
+        session_id = None  # Will be created below
+
+    # Query INDETERMINATE decisions
+    click.echo("Querying INDETERMINATE decisions...")
+    all_stale = decisions_db.get_stale_decisions()
+    indeterminate = [d for d in all_stale if d["state"] == "indeterminate"]
+
+    # Filter out already processed (if resuming)
+    if resume_session:
+        indeterminate = [d for d in indeterminate if d["file_id"] not in processed_file_ids]
+
+    # Apply limit
+    if limit:
+        indeterminate = indeterminate[:limit]
+
+    total = len(indeterminate)
+    if total == 0:
+        click.echo("No INDETERMINATE decisions to process.")
+        sys.exit(ExitCode.SUCCESS)
+
+    click.echo(f"Found {total} INDETERMINATE decisions to process")
+    click.echo()
+
+    # Estimate cost (rough estimate for OpenAI)
+    if config.llm.provider == "openai":
+        avg_tokens_per_request = 2000  # Rough estimate
+        total_tokens = total * avg_tokens_per_request
+        # GPT-4o-mini pricing: $0.15 per 1M input tokens, $0.60 per 1M output tokens
+        # Assume 80% input, 20% output
+        input_cost = (total_tokens * 0.8) * 0.15 / 1_000_000
+        output_cost = (total_tokens * 0.2) * 0.60 / 1_000_000
+        estimated_cost = input_cost + output_cost
+        click.echo(
+            f"Estimated cost: ${estimated_cost:.2f} ({total} decisions × ~{avg_tokens_per_request} tokens)"
+        )
+        click.echo("  (Assuming GPT-4o-mini: $0.15/1M input, $0.60/1M output)")
+        click.echo()
+
+    # Confirm before starting (unless dry-run)
+    if not dry_run:
+        if not click.confirm("Continue with batch adjudication?"):
+            click.echo("Cancelled.")
+            sys.exit(ExitCode.ERROR)
+
+    # Create session if not resuming
+    if not session_id:
+        session_id = processor.create_session(
+            total_count=total,
+            config_snapshot={
+                "auto_accept_threshold": auto_accept_threshold,
+                "review_threshold": review_threshold,
+                "rate_limit": rate_limit,
+            },
+        )
+        click.echo(f"Created batch session: {session_id}")
+        click.echo()
+
+    if dry_run:
+        click.echo("DRY RUN - No changes will be made")
+        click.echo(f"Would process {total} decisions with session: {session_id}")
+        sys.exit(ExitCode.SUCCESS)
+
+    # Process decisions with progress bar
+    stats = {"accepted": 0, "reviewed": 0, "rejected": 0, "errors": 0}
+
+    with click.progressbar(
+        indeterminate,
+        label="Processing decisions",
+        item_show_func=lambda d: d["work_key"][:40] if d else None,
+    ) as decisions:
+        try:
+            for decision in decisions:
+                # Process decision
+                result = processor.process_decision(session_id, decision)
+
+                # Store result
+                processor.store_result(result)
+
+                # Update stats
+                if result.outcome == "accepted":
+                    stats["accepted"] += 1
+                elif result.outcome == "review":
+                    stats["reviewed"] += 1
+                elif result.outcome == "rejected":
+                    stats["rejected"] += 1
+                elif result.outcome == "error":
+                    stats["errors"] += 1
+
+                # Update session progress
+                total_processed = sum(stats.values())
+                processor.update_session_progress(
+                    session_id,
+                    processed=total_processed,
+                    accepted=stats["accepted"],
+                    reviewed=stats["reviewed"],
+                    rejected=stats["rejected"],
+                    errors=stats["errors"],
+                )
+
+        except KeyboardInterrupt:
+            click.echo("\n\nStopping gracefully...")
+            processor.complete_session(session_id, state=BatchState.CANCELLED)
+            click.echo("\nSession saved. Resume with:")
+            click.echo(f"  charts llm batch-adjudicate --resume {session_id}")
+            sys.exit(ExitCode.ERROR)
+
+    # Complete session
+    processor.complete_session(session_id)
+
+    # Show final stats
+    click.echo("\n\nBatch Adjudication Complete")
+    click.echo("=" * 40)
+    click.echo(f"Session ID: {session_id}")
+    click.echo(f"Total processed: {total}")
+    click.echo(f"  ✓ Auto-accepted: {stats['accepted']} ({stats['accepted'] / total * 100:.1f}%)")
+    click.echo(f"  ⚠ Needs review:  {stats['reviewed']} ({stats['reviewed'] / total * 100:.1f}%)")
+    click.echo(f"  ✗ Rejected:      {stats['rejected']} ({stats['rejected'] / total * 100:.1f}%)")
+    click.echo(f"  ⨯ Errors:        {stats['errors']} ({stats['errors'] / total * 100:.1f}%)")
+
+    sys.exit(ExitCode.SUCCESS)
+
+
 @llm.command("status")
 @click.pass_context
 def llm_status(ctx: click.Context) -> None:
