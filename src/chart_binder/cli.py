@@ -410,34 +410,19 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                 # Get or calculate fingerprint for stable identity
                 fingerprint, duration_sec = _get_or_calc_fingerprint(audio_file, tagset, logger)
 
-                # Try to discover candidates using multiple methods
-                candidates = []
+                # Gather evidence from multiple sources - don't trust any single source
+                # Each source adds to the candidate pool; resolver decides what's canonical
 
-                # Method 1: Use existing MB IDs from tags
-                if tagset.ids.mb_release_group_id and tagset.ids.mb_recording_id:
-                    logger.debug(f"Using MB IDs from tags for {audio_file}")
-                    # Fetch and hydrate the recording to populate the local DB
+                # Source 1: Existing MB IDs from tags (as evidence, not gospel)
+                if tagset.ids.mb_recording_id:
+                    logger.debug(f"Fetching existing MB recording from tags: {tagset.ids.mb_recording_id}")
                     try:
                         fetcher.fetch_recording(tagset.ids.mb_recording_id)
                     except Exception as e:
-                        logger.debug(f"Failed to fetch recording: {e}")
+                        logger.debug(f"Failed to fetch tagged recording: {e}")
 
-                # Method 2: Search by ISRC if available
-                if not candidates and tagset.isrc:
-                    logger.debug(f"Searching by ISRC: {tagset.isrc}")
-                    search_results = fetcher.search_recordings(isrc=tagset.isrc)
-                    for result in search_results:
-                        if result.get("recording_mbid"):
-                            try:
-                                fetcher.fetch_recording(result["recording_mbid"])
-                            except Exception:
-                                pass
-
-                    # Now discover from local DB
-                    candidates = candidate_builder.discover_by_isrc(tagset.isrc)
-
-                # Method 3: Search by fingerprint if available
-                if not candidates and fingerprint and duration_sec:
+                # Source 2: Search by fingerprint (most reliable for audio identity)
+                if fingerprint and duration_sec:
                     logger.debug(f"Searching by fingerprint for {audio_file}")
                     search_results = fetcher.search_recordings(
                         fingerprint=fingerprint,
@@ -450,8 +435,8 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                             except Exception:
                                 pass
 
-                # Method 4: Search by title + artist
-                if not candidates and tagset.artist and tagset.title:
+                # Source 3: Search by title + artist (fallback for unfingerprinted)
+                if tagset.artist and tagset.title:
                     logger.debug(f"Searching by title/artist: {tagset.artist} - {tagset.title}")
                     search_results = fetcher.search_recordings(
                         title=tagset.title,
@@ -464,11 +449,11 @@ def decide(ctx: click.Context, paths: tuple[Path, ...], explain: bool, no_persis
                             except Exception:
                                 pass
 
-                    # Discover from local DB with fuzzy matching
-                    length_ms = duration_sec * 1000 if duration_sec else None
-                    candidates = candidate_builder.discover_by_title_artist_length(
-                        tagset.title, tagset.artist, length_ms
-                    )
+                # Discover all candidates from local DB (populated by fetches above)
+                length_ms = duration_sec * 1000 if duration_sec else None
+                candidates = candidate_builder.discover_by_title_artist_length(
+                    tagset.title or "", tagset.artist or "", length_ms
+                )
 
                 # Build evidence bundle from candidates
                 candidate_set = CandidateSet(
