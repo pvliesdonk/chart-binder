@@ -60,7 +60,7 @@ class AgentAdjudicator:
                 temperature=config.temperature,
                 num_predict=config.max_tokens,
                 base_url=config.ollama_base_url,
-                format="json",  # Force JSON output for Ollama
+                # NOTE: Don't use format="json" with tools - it conflicts with tool calling
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {config.provider}")
@@ -128,8 +128,12 @@ class AgentAdjudicator:
             log.debug("LLM Response:")
             log.debug("=" * 70)
             log.debug(f"Content: {response.content}")
-            if hasattr(response, "tool_calls") and response.tool_calls:
-                log.debug(f"Tool Calls: {response.tool_calls}")
+            log.debug(f"Type: {type(response)}")
+            if hasattr(response, "tool_calls"):
+                log.debug(f"tool_calls attribute: {response.tool_calls}")
+            if hasattr(response, "additional_kwargs"):
+                log.debug(f"additional_kwargs: {response.additional_kwargs}")
+            log.debug(f"All attributes: {[x for x in dir(response) if not x.startswith('_')]}")
             log.debug("=" * 70)
 
             # If there are tool calls, execute them and get final response
@@ -293,13 +297,15 @@ class AgentAdjudicator:
             )
             lines.append("")
 
-        lines.append("Return your final answer in this JSON format:")
+        lines.append("**IMPORTANT**: Return your final answer as a JSON object (you may use tools first if needed):")
+        lines.append("```json")
         lines.append("{")
         lines.append('  "crg_mbid": "selected release group MBID",')
         lines.append('  "rr_mbid": "selected release MBID within CRG",')
         lines.append('  "confidence": 0.0-1.0,')
         lines.append('  "rationale": "brief explanation"')
         lines.append("}")
+        lines.append("```")
 
         return "\n".join(lines)
 
