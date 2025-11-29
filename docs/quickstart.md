@@ -128,7 +128,23 @@ Processed 1 files, 0 errors
 
 Chart data enhances decision-making by providing historical context about when songs charted and in what positions.
 
-### Step 1: Prepare Chart Data
+### Step 1: Scrape or Prepare Chart Data
+
+**Option A: Scrape from web sources (recommended)**
+
+```bash
+# Dutch Top 40 weekly chart
+canon charts scrape t40 2024-W01 -o chart_data.json
+
+# Year-end charts
+canon charts scrape t40jaar 2023 -o top40_2023.json
+
+# Other supported charts
+canon charts scrape top2000 2024 -o top2000.json     # NPO Radio 2 Top 2000
+canon charts scrape zwaarste 2024 -o zwaarste.json   # 538 De Zwaarste Lijst
+```
+
+**Option B: Create JSON manually**
 
 Create a JSON file with your chart data:
 

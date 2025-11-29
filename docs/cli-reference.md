@@ -252,6 +252,65 @@ canon cache purge --force
 
 Manage chart data.
 
+### canon charts scrape
+
+Scrape chart data from web sources.
+
+```bash
+canon charts scrape [OPTIONS] CHART_TYPE PERIOD
+```
+
+### Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `CHART_TYPE` | Chart to scrape: `t40`, `t40jaar`, `top2000`, `zwaarste` |
+| `PERIOD` | Period to scrape (format depends on chart type) |
+
+### Chart Types
+
+| Type | Description | Period Format | Example |
+|------|-------------|---------------|---------|
+| `t40` | Dutch Top 40 weekly chart | `YYYY-Www` | `2024-W01` |
+| `t40jaar` | Dutch Top 40 year-end chart | `YYYY` | `2023` |
+| `top2000` | NPO Radio 2 Top 2000 | `YYYY` | `2024` |
+| `zwaarste` | 538 De Zwaarste Lijst | `YYYY` | `2024` |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-o, --output PATH` | Output JSON file (optional) |
+
+### Examples
+
+```bash
+# Scrape Dutch Top 40 week 1 of 2024
+canon charts scrape t40 2024-W01
+
+# Scrape year-end chart to file
+canon charts scrape t40jaar 2023 -o top40_2023.json
+
+# Scrape Top 2000 with JSON output
+canon -o json charts scrape top2000 2024
+
+# Scrape De Zwaarste Lijst
+canon charts scrape zwaarste 2024
+```
+
+### Output
+
+Without `-o` flag, displays first 10 entries. With `-o` flag, saves full results to JSON file:
+
+```json
+[
+  [1, "Artist One", "Song Title"],
+  [2, "Artist Two", "Another Song"]
+]
+```
+
+---
+
 ### canon charts ingest
 
 Ingest chart data from a source file.
@@ -604,11 +663,19 @@ canon write --apply /path/to/music/
 ### Working with Charts
 
 ```bash
-# Import weekly chart data
+# Scrape chart data from web sources
+canon charts scrape t40 2024-W01 -o week1.json
+canon charts scrape t40 2024-W02 -o week2.json
+
+# Or scrape year-end lists
+canon charts scrape t40jaar 2023 -o top40_2023.json
+canon charts scrape top2000 2024 -o top2000_2024.json
+
+# Import scraped data into database
 canon charts ingest nl_top40 2024-W01 week1.json
 canon charts ingest nl_top40 2024-W02 week2.json
 
-# Link all entries
+# Link all entries to MusicBrainz
 canon charts link nl_top40 2024-W01
 canon charts link nl_top40 2024-W02
 

@@ -98,11 +98,17 @@ canon write --apply path/to/song.mp3
 
 ### 4. Work with Charts
 
-Import and link chart data:
+Scrape, import, and link chart data:
 
 ```bash
-# Ingest chart data from JSON
-canon charts ingest nl_top40 2024-W01 chart_data.json
+# Scrape chart data from web sources
+canon charts scrape t40 2024-W01 -o week1.json      # Dutch Top 40 weekly
+canon charts scrape t40jaar 2023 -o year2023.json   # Year-end chart
+canon charts scrape top2000 2024 -o top2000.json    # NPO Top 2000
+canon charts scrape zwaarste 2024 -o zwaarste.json  # 538 De Zwaarste Lijst
+
+# Ingest scraped data into database
+canon charts ingest nl_top40 2024-W01 week1.json
 
 # Link chart entries to work keys
 canon charts link nl_top40 2024-W01
@@ -125,6 +131,7 @@ The main command is `canon` with several subcommands:
 | `canon write` | Write canonical tags to files |
 | `canon cache status` | Show cache statistics |
 | `canon cache purge` | Clear caches |
+| `canon charts scrape` | Scrape charts from web |
 | `canon charts ingest` | Import chart data |
 | `canon charts link` | Link chart entries |
 | `canon charts export` | Export chart blob |
