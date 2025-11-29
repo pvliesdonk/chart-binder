@@ -83,6 +83,9 @@ class Top2000Scraper(ChartScraper):
         """
         Scrape Top 2000 chart for a specific year.
 
+        This is a convenience wrapper around scrape_rich() that returns
+        the simple tuple format for backward compatibility.
+
         Args:
             period: Year in format YYYY (e.g., "2024", "1999")
 
@@ -92,27 +95,20 @@ class Top2000Scraper(ChartScraper):
         Raises:
             Top2000FutureYearError: If the requested year's list isn't available yet
         """
-        year = self._parse_year_period(period)
-
-        # Guard against scraping future editions
-        self._validate_year_available(year)
-
-        entries = self._try_api(year)
-        if entries:
-            return entries
-
-        entries = self._try_wikipedia_fallback(year)
-        if entries:
-            return entries
-
-        logger.warning(f"No data found for Top 2000 {year}")
-        return []
+        return [entry.as_tuple() for entry in self.scrape_rich(period)]
 
     def scrape_rich(self, period: str) -> list[ScrapedEntry]:
         """
         Scrape Top 2000 chart with full metadata.
 
-        The NPO API may include lastYearPosition for cross-reference.
+        This is the primary scrape method. It returns ScrapedEntry objects
+        which include previous_position and weeks_on_chart when available.
+
+        Args:
+            period: Year in format YYYY (e.g., "2024", "1999")
+
+        Returns:
+            List of ScrapedEntry objects with full metadata
 
         Raises:
             Top2000FutureYearError: If the requested year's list isn't available yet
@@ -122,16 +118,21 @@ class Top2000Scraper(ChartScraper):
         # Guard against scraping future editions
         self._validate_year_available(year)
 
-        # Try API with rich data
+        # Try NPO API (captures previous_position)
         entries = self._try_api_rich(year)
         if entries:
             return entries
 
-        # Fallback to basic entries
-        basic = self.scrape(period)
-        return [
-            ScrapedEntry(rank=rank, artist=artist, title=title) for rank, artist, title in basic
-        ]
+        # Fallback to Wikipedia (no previous_position available)
+        basic_entries = self._try_wikipedia_fallback(year)
+        if basic_entries:
+            return [
+                ScrapedEntry(rank=rank, artist=artist, title=title)
+                for rank, artist, title in basic_entries
+            ]
+
+        logger.warning(f"No data found for Top 2000 {year}")
+        return []
 
     def _try_api_rich(self, year: int) -> list[ScrapedEntry]:
         """Try to fetch from NPO API and capture previous position if available."""
@@ -227,83 +228,6 @@ class Top2000Scraper(ChartScraper):
                     previous_position=prev_pos_int,
                 )
             )
-
-        return entries
-
-    def _try_api(self, year: int) -> list[tuple[int, str, str]]:
-        """Try to fetch from NPO API."""
-        # URL pattern changed in 2024
-        if year < 2024:
-            url = self.API_OLD_PATTERN.format(year=year)
-        else:
-            url = self.API_NEW_PATTERN.format(year=year)
-
-        data = self._fetch_json(url)
-
-        # Fallback to other pattern if primary fails
-        if data is None:
-            fallback_url = (
-                self.API_NEW_PATTERN.format(year=year)
-                if year < 2024
-                else self.API_OLD_PATTERN.format(year=year)
-            )
-            data = self._fetch_json(fallback_url)
-
-        if data is None:
-            return []
-
-        return self._parse_api_response(data)
-
-    def _parse_api_response(self, data: Any) -> list[tuple[int, str, str]]:
-        """Parse NPO API JSON response."""
-        entries: list[tuple[int, str, str]] = []
-
-        if isinstance(data, dict):
-            # NPO API uses "positions" key
-            items = data.get(
-                "positions", data.get("data", data.get("items", data.get("chart", [])))
-            )
-            if isinstance(items, dict):
-                items = items.get("items", [])
-        else:
-            items = data
-
-        if not isinstance(items, list):
-            return []
-
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-
-            # Handle nested structure: position.current and track.artist/track.title
-            position_data = item.get("position", {})
-            track_data = item.get("track", {})
-
-            if position_data and track_data:
-                # New NPO API format
-                rank = position_data.get("current")
-                artist = track_data.get("artist", "")
-                title = track_data.get("title", "")
-            else:
-                # Legacy format
-                rank = item.get("position") or item.get("rank") or item.get("pos")
-                artist = item.get("artist") or item.get("artistName") or ""
-                title = item.get("title") or item.get("trackTitle") or item.get("name") or ""
-
-            if rank is None or not artist or not title:
-                continue
-
-            try:
-                rank = int(rank)
-            except (ValueError, TypeError):
-                continue
-
-            artist = self._clean_text(str(artist))
-            title = self._clean_text(str(title))
-
-            title = self._apply_corrections(title)
-
-            entries.append((rank, artist, title))
 
         return entries
 
@@ -462,7 +386,8 @@ def test_top2000_get_corrected_uuid():
         assert uuid is None
 
 
-def test_top2000_parse_api_response():
+def test_top2000_parse_api_response_rich():
+    """Test parsing NPO API response returns ScrapedEntry objects."""
     import tempfile
     from pathlib import Path
 
@@ -476,13 +401,17 @@ def test_top2000_parse_api_response():
                 {"position": 2, "artist": "Eagles", "title": "Hotel California"},
             ]
         }
-        entries = scraper._parse_api_response(data)
+        entries = scraper._parse_api_response_rich(data)
         assert len(entries) == 2
-        assert entries[0] == (1, "Queen", "Bohemian Rhapsody")
-        assert entries[1] == (2, "Eagles", "Hotel California")
+        assert entries[0].rank == 1
+        assert entries[0].artist == "Queen"
+        assert entries[0].title == "Bohemian Rhapsody"
+        assert entries[1].rank == 2
+        assert entries[1].title == "Hotel California"
 
 
 def test_top2000_parse_api_response_alternative_keys():
+    """Test parsing with alternative key names (legacy API format)."""
     import tempfile
     from pathlib import Path
 
@@ -493,9 +422,11 @@ def test_top2000_parse_api_response_alternative_keys():
         data = [
             {"rank": 1, "artistName": "Queen", "trackTitle": "Bohemian Rhapsody"},
         ]
-        entries = scraper._parse_api_response(data)
+        entries = scraper._parse_api_response_rich(data)
         assert len(entries) == 1
-        assert entries[0] == (1, "Queen", "Bohemian Rhapsody")
+        assert entries[0].rank == 1
+        assert entries[0].artist == "Queen"
+        assert entries[0].title == "Bohemian Rhapsody"
 
 
 def test_top2000_future_year_guard():
