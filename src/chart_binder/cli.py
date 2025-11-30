@@ -667,6 +667,15 @@ def decide(
                             decision.release_mbid = adjudication_result.rr_mbid
                             decision.crg_rationale = CRGRationale.LLM_ADJUDICATION
                             decision.rr_rationale = RRRationale.LLM_ADJUDICATION
+                            # Update decision trace to reflect LLM adjudication
+                            decision.decision_trace.crg_selection = {
+                                "rule": str(CRGRationale.LLM_ADJUDICATION),
+                                "confidence": adjudication_result.confidence,
+                                "rationale": adjudication_result.rationale,
+                            }
+                            decision.decision_trace.rr_selection = {
+                                "rule": str(RRRationale.LLM_ADJUDICATION),
+                            }
                             llm_adjudicated = True
                             logger.info(
                                 f"LLM adjudicated: CRG={adjudication_result.crg_mbid}, "

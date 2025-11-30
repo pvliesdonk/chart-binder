@@ -139,6 +139,14 @@ class DecisionTrace:
             rule = self.crg_selection.get("rule", "unknown")
             lines.append(f"  Rule Applied: {rule}")
 
+            if "confidence" in self.crg_selection:
+                lines.append(f"  Confidence: {self.crg_selection['confidence']:.2f}")
+            if "rationale" in self.crg_selection:
+                # Truncate long rationales
+                rationale = self.crg_selection["rationale"]
+                if len(rationale) > 100:
+                    rationale = rationale[:100] + "..."
+                lines.append(f"  Rationale: {rationale}")
             if "first_release_date" in self.crg_selection:
                 lines.append(f"  First Release Date: {self.crg_selection['first_release_date']}")
             if "delta_days" in self.crg_selection:
