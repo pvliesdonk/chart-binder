@@ -1745,7 +1745,7 @@ class ChartsETL:
                 fetcher=self.fetcher,  # Pass fetcher to avoid creating new instance per song
             )
 
-            if result.state == "DECIDED":
+            if result.state == "decided":
                 link_result: dict[str, Any] = {
                     "work_key": work_key,
                     "confidence": result.confidence if result.confidence > 0 else 0.9,
