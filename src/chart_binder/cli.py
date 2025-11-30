@@ -441,14 +441,57 @@ def resolve(
         click.echo(f"Query: {artist} - {title}")
         click.echo(f"State: {result.state}")
 
+        # Look up actual entity data from musicgraph DB for human-readable output
+        from chart_binder.musicgraph import MusicGraphDB
+
+        musicgraph_db = MusicGraphDB(config.database.music_graph_path)
+
         if result.crg_mbid:
-            click.echo(f"CRG MBID: {result.crg_mbid}")
-            click.echo(f"CRG Rationale: {result.crg_rationale}")
+            rg_data = musicgraph_db.get_release_group(result.crg_mbid)
+            if rg_data:
+                rg_artist = ""
+                if rg_data.get("artist_mbid"):
+                    artist_data = musicgraph_db.get_artist(rg_data["artist_mbid"])
+                    if artist_data:
+                        rg_artist = artist_data.get("name", "")
+                rg_type = rg_data.get("type", "")
+                rg_date = rg_data.get("first_release_date", "")
+                click.echo(f"\nCanonical Release Group (CRG):")
+                click.echo(f"  {rg_artist} - {rg_data.get('title', '')}")
+                click.echo(f"  Type: {rg_type} | First Release: {rg_date}")
+                click.echo(f"  MBID: {result.crg_mbid}")
+                click.echo(f"  Rule: {result.crg_rationale}")
+            else:
+                click.echo(f"\nCRG MBID: {result.crg_mbid}")
+                click.echo(f"CRG Rationale: {result.crg_rationale}")
+
         if result.rr_mbid:
-            click.echo(f"RR MBID: {result.rr_mbid}")
+            rel_data = musicgraph_db.get_release(result.rr_mbid)
+            if rel_data:
+                rel_date = rel_data.get("release_date", rel_data.get("date", ""))
+                rel_country = rel_data.get("country", "")
+                click.echo(f"\nRepresentative Release (RR):")
+                click.echo(f"  {rel_data.get('title', '')}")
+                click.echo(f"  Date: {rel_date} | Country: {rel_country}")
+                click.echo(f"  MBID: {result.rr_mbid}")
+                click.echo(f"  Rule: {result.rr_rationale}")
+            else:
+                click.echo(f"\nRR MBID: {result.rr_mbid}")
+
+        if result.recording_mbid:
+            rec_data = musicgraph_db.get_recording(result.recording_mbid)
+            if rec_data:
+                rec_artist = ""
+                if rec_data.get("artist_mbid"):
+                    artist_data = musicgraph_db.get_artist(rec_data["artist_mbid"])
+                    if artist_data:
+                        rec_artist = artist_data.get("name", "")
+                click.echo(f"\nMatched Recording:")
+                click.echo(f"  {rec_artist} - {rec_data.get('title', '')}")
+                click.echo(f"  MBID: {result.recording_mbid}")
 
         if result.llm_adjudicated:
-            click.echo(f"LLM Adjudicated: Yes (confidence: {result.llm_confidence:.2f})")
+            click.echo(f"\nLLM Adjudicated: Yes (confidence: {result.llm_confidence:.2f})")
             if result.llm_rationale:
                 click.echo(f"LLM Rationale: {result.llm_rationale}")
 

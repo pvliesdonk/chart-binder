@@ -364,6 +364,38 @@ class Resolver:
             "missing_facts": ["insufficient_date_evidence_or_tie"],
         }
 
+    def _build_crg_result(
+        self,
+        selected: dict[str, Any],
+        rationale: CRGRationale,
+        **extra: Any,
+    ) -> dict[str, Any]:
+        """Build CRG result dict with full entity data for human-readable output."""
+        rg = selected.get("rg", {})
+        rec = selected.get("recording", {})
+
+        result = {
+            "state": DecisionState.DECIDED,
+            "crg_mbid": selected["rg_mbid"],
+            "rationale": rationale,
+            "first_release_date": selected.get("first_release_date"),
+            # Include full RG data for human-readable trace output
+            "release_group": {
+                "title": rg.get("title"),
+                "artist_credit": rg.get("artist_credit"),
+                "primary_type": rg.get("primary_type"),
+                "discogs_master_id": rg.get("discogs_master_id"),
+            },
+            # Include recording data
+            "recording": {
+                "title": rec.get("title"),
+                "artist_credit": rec.get("artist_credit"),
+            },
+        }
+        # Add any rule-specific extra fields
+        result.update(extra)
+        return result
+
     def _rule_soundtrack_origin(
         self, candidates: list[dict[str, Any]], trace: DecisionTrace
     ) -> dict[str, Any] | None:
@@ -406,13 +438,7 @@ class Resolver:
             return None  # Let later rules handle it, or fall through to INDETERMINATE
 
         selected = earliest_soundtracks[0]
-
-        return {
-            "state": DecisionState.DECIDED,
-            "crg_mbid": selected["rg_mbid"],
-            "rationale": CRGRationale.SOUNDTRACK_PREMIERE,
-            "first_release_date": selected["first_release_date"],
-        }
+        return self._build_crg_result(selected, CRGRationale.SOUNDTRACK_PREMIERE)
 
     def _rule_album_lead_window(
         self, candidates: list[dict[str, Any]], evidence_bundle: dict[str, Any]
@@ -462,13 +488,12 @@ class Resolver:
                     }
                     if len(tied_mbids) > 1:
                         return None  # Let later rules or INDETERMINATE handle it
-                    return {
-                        "state": DecisionState.DECIDED,
-                        "crg_mbid": earliest_album["rg_mbid"],
-                        "rationale": CRGRationale.ALBUM_LEAD_WINDOW,
-                        "lead_window_days": self.config.lead_window_days,
-                        "delta_days": delta_days,
-                    }
+                    return self._build_crg_result(
+                        earliest_album,
+                        CRGRationale.ALBUM_LEAD_WINDOW,
+                        lead_window_days=self.config.lead_window_days,
+                        delta_days=delta_days,
+                    )
 
         # Rule 2B: Single truly first
         if single_date:
@@ -494,12 +519,9 @@ class Resolver:
                     }
                     if len(tied_mbids) > 1:
                         return None  # Let later rules or INDETERMINATE handle it
-                    return {
-                        "state": DecisionState.DECIDED,
-                        "crg_mbid": earliest_single["rg_mbid"],
-                        "rationale": CRGRationale.SINGLE_TRUE_PREMIERE,
-                        "first_release_date": earliest_single["first_release_date"],
-                    }
+                    return self._build_crg_result(
+                        earliest_single, CRGRationale.SINGLE_TRUE_PREMIERE
+                    )
 
         return None
 
@@ -530,12 +552,7 @@ class Resolver:
             }
             if len(tied_mbids) > 1:
                 return None  # Let later rules or INDETERMINATE handle it
-            return {
-                "state": DecisionState.DECIDED,
-                "crg_mbid": earliest_live["rg_mbid"],
-                "rationale": CRGRationale.LIVE_ONLY_PREMIERE,
-                "first_release_date": earliest_live["first_release_date"],
-            }
+            return self._build_crg_result(earliest_live, CRGRationale.LIVE_ONLY_PREMIERE)
 
         # Check if Live is earlier than all non-Live
         earliest_live_date = min(c["first_release_date"] for c in live_candidates)
@@ -551,12 +568,7 @@ class Resolver:
             }
             if len(tied_mbids) > 1:
                 return None  # Let later rules or INDETERMINATE handle it
-            return {
-                "state": DecisionState.DECIDED,
-                "crg_mbid": earliest_live["rg_mbid"],
-                "rationale": CRGRationale.LIVE_ONLY_PREMIERE,
-                "first_release_date": earliest_live["first_release_date"],
-            }
+            return self._build_crg_result(earliest_live, CRGRationale.LIVE_ONLY_PREMIERE)
 
         return None
 
@@ -592,13 +604,7 @@ class Resolver:
             return None
 
         earliest_intent = min(intent_candidates_with_dates, key=lambda c: c["first_release_date"])
-
-        return {
-            "state": DecisionState.DECIDED,
-            "crg_mbid": earliest_intent["rg_mbid"],
-            "rationale": CRGRationale.INTENT_MATCH,
-            "first_release_date": earliest_intent["first_release_date"],
-        }
+        return self._build_crg_result(earliest_intent, CRGRationale.INTENT_MATCH)
 
     def _filter_compilation_exclusion(
         self, candidates: list[dict[str, Any]]
@@ -647,12 +653,7 @@ class Resolver:
 
         if len(unique_rg_mbids) == 1:
             selected = earliest_candidates[0]
-            return {
-                "state": DecisionState.DECIDED,
-                "crg_mbid": selected["rg_mbid"],
-                "rationale": CRGRationale.EARLIEST_OFFICIAL,
-                "first_release_date": selected["first_release_date"],
-            }
+            return self._build_crg_result(selected, CRGRationale.EARLIEST_OFFICIAL)
 
         # Tie-breakers
         # TODO: Implement tie-breakers:
@@ -675,13 +676,7 @@ class Resolver:
             }
 
         selected = earliest_candidates[0]
-
-        return {
-            "state": DecisionState.DECIDED,
-            "crg_mbid": selected["rg_mbid"],
-            "rationale": CRGRationale.EARLIEST_OFFICIAL,
-            "first_release_date": selected["first_release_date"],
-        }
+        return self._build_crg_result(selected, CRGRationale.EARLIEST_OFFICIAL)
 
     def _select_rr(
         self,
