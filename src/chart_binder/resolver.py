@@ -324,6 +324,11 @@ class Resolver:
                 "missing_facts": ["no_release_group_candidates"],
             }
 
+        # Apply filtering early to reduce noise for all subsequent rules
+        # This prevents rules from seeing compilations and late re-releases
+        all_rg_candidates = self._filter_compilation_exclusion(all_rg_candidates)
+        all_rg_candidates = self._filter_late_rereleases(all_rg_candidates)
+
         # Rule 1: Soundtrack Origin
         result = self._rule_soundtrack_origin(all_rg_candidates, trace)
         if result:
@@ -344,14 +349,7 @@ class Resolver:
         if result:
             return result
 
-        # Rule 5: Compilation Exclusion
-        # (This is more of a filter than a direct selection)
-        all_rg_candidates = self._filter_compilation_exclusion(all_rg_candidates)
-
-        # Filter late re-releases (releases significantly later than earliest)
-        all_rg_candidates = self._filter_late_rereleases(all_rg_candidates)
-
-        # Rule 6: Fallback by Earliest Official Date
+        # Rule 5: Fallback by Earliest Official Date
         result = self._rule_earliest_official(all_rg_candidates, trace)
         if result:
             return result
