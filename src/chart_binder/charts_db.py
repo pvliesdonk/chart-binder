@@ -1742,6 +1742,7 @@ class ChartsETL:
                 title=title,
                 config=self.config,  # type: ignore[arg-type]
                 adjudicator=self.adjudicator,
+                fetcher=self.fetcher,  # Pass fetcher to avoid creating new instance per song
             )
 
             if result.state == "DECIDED":
