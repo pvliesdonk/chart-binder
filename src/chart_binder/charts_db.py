@@ -1277,11 +1277,13 @@ class ChartsETL:
         normalizer: Normalizer | None = None,
         fetcher: Any | None = None,  # UnifiedFetcher, avoid circular import
         adjudicator: Any | None = None,  # ReActAdjudicator, avoid circular import
+        config: Any | None = None,  # Config, avoid circular import
     ):
         self.db = db
         self.normalizer = normalizer or Normalizer()
         self.fetcher = fetcher  # Optional: enables multi-source canonicalization
         self.adjudicator = adjudicator  # Optional: enables LLM adjudication for ambiguous matches
+        self.config = config  # Optional: enables shared resolver pipeline
 
     def ingest(
         self,
@@ -1653,15 +1655,94 @@ class ChartsETL:
         self, entry: dict[str, Any], artist_norm: str, title_norm: str, work_key: str
     ) -> dict[str, Any]:
         """
-        Compute link using multi-source search via UnifiedFetcher.
+        Compute link using multi-source search and 7-rule CRG selection.
 
-        Searches across MusicBrainz, Discogs, Spotify, and applies all
-        enhanced intelligence (popularity weighting, date validation, etc.).
+        Uses the shared resolve_artist_title() function which applies:
+        - Multi-source search (MusicBrainz, Discogs, Spotify)
+        - CandidateBuilder for evidence bundle construction
+        - 7-rule CRG selection algorithm (Lead Window, Compilation Exclusion, etc.)
+        - LLM adjudication for INDETERMINATE decisions
 
-        If confidence is below AUTO_THRESHOLD and LLM adjudicator is available,
-        invokes LLM to select the best match from multiple candidates.
+        Falls back to legacy fetcher-based linking if config is not available.
         """
-        # Type guard: fetcher should not be None when this method is called
+        # If we have config, use the shared resolver pipeline (same as decide command)
+        if self.config:
+            return self._compute_link_with_resolver(entry, artist_norm, title_norm, work_key)
+
+        # Legacy fallback: use fetcher directly without 7-rule algorithm
+        return self._compute_link_legacy(entry, artist_norm, title_norm, work_key)
+
+    def _compute_link_with_resolver(
+        self, entry: dict[str, Any], artist_norm: str, title_norm: str, work_key: str
+    ) -> dict[str, Any]:
+        """
+        Compute link using the shared resolver pipeline.
+
+        This uses exactly the same code path as the 'decide' command, ensuring
+        consistent application of the 7-rule CRG selection algorithm.
+        """
+        import logging
+
+        from chart_binder.resolve import resolve_artist_title
+
+        try:
+            # Use raw artist/title if available for better search results
+            artist = entry.get("artist_raw", artist_norm)
+            title = entry.get("title_raw", title_norm)
+
+            # Note: self.config is guaranteed to be non-None here since
+            # _compute_link_with_resolver is only called when self.config is truthy
+            result = resolve_artist_title(
+                artist=artist,
+                title=title,
+                config=self.config,  # type: ignore[arg-type]
+                adjudicator=self.adjudicator,
+            )
+
+            if result.state == "DECIDED":
+                link_result: dict[str, Any] = {
+                    "work_key": work_key,
+                    "confidence": result.confidence if result.confidence > 0 else 0.9,
+                    "method": LinkMethod.MULTI_SOURCE,
+                    "source": "resolver",
+                }
+
+                if result.recording_mbid:
+                    link_result["recording_mbid"] = result.recording_mbid
+
+                if result.llm_adjudicated:
+                    link_result["source"] = "llm_adjudicated"
+                    link_result["confidence"] = result.llm_confidence or 0.85
+
+                return link_result
+
+            # INDETERMINATE - return with lower confidence
+            return {
+                "work_key": work_key,
+                "confidence": 0.5,
+                "method": LinkMethod.TITLE_ARTIST_YEAR,
+                "source": "resolver_indeterminate",
+            }
+
+        except Exception as e:
+            logging.warning(f"Resolver failed for {artist_norm} - {title_norm}: {e}")
+            return {
+                "work_key": work_key,
+                "confidence": 0.6,
+                "method": LinkMethod.TITLE_ARTIST_YEAR,
+            }
+
+    def _compute_link_legacy(
+        self, entry: dict[str, Any], artist_norm: str, title_norm: str, work_key: str
+    ) -> dict[str, Any]:
+        """
+        Legacy link computation using fetcher directly.
+
+        This is the old code path that doesn't use the 7-rule algorithm.
+        Kept for backwards compatibility when config is not provided.
+        """
+        import logging
+
         if not self.fetcher:
             return {
                 "work_key": work_key,
@@ -1670,25 +1751,19 @@ class ChartsETL:
             }
 
         try:
-            # Search using normalized artist/title
             results = self.fetcher.search_recordings(title=title_norm, artist=artist_norm)
 
             if not results:
-                # No matches found, return with low confidence
                 return {
                     "work_key": work_key,
                     "confidence": 0.5,
                     "method": LinkMethod.TITLE_ARTIST_YEAR,
                 }
 
-            # Take the top result (already sorted by confidence)
             top_result = results[0]
             confidence = top_result.get("confidence", 0.7)
 
-            # If confidence is below AUTO_THRESHOLD and we have an adjudicator, use LLM
             if confidence < self.AUTO_THRESHOLD and self.adjudicator and len(results) > 1:
-                import logging
-
                 logging.info(
                     f"Low confidence ({confidence:.2f}) for {artist_norm} - {title_norm}, "
                     f"invoking LLM adjudicator with {len(results)} candidates"
@@ -1697,11 +1772,10 @@ class ChartsETL:
                 llm_result = self._adjudicate_chart_match(
                     artist_raw=entry.get("artist_raw", artist_norm),
                     title_raw=entry.get("title_raw", title_norm),
-                    candidates=results[:5],  # Top 5 candidates
+                    candidates=results[:5],
                 )
 
                 if llm_result and llm_result.get("confidence", 0) >= self.REVIEW_THRESHOLD:
-                    # LLM provided a confident decision
                     return {
                         "work_key": work_key,
                         "confidence": llm_result["confidence"],
@@ -1710,36 +1784,26 @@ class ChartsETL:
                         "source": "llm_adjudicated",
                     }
 
-            # Use top result from fetcher
-            result = {
+            result: dict[str, Any] = {
                 "work_key": work_key,
                 "confidence": confidence,
                 "method": LinkMethod.MULTI_SOURCE,
                 "source": top_result.get("source", "unknown"),
             }
 
-            # Extract all available canonical IDs
             if top_result.get("recording_mbid"):
                 result["recording_mbid"] = top_result["recording_mbid"]
-
             if top_result.get("discogs_release_id"):
                 result["discogs_release_id"] = top_result["discogs_release_id"]
-
             if top_result.get("discogs_master_id"):
                 result["discogs_master_id"] = top_result["discogs_master_id"]
-
             if top_result.get("spotify_track_id"):
                 result["spotify_track_id"] = top_result["spotify_track_id"]
 
             return result
 
         except Exception as e:
-            # If multi-source search fails, fallback to hash-based
-            import logging
-
             logging.warning(f"Multi-source search failed for {artist_norm} - {title_norm}: {e}")
-
-            # Return hash-based result
             return {
                 "work_key": work_key,
                 "confidence": 0.6,

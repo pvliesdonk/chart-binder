@@ -385,6 +385,81 @@ def _get_or_calc_fingerprint(
 
 
 @canon.command()
+@click.option("--artist", "-a", required=True, help="Artist name")
+@click.option("--title", "-t", required=True, help="Track title")
+@click.option("--explain", is_flag=True, help="Show detailed decision rationale")
+@click.pass_context
+def resolve(
+    ctx: click.Context,
+    artist: str,
+    title: str,
+    explain: bool,
+) -> None:
+    """
+    Resolve an artist/title pair to canonical release group and representative release.
+
+    Uses the same 7-rule CRG selection algorithm as the decide command:
+    1. Soundtrack Premiere
+    2. Lead Window Rule (prefer album if single is within 90 days before)
+    3. Live Recording handling
+    4. Intent Inference
+    5. Compilation Exclusion
+    6. Earliest Official Date
+    7. INDETERMINATE (with optional LLM adjudication)
+
+    Examples:
+        canon resolve --artist "Queen" --title "Killer Queen"
+        canon resolve -a "The Beatles" -t "Hey Jude" --explain
+    """
+    from chart_binder.resolve import resolve_artist_title
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Resolving: {artist} - {title}")
+
+    output_format = ctx.obj["output"]
+    config: Config = ctx.obj["config"]
+
+    result = resolve_artist_title(artist, title, config)
+
+    if output_format == OutputFormat.JSON:
+        output = {
+            "artist": artist,
+            "title": title,
+            "state": result.state,
+            "crg_mbid": result.crg_mbid,
+            "rr_mbid": result.rr_mbid,
+            "recording_mbid": result.recording_mbid,
+            "crg_rationale": result.crg_rationale,
+            "rr_rationale": result.rr_rationale,
+            "llm_adjudicated": result.llm_adjudicated,
+        }
+        if result.llm_adjudicated:
+            output["llm_confidence"] = result.llm_confidence
+            output["llm_rationale"] = result.llm_rationale
+        click.echo(json.dumps(output, indent=2))
+    else:
+        click.echo(f"Query: {artist} - {title}")
+        click.echo(f"State: {result.state}")
+
+        if result.crg_mbid:
+            click.echo(f"CRG MBID: {result.crg_mbid}")
+            click.echo(f"CRG Rationale: {result.crg_rationale}")
+        if result.rr_mbid:
+            click.echo(f"RR MBID: {result.rr_mbid}")
+
+        if result.llm_adjudicated:
+            click.echo(f"LLM Adjudicated: Yes (confidence: {result.llm_confidence:.2f})")
+            if result.llm_rationale:
+                click.echo(f"LLM Rationale: {result.llm_rationale}")
+
+        if explain and result.trace:
+            click.echo("\nDecision Trace:")
+            click.echo(result.trace)
+
+    sys.exit(ExitCode.SUCCESS if result.state == "DECIDED" else ExitCode.NO_RESULTS)
+
+
+@canon.command()
 @click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path), required=True)
 @click.option("--explain", is_flag=True, help="Show detailed decision rationale")
 @click.option("--no-persist", is_flag=True, help="Skip persisting decisions to database")
@@ -1754,7 +1829,8 @@ def link(
         adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
         click.echo("LLM adjudication enabled for low-confidence matches", err=True)
 
-    etl = ChartsETL(db, fetcher=fetcher, adjudicator=adjudicator)
+    # Pass config to ChartsETL so it uses the shared resolver pipeline (7-rule algorithm)
+    etl = ChartsETL(db, fetcher=fetcher, adjudicator=adjudicator, config=config)
 
     run = db.get_run_by_period(chart_id, period)
     if not run:

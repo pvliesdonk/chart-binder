@@ -526,9 +526,7 @@ class Resolver:
             # Check for ties - deduplicate by release group MBID
             earliest_date = earliest_live["first_release_date"]
             tied_mbids = {
-                c["rg_mbid"]
-                for c in live_candidates
-                if c["first_release_date"] == earliest_date
+                c["rg_mbid"] for c in live_candidates if c["first_release_date"] == earliest_date
             }
             if len(tied_mbids) > 1:
                 return None  # Let later rules or INDETERMINATE handle it
