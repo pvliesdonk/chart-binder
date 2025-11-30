@@ -1564,6 +1564,17 @@ class ChartsETL:
                 entry["artist_normalized"] = ""
                 entry["title_normalized"] = ""
 
+            # Show current entry being processed
+            if progress:
+                rank = entry.get("rank", "?")
+                pct = ((processed + 1) / total_to_process) * 100
+                status = (
+                    f"  [{processed + 1}/{total_to_process}] ({pct:.1f}%) "
+                    f"Rank {rank}: {artist_raw} - {title_raw}"
+                )
+                # Use \r to overwrite line, flush to show immediately
+                print(f"\r{status:<120}", end="", file=sys.stderr, flush=True)
+
             link_result = self._compute_link(entry, strategy)
 
             link = ChartLink(
@@ -1587,9 +1598,11 @@ class ChartsETL:
                 links = []
 
                 if progress:
+                    # Clear the current line and show batch completion
+                    print(f"\r{'':<120}", end="", file=sys.stderr)
                     pct = (processed / total_to_process) * 100
                     print(
-                        f"  Progress: {processed}/{total_to_process} ({pct:.1f}%)", file=sys.stderr
+                        f"  ✓ Batch complete: {processed}/{total_to_process} ({pct:.1f}%)", file=sys.stderr
                     )
 
         # Final commit for remaining links
@@ -1597,7 +1610,9 @@ class ChartsETL:
             self.db.add_links_batch(links)
 
         if progress:
-            print(f"✓ Completed: {processed} entries linked")
+            # Clear the progress line
+            print(f"\r{'':<120}", end="", file=sys.stderr)
+            print(f"✓ Completed: {processed} entries linked", file=sys.stderr)
 
         return self.db.get_coverage_report(run_id)
 

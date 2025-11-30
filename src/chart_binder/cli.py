@@ -1751,12 +1751,17 @@ def ingest(
 
 @charts.command()
 @click.argument("chart_id")
-@click.argument("period")
+@click.argument("period", required=False)
 @click.option(
     "--strategy",
     default="multi_source",
     type=click.Choice(["multi_source", "title_artist_year", "bundle_release"]),
     help="Linking strategy (default: multi_source)",
+)
+@click.option(
+    "--all-periods",
+    is_flag=True,
+    help="Process all periods for the chart (period argument not required)",
 )
 @click.option(
     "--missing-only",
@@ -1772,7 +1777,7 @@ def ingest(
 @click.option(
     "--limit",
     type=int,
-    help="Maximum number of entries to process (for testing)",
+    help="Maximum number of entries to process per period (for testing)",
 )
 @click.option(
     "--start-rank",
@@ -1804,8 +1809,9 @@ def ingest(
 def link(
     ctx: click.Context,
     chart_id: str,
-    period: str,
+    period: str | None,
     strategy: str,
+    all_periods: bool,
     missing_only: bool,
     min_confidence: float,
     limit: int | None,
@@ -1823,6 +1829,7 @@ def link(
 
     Performance options:
     - Use --missing-only to skip entries that already have good links
+    - Use --all-periods to process all periods of a chart
     - Use --limit to test with small batches (e.g., --limit 10)
     - Use --start-rank/--end-rank to process specific rank ranges
     - Use --prioritize-by-score to process most important entries first
@@ -1831,6 +1838,7 @@ def link(
     Examples:
         canon charts link nl_top2000 2024
         canon charts link nl_top2000 2024 --missing-only
+        canon charts link nl_top2000 --all-periods --missing-only
         canon charts link nl_top2000 2024 --limit 10 --prioritize-by-score
         canon charts link nl_top2000 2024 --start-rank 1 --end-rank 100
     """
@@ -1840,7 +1848,26 @@ def link(
     config: Config = ctx.obj["config"]
     output_format: OutputFormat = ctx.obj["output"]
 
+    # Validate arguments
+    if all_periods and period:
+        click.echo("Error: Cannot specify both PERIOD and --all-periods", err=True)
+        sys.exit(ExitCode.INVALID_ARGS)
+    if not all_periods and not period:
+        click.echo("Error: Must specify either PERIOD or --all-periods", err=True)
+        sys.exit(ExitCode.INVALID_ARGS)
+
     db = ChartsDB(config.database.charts_path)
+
+    # Get periods to process
+    if all_periods:
+        runs = db.list_runs(chart_id)
+        if not runs:
+            click.echo(f"No chart runs found for {chart_id}", err=True)
+            sys.exit(ExitCode.NO_RESULTS)
+        periods_to_process = [run["period"] for run in runs]
+        click.echo(f"Processing {len(periods_to_process)} periods for {chart_id}", err=True)
+    else:
+        periods_to_process = [period]  # type: ignore[list-item]
 
     # Create UnifiedFetcher if using multi_source strategy
     fetcher = None
@@ -1875,48 +1902,74 @@ def link(
     # Pass config to ChartsETL so it uses the shared resolver pipeline (7-rule algorithm)
     etl = ChartsETL(db, fetcher=fetcher, adjudicator=adjudicator, config=config)
 
-    run = db.get_run_by_period(chart_id, period)
-    if not run:
-        click.echo(f"No chart run found for {chart_id} {period}", err=True)
-        sys.exit(ExitCode.NO_RESULTS)
+    # Process each period
+    all_results = []
+    for idx, current_period in enumerate(periods_to_process, 1):
+        if all_periods:
+            click.echo(
+                f"\n[{idx}/{len(periods_to_process)}] Processing period: {current_period}",
+                err=True,
+            )
 
-    report = etl.link(
-        run["run_id"],
-        strategy=strategy,
-        missing_only=missing_only,
-        min_confidence=min_confidence,
-        limit=limit,
-        start_rank=start_rank,
-        end_rank=end_rank,
-        prioritize_by_score=prioritize_by_score,
-        chart_id=chart_id,
-        batch_size=batch_size,
-        progress=not no_progress,
-    )
+        run = db.get_run_by_period(chart_id, current_period)
+        if not run:
+            click.echo(f"Warning: No chart run found for {chart_id} {current_period}", err=True)
+            continue
+
+        report = etl.link(
+            run["run_id"],
+            strategy=strategy,
+            missing_only=missing_only,
+            min_confidence=min_confidence,
+            limit=limit,
+            start_rank=start_rank,
+            end_rank=end_rank,
+            prioritize_by_score=prioritize_by_score,
+            chart_id=chart_id,
+            batch_size=batch_size,
+            progress=not no_progress,
+        )
+
+        result = {
+            "chart_id": chart_id,
+            "period": current_period,
+            "run_id": run["run_id"],
+            "total_entries": report.total_entries,
+            "linked_entries": report.linked_entries,
+            "coverage_pct": round(report.coverage_pct, 2),
+            "by_method": report.by_method,
+        }
+        all_results.append(result)
+
+        if not all_periods or output_format == OutputFormat.JSON:
+            # Show individual results
+            if output_format == OutputFormat.TEXT:
+                click.echo(f"✔︎ Linked {report.linked_entries}/{report.total_entries} entries")
+                click.echo(f"  Coverage: {report.coverage_pct:.1f}%")
+                if report.by_method:
+                    click.echo("  By method:")
+                    for method, count in report.by_method.items():
+                        click.echo(f"    {method}: {count}")
 
     # Close fetcher if we created one
     if fetcher:
         fetcher.close()
 
-    result = {
-        "chart_id": chart_id,
-        "period": period,
-        "run_id": run["run_id"],
-        "total_entries": report.total_entries,
-        "linked_entries": report.linked_entries,
-        "coverage_pct": round(report.coverage_pct, 2),
-        "by_method": report.by_method,
-    }
-
+    # Output final results
     if output_format == OutputFormat.JSON:
-        click.echo(json.dumps(result, indent=2))
-    else:
-        click.echo(f"✔︎ Linked {report.linked_entries}/{report.total_entries} entries")
-        click.echo(f"  Coverage: {report.coverage_pct:.1f}%")
-        if report.by_method:
-            click.echo("  By method:")
-            for method, count in report.by_method.items():
-                click.echo(f"    {method}: {count}")
+        if all_periods:
+            click.echo(json.dumps({"chart_id": chart_id, "periods": all_results}, indent=2))
+        else:
+            click.echo(json.dumps(all_results[0], indent=2))
+    elif all_periods:
+        # Summary for all periods
+        total_linked = sum(r["linked_entries"] for r in all_results)
+        total_entries = sum(r["total_entries"] for r in all_results)
+        avg_coverage = (total_linked / total_entries * 100) if total_entries > 0 else 0
+        click.echo("\n✔︎ All periods complete:")
+        click.echo(f"  Periods processed: {len(all_results)}")
+        click.echo(f"  Total linked: {total_linked}/{total_entries}")
+        click.echo(f"  Overall coverage: {avg_coverage:.1f}%")
 
     sys.exit(ExitCode.SUCCESS)
 
