@@ -882,7 +882,8 @@ class UnifiedFetcher:
 
         # Try title + artist search
         if title and artist:
-            mb_results = self.mb_client.search_recordings(artist=artist, title=title, limit=10)
+            # Use larger limit to find original recordings (can be deep in results)
+            mb_results = self.mb_client.search_recordings(artist=artist, title=title, limit=100)
             for rec in mb_results:
                 results.append(
                     {
