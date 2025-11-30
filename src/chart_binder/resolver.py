@@ -390,12 +390,15 @@ class Resolver:
         if not earliest_soundtracks:
             return None
 
+        # Deduplicate by release group MBID
+        unique_rg_mbids = {c["rg_mbid"] for c in earliest_soundtracks}
+
         # Tie-breaker: label authority → artist origin country presence
         # TODO: Implement label authority and country tie-breakers
         # If still tied, defer to LLM adjudicator
 
-        # If multiple soundtracks with same earliest date, return INDETERMINATE
-        if len(earliest_soundtracks) > 1:
+        # If multiple unique soundtracks with same earliest date, return None
+        if len(unique_rg_mbids) > 1:
             return None  # Let later rules handle it, or fall through to INDETERMINATE
 
         selected = earliest_soundtracks[0]
@@ -436,18 +439,24 @@ class Resolver:
             # Lead Window Rule: If single is within 90 days before album, prefer album
             # This catches promo/lead singles that typically precede album releases
             if 0 < delta_days <= self.config.lead_window_days:
-                # Select Album RG
+                # Select Album RG (exclude compilations from album selection)
                 album_candidates = [
                     c
                     for c in candidates
-                    if c["primary_type"] == "Album" and c["first_release_date"]
+                    if c["primary_type"] == "Album"
+                    and c["first_release_date"]
+                    and "Compilation" not in c.get("secondary_types", [])
                 ]
                 if album_candidates:
                     earliest_album = min(album_candidates, key=lambda c: c["first_release_date"])
-                    # Check for ties
+                    # Check for ties - deduplicate by release group MBID
                     earliest_date = earliest_album["first_release_date"]
-                    tied = [c for c in album_candidates if c["first_release_date"] == earliest_date]
-                    if len(tied) > 1:
+                    tied_mbids = {
+                        c["rg_mbid"]
+                        for c in album_candidates
+                        if c["first_release_date"] == earliest_date
+                    }
+                    if len(tied_mbids) > 1:
                         return None  # Let later rules or INDETERMINATE handle it
                     return {
                         "state": DecisionState.DECIDED,
@@ -460,22 +469,26 @@ class Resolver:
         # Rule 2B: Single truly first
         if single_date:
             if not album_date or (album_date - single_date).days > self.config.lead_window_days:
-                # Select Single/EP RG
+                # Select Single/EP RG (exclude compilations)
                 single_ep_candidates = [
                     c
                     for c in candidates
-                    if c["primary_type"] in ["Single", "EP"] and c["first_release_date"]
+                    if c["primary_type"] in ["Single", "EP"]
+                    and c["first_release_date"]
+                    and "Compilation" not in c.get("secondary_types", [])
                 ]
                 if single_ep_candidates:
                     earliest_single = min(
                         single_ep_candidates, key=lambda c: c["first_release_date"]
                     )
-                    # Check for ties
+                    # Check for ties - deduplicate by release group MBID
                     earliest_date = earliest_single["first_release_date"]
-                    tied = [
-                        c for c in single_ep_candidates if c["first_release_date"] == earliest_date
-                    ]
-                    if len(tied) > 1:
+                    tied_mbids = {
+                        c["rg_mbid"]
+                        for c in single_ep_candidates
+                        if c["first_release_date"] == earliest_date
+                    }
+                    if len(tied_mbids) > 1:
                         return None  # Let later rules or INDETERMINATE handle it
                     return {
                         "state": DecisionState.DECIDED,
@@ -506,10 +519,14 @@ class Resolver:
         if not non_live_candidates:
             # Only Live candidates exist
             earliest_live = min(live_candidates, key=lambda c: c["first_release_date"])
-            # Check for ties
+            # Check for ties - deduplicate by release group MBID
             earliest_date = earliest_live["first_release_date"]
-            tied = [c for c in live_candidates if c["first_release_date"] == earliest_date]
-            if len(tied) > 1:
+            tied_mbids = {
+                c["rg_mbid"]
+                for c in live_candidates
+                if c["first_release_date"] == earliest_date
+            }
+            if len(tied_mbids) > 1:
                 return None  # Let later rules or INDETERMINATE handle it
             return {
                 "state": DecisionState.DECIDED,
@@ -524,9 +541,13 @@ class Resolver:
 
         if earliest_live_date < earliest_non_live_date:
             earliest_live = min(live_candidates, key=lambda c: c["first_release_date"])
-            # Check for ties
-            tied = [c for c in live_candidates if c["first_release_date"] == earliest_live_date]
-            if len(tied) > 1:
+            # Check for ties - deduplicate by release group MBID
+            tied_mbids = {
+                c["rg_mbid"]
+                for c in live_candidates
+                if c["first_release_date"] == earliest_live_date
+            }
+            if len(tied_mbids) > 1:
                 return None  # Let later rules or INDETERMINATE handle it
             return {
                 "state": DecisionState.DECIDED,
@@ -618,7 +639,11 @@ class Resolver:
             c for c in candidates_with_dates if c["first_release_date"] == earliest_date
         ]
 
-        if len(earliest_candidates) == 1:
+        # Deduplicate by release group MBID (same RG may appear multiple times
+        # if linked to multiple recordings)
+        unique_rg_mbids = {c["rg_mbid"] for c in earliest_candidates}
+
+        if len(unique_rg_mbids) == 1:
             selected = earliest_candidates[0]
             return {
                 "state": DecisionState.DECIDED,
@@ -634,17 +659,17 @@ class Resolver:
         # 3. Country precedence
         # If still tied, defer to LLM adjudicator
 
-        # If multiple candidates with same earliest date, return INDETERMINATE
+        # If multiple unique RGs with same earliest date, return INDETERMINATE
         # to allow LLM adjudicator to break the tie
-        if len(earliest_candidates) > 1:
+        if len(unique_rg_mbids) > 1:
             return {
                 "state": DecisionState.INDETERMINATE,
                 "rationale": CRGRationale.INDETERMINATE,
                 "missing_facts": [
-                    f"tie_between_{len(earliest_candidates)}_release_groups_with_same_earliest_date"
+                    f"tie_between_{len(unique_rg_mbids)}_release_groups_with_same_earliest_date"
                 ],
                 "earliest_date": earliest_date,
-                "tied_candidates": [c["rg_mbid"] for c in earliest_candidates],
+                "tied_candidates": list(unique_rg_mbids),
             }
 
         selected = earliest_candidates[0]
