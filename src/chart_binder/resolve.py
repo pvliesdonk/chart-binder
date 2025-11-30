@@ -154,8 +154,7 @@ def resolve_artist_title(
         search_results = fetcher.search_recordings(title=title, artist=artist)
         log.debug(f"Title/artist search returned {len(search_results)} results")
 
-        # Hydrate recordings from each source type
-        # Use larger limit for MB to find original recordings (can be at index 50+)
+        # Hydrate top 5 from each source type
         mb_results = [r for r in search_results if r.get("recording_mbid")]
         discogs_results = [r for r in search_results if r.get("discogs_release_id")]
         spotify_results = [r for r in search_results if r.get("spotify_track_id")]
@@ -163,8 +162,7 @@ def resolve_artist_title(
         # Track artist MBID for work-based discovery
         artist_mbid_for_work: str | None = None
 
-        # Hydrate up to 20 MB recordings to improve chances of finding original
-        for result in mb_results[:20]:
+        for result in mb_results[:5]:
             mbid = result["recording_mbid"]
             try:
                 fetched = fetcher.fetch_recording(mbid)
@@ -190,26 +188,6 @@ def resolve_artist_title(
                 log.debug(f"Work-based discovery found {len(siblings)} sibling recordings")
             except Exception as e:
                 log.debug(f"Work-based discovery failed: {e}")
-
-        # Artist-based discovery: artist → release groups → recordings
-        # Most reliable for original albums/singles by the artist
-        try:
-            artist_rg_recordings = fetcher.discover_via_artist_release_groups(
-                title=title, artist=artist, max_rg=10, max_recordings=15
-            )
-            log.debug(f"Artist-RG discovery found {len(artist_rg_recordings)} recordings")
-        except Exception as e:
-            log.debug(f"Artist-RG discovery failed: {e}")
-
-        # Title-based RG discovery: search RGs by title
-        # Catches soundtracks where artist is contributor not main artist
-        try:
-            title_rg_recordings = fetcher.discover_via_release_group_search(
-                title=title, artist=artist, max_rg=5, max_recordings=10
-            )
-            log.debug(f"Title-RG discovery found {len(title_rg_recordings)} recordings")
-        except Exception as e:
-            log.debug(f"Title-RG discovery failed: {e}")
 
         for result in discogs_results[:5]:
             discogs_id = result["discogs_release_id"]
