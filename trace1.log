@@ -1,38 +1,842 @@
+2025-11-30 15:47:05,610 - chart_binder.cli - DEBUG - Logging configured: level=DEBUG, hash_paths=False
+2025-11-30 15:47:05,612 - chart_binder.cli - INFO - Resolving: Queen - Bohemian Rhapsody
+2025-11-30 15:47:05,614 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-30 15:47:05,614 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-30 15:47:06,058 - httpcore.connection - DEBUG - connect_tcp.started host='athena.int.liesdonk.nl' port=1080 local_address=None timeout=5.0 socket_options=None
+2025-11-30 15:47:06,061 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99f570e0>
+2025-11-30 15:47:06,061 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:06,061 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:06,061 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:06,061 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:06,061 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:06,064 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'content-type', b'text/html; charset=utf-8'), (b'content-length', b'6278'), (b'server-timing', b'total;dur=2.012, render;dur=0.481'), (b'x-content-type-options', b'nosniff'), (b'x-download-options', b'noopen'), (b'x-robots-tag', b'noindex, nofollow'), (b'referrer-policy', b'no-referrer'), (b'server', b'granian'), (b'date', b'Sun, 30 Nov 2025 14:47:06 GMT')])
+2025-11-30 15:47:06,064 - httpx - INFO - HTTP Request: GET http://athena.int.liesdonk.nl:1080/ "HTTP/1.1 200 OK"
+2025-11-30 15:47:06,065 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:06,065 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:06,065 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:06,065 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:06,073 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-30 15:47:06,073 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-30 15:47:06,093 - chart_binder.resolve - DEBUG - Searching for: Queen - Bohemian Rhapsody
+2025-11-30 15:47:06,093 - httpcore.connection - DEBUG - connect_tcp.started host='musicbrainz.org' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-30 15:47:06,114 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99b72710>
+2025-11-30 15:47:06,114 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7f2e99b36ad0> server_hostname='musicbrainz.org' timeout=30.0
+2025-11-30 15:47:06,136 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99b72850>
+2025-11-30 15:47:06,137 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:06,137 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:06,138 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:06,138 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:06,138 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:06,373 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:06 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'1032'), (b'X-RateLimit-Reset', b'1764514027'), (b'content-security-policy', b"default-src 'none'; base-uri 'none'; connect-src 'self'; form-action 'self'; font-src 'self'; frame-ancestors 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self';"), (b'x-content-type-options', b'nosniff'), (b'x-frame-options', b'SAMEORIGIN'), (b'x-xss-protection', b'1; mode=block'), (b'last-modified', b'Sun, 30 Nov 2025 14:45:14 GMT'), (b'etag', b'"MzUzMjkyMDAwMDAwMDAwMFNvbHI=--gzip"'), (b'vary', b'Accept-Encoding'), (b'content-encoding', b'gzip'), (b'X-Cache-Status', b'MISS'), (b'Access-Control-Allow-Origin', b'*')])
+2025-11-30 15:47:06,374 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording?query=artist%3A%22Queen%22+AND+recording%3A%22Bohemian+Rhapsody%22&limit=100&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:06,374 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:06,379 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:06,379 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:06,380 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:06,414 - httpcore.connection - DEBUG - connect_tcp.started host='accounts.spotify.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-30 15:47:06,433 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99b81350>
+2025-11-30 15:47:06,434 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7f2e99b36f30> server_hostname='accounts.spotify.com' timeout=30.0
+2025-11-30 15:47:06,448 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99b81480>
+2025-11-30 15:47:06,448 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'POST']>
+2025-11-30 15:47:06,449 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:06,449 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'POST']>
+2025-11-30 15:47:06,449 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:06,450 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
+2025-11-30 15:47:06,471 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'date', b'Sun, 30 Nov 2025 14:47:06 GMT'), (b'request-id', b'6adac54a-8dec-4ced-884c-53e7cf15fd06'), (b'content-type', b'application/json'), (b'set-cookie', b'__Host-device_id=AQDZuYnq8scR7i4Fozt8gek8iG8tQaVXh6Ypl__qQYNDzYAjK7FejQtQbGS4mCzqBGI_OfjPvEpGEI7AMWrRUq7T3dGO95JmjA8;Version=1;Path=/;Max-Age=2147483647;Secure;HttpOnly;SameSite=Lax'), (b'set-cookie', b'sp_tr=false;Version=1;Domain=accounts.spotify.com;Path=/;Secure;SameSite=Lax'), (b'server', b'envoy'), (b'x-envoy-upstream-service-time', b'7'), (b'via', b'HTTP/1.1 fringe, HTTP/2 edgeproxy, 1.1 google'), (b'strict-transport-security', b'max-age=31536000'), (b'x-content-type-options', b'nosniff'), (b'alt-svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'content-encoding', b'gzip'), (b'vary', b'Accept-Encoding'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-11-30 15:47:06,473 - httpx - INFO - HTTP Request: POST https://accounts.spotify.com/api/token "HTTP/1.1 200 OK"
+2025-11-30 15:47:06,473 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'POST']>
+2025-11-30 15:47:06,474 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:06,474 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:06,474 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:06,477 - httpcore.connection - DEBUG - connect_tcp.started host='api.spotify.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-30 15:47:06,489 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99f6e690>
+2025-11-30 15:47:06,489 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7f2e99b36f30> server_hostname='api.spotify.com' timeout=30.0
+2025-11-30 15:47:06,503 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99b69e10>
+2025-11-30 15:47:06,504 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:06,504 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:06,504 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:06,504 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:06,505 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:06,667 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'content-type', b'application/json; charset=utf-8'), (b'cache-control', b'public, max-age=0'), (b'etag', b'"MC-IjgzM2Q5NzkxYTlkZjhjYTgyOGVmYzIwZTM5YzAyN2NhIg=="'), (b'x-robots-tag', b'noindex, nofollow'), (b'access-control-allow-origin', b'*'), (b'access-control-allow-headers', b'Accept, App-Platform, Authorization, Content-Type, Origin, Retry-After, Spotify-App-Version, X-Cloud-Trace-Context, client-token, content-access-token'), (b'access-control-allow-methods', b'GET, POST, OPTIONS, PUT, DELETE, PATCH'), (b'access-control-allow-credentials', b'true'), (b'access-control-max-age', b'604800'), (b'content-encoding', b'gzip'), (b'strict-transport-security', b'max-age=31536000'), (b'x-content-type-options', b'nosniff'), (b'alt-svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'date', b'Sun, 30 Nov 2025 14:47:06 GMT'), (b'server', b'envoy'), (b'via', b'HTTP/2 edgeproxy, 1.1 google'), (b'Alt-Svc', b'h3=":443"; ma=2592000,h3-29=":443"; ma=2592000'), (b'Transfer-Encoding', b'chunked')])
+2025-11-30 15:47:06,668 - httpx - INFO - HTTP Request: GET https://api.spotify.com/v1/search?q=artist%3A%22Queen%22+track%3A%22Bohemian+Rhapsody%22&type=track&limit=10 "HTTP/1.1 200 OK"
+2025-11-30 15:47:06,669 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:06,670 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:06,670 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:06,670 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:06,672 - chart_binder.resolve - DEBUG - Title/artist search returned 110 results
+2025-11-30 15:47:07,095 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:07,095 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:07,096 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:07,096 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:07,096 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:07,234 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:07 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'646'), (b'X-RateLimit-Reset', b'1764514027'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"05303fdaaef4fb954265c503509580ce"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.120470'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:07,234 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/a4803b45-0644-453f-aa1b-c762dc2f6941?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:07,234 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:07,234 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:07,235 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:07,235 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:08,095 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:08,095 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:08,096 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:08,096 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:08,096 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:08,202 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:08 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'1066'), (b'X-RateLimit-Reset', b'1764514029'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"a3335ff72cb6d62d34a1d0a679e554a8"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.087641'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:08,203 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/artist/0383dadf-2a4e-4d10-a46a-e9e041da8eb3?inc=area-rels%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:08,204 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:08,204 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:08,205 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:08,205 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:09,095 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:09,096 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:09,096 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:09,096 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:09,096 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:09,137 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'620'), (b'X-RateLimit-Reset', b'1764514029'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"a32a8a942a37e758137d56a0a5d0f6f9"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.023675'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:09,138 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/40212eb6-01b0-41bb-ac71-4a4328871b5a?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:09,139 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:09,139 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:09,139 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:09,140 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:11,094 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:11,095 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:11,095 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:11,095 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:11,095 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:11,198 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:11 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'465'), (b'X-RateLimit-Reset', b'1764514031'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"384dbe22d625e9ab743b784ebcd5f8c0"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.072613'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:11,198 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/b41f4846-5550-46de-84a0-ed4790f68bfe?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:11,199 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:11,199 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:11,200 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:11,200 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:13,095 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:13,096 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:13,096 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:13,096 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:13,097 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:13,148 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:13 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'633'), (b'X-RateLimit-Reset', b'1764514033'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"d66075d0bb984042a27fc41cd174095e"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.033906'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:13,149 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/809481c9-27ee-412d-b902-66659bbc7936?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:13,149 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:13,150 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:13,150 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:13,150 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:15,096 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:15,096 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:15,097 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:15,097 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:15,097 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:15,312 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:15 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'540'), (b'X-RateLimit-Reset', b'1764514035'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"be99ad341393ff58b3d17aea4716880b"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.135067'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:15,313 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/30db48ed-437a-4462-a9e0-933ae18c0b42?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:15,313 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:15,314 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:15,314 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:15,314 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:17,096 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:17,097 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:17,097 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:17,097 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:17,097 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:17,200 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:17 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'591'), (b'X-RateLimit-Reset', b'1764514037'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"4059efa414e8b96fca6607573b69612e"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.084494'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:17,201 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/3263ba2f-bf33-4129-b6d7-53f437269323?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:17,201 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:17,201 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:17,202 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:17,202 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:19,096 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:19,097 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:19,097 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:19,097 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:19,097 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:19,151 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:19 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'628'), (b'X-RateLimit-Reset', b'1764514039'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"d05d05681c2a6bd718b2d78a8ea0b991"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.035788'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:19,151 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/b05cbcb3-8b83-4865-91d6-cef7cc042268?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:19,152 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:19,152 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:19,153 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:19,153 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:21,096 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:21,097 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:21,097 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:21,098 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:21,098 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:21,330 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:21 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'473'), (b'X-RateLimit-Reset', b'1764514041'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"704244788d3d36e72fd22c16f104442a"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.142543'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:21,331 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/c310229d-1e38-4eb2-b974-c67b3e2bcd3e?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:21,331 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:21,332 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:21,332 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:21,332 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:23,095 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:23,096 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:23,096 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:23,096 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:23,096 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:23,260 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:23 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'642'), (b'X-RateLimit-Reset', b'1764514043'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"bd4c344e73474e4950343e5a2add5ce8"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.146207'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:23,261 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/31c6faf8-ea10-4725-b872-ba602a631197?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:23,261 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:23,262 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:23,262 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:23,262 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:25,097 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:25,097 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:25,098 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:25,098 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:25,098 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:25,250 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:25 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'620'), (b'X-RateLimit-Reset', b'1764514045'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"61c1f37daf80512c93c2814c1dc42553"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.134160'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:25,251 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/bb6348f3-30f0-4463-afff-6091757ecdef?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:25,251 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:25,252 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:25,252 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:25,252 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:27,097 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:27,098 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:27,098 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:27,098 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:27,098 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:27,151 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:27 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'616'), (b'X-RateLimit-Reset', b'1764514047'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"b2ebce994bb8a6c3f5a297e381812e8c"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.035743'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:27,152 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/d77da799-f157-46dd-b0fb-5c181383624e?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:27,152 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:27,153 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:27,153 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:27,153 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:29,097 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:29,098 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:29,098 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:29,098 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:29,098 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:29,145 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:29 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'589'), (b'X-RateLimit-Reset', b'1764514049'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"7276b7f7b5f8c6b35727ec80124e467a"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.028528'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:29,145 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/79e6c130-6e1b-4bf9-b395-aaebf753bae3?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:29,145 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:29,145 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:29,145 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:29,145 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:31,097 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:31,098 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:31,098 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:31,098 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:31,099 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:31,155 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:31 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'471'), (b'X-RateLimit-Reset', b'1764514051'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"6d37ff782b4420eb5178cf312218614e"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.038977'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:31,155 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/5e45ef6c-1920-4949-b8fb-2347e1b33c0d?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:31,156 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:31,156 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:31,156 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:31,157 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:33,098 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:33,098 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:33,099 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:33,099 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:33,099 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:33,150 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:33 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'601'), (b'X-RateLimit-Reset', b'1764514053'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"d2ab8982c46fca6cd8b966e1ffc88d33"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.034132'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:33,151 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/41a073cf-cf4f-49b7-8456-a492e8e11b7d?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:33,152 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:33,152 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:33,152 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:33,153 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:35,098 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:35,098 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:35,099 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:35,099 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:35,099 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:35,154 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:35 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'555'), (b'X-RateLimit-Reset', b'1764514055'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"678b3cb79b2f388fc1b94da5e3e01a0a"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.037768'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:35,155 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/0e4130f4-9ae4-46eb-9ffb-69c53068a8ca?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:35,156 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:35,156 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:35,156 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:35,157 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:37,098 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:37,099 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:37,099 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:37,099 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:37,099 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:37,162 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:37 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'609'), (b'X-RateLimit-Reset', b'1764514057'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"b98ae6c23a64d3b2ca418ce3068389f4"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.043007'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:37,163 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/bf1085b9-dafa-428b-baef-92db4189b99d?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:37,164 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:37,164 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:37,164 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:37,164 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:39,098 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:39,099 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:39,099 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:39,100 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:39,100 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:39,157 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:39 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'624'), (b'X-RateLimit-Reset', b'1764514059'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"1d656a13a81a1474e675cf10197a0e17"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.039799'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:39,158 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/a897adf5-d0b0-4827-9a88-90a3519a8a52?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:39,158 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:39,159 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:39,159 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:39,159 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:41,099 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:41,099 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:41,100 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:41,100 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:41,100 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:41,160 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:41 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'668'), (b'X-RateLimit-Reset', b'1764514061'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"610fffb2fdb4dc8e9ea21163d2aab62b"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.042915'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:41,161 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/f2e4b9f7-c451-4a27-adae-9b1e86fccda1?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:41,162 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:41,162 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:41,162 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:41,162 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:43,099 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:43,099 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:43,100 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:43,100 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:43,100 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:43,254 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:43 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'642'), (b'X-RateLimit-Reset', b'1764514063'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"44efcab44b119384bc64e2be4efa26f4"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.136160'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:43,255 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/c48136c0-1a49-42c5-af32-6206294b1937?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:43,256 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:43,256 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:43,257 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:43,257 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:45,099 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:45,100 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:45,100 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:45,100 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:45,101 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:45,158 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:45 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'583'), (b'X-RateLimit-Reset', b'1764514065'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"809babbfdf9d0ef62201d959a29154ec"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.039376'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:45,159 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/2b6146f7-7de7-4d79-a7db-ce88586153e6?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:45,159 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:45,160 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:45,160 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:45,160 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:47,099 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:47,100 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:47,100 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:47,100 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:47,100 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:47,158 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:47 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'654'), (b'X-RateLimit-Reset', b'1764514067'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"e5229e270242b030d742a43e3b552d84"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.040691'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:47,159 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/e44632b9-2d39-45e4-aab1-1bebeddc5c8c?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:47,160 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:47,160 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:47,161 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:47,161 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:49,100 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:49,101 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:49,102 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:49,102 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:49,102 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:49,322 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:49 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'632'), (b'X-RateLimit-Reset', b'1764514069'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"b77df0ebb4449ecb9a3872b7d83ed82f"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.202677'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:49,323 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/df3543df-dd02-4415-a92b-15ee3e3da451?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:49,324 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:49,324 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:49,325 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:49,325 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:51,100 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:51,100 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:51,100 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:51,101 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:51,101 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:51,274 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:51 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'567'), (b'X-RateLimit-Reset', b'1764514071'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"7bce7ef10693e8681c65886b1b32c30f"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.134559'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:51,275 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/80bc6033-c749-4497-a7db-b8105e89c013?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:51,276 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:51,276 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:51,276 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:51,277 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:53,100 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:53,101 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:53,101 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:53,101 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:53,101 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:53,200 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:53 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'627'), (b'X-RateLimit-Reset', b'1764514073'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"f44e707f83d38a598fdca93dc4c10e4a"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.080671'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:53,201 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/f8066fb5-8fd2-490c-ac09-11973104cc39?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:53,202 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:53,202 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:53,202 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:53,202 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:55,100 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:55,101 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:55,101 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:55,101 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:55,101 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:55,251 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:55 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'641'), (b'X-RateLimit-Reset', b'1764514075'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"f3e650a0e573df977d7bb68ad5fdd351"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.126016'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:55,252 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/84ce643b-6106-4808-b8d2-65ef72b43753?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:55,253 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:55,253 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:55,253 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:55,253 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:57,100 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:57,101 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:57,101 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:57,101 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:57,102 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:57,152 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:57 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'546'), (b'X-RateLimit-Reset', b'1764514077'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"5e77f291902f5541d7b1f0584cf9d4c1"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.032211'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:57,152 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/04601910-e48d-4b21-ae01-ae2b6423470f?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:57,153 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:57,153 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:57,154 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:57,154 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:47:59,100 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:59,100 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:47:59,100 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:47:59,100 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:47:59,100 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:47:59,164 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:47:59 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'645'), (b'X-RateLimit-Reset', b'1764514079'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"d8571f64255f12ceadc963f194fa0814"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.046465'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:47:59,164 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/dc6b33ac-c649-414d-bd5d-b6403d23969c?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:47:59,165 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:47:59,165 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:47:59,165 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:47:59,165 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:01,101 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:01,102 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:01,102 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:01,102 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:01,102 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:01,150 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:01 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'645'), (b'X-RateLimit-Reset', b'1764514081'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"5b0333d77f24167ffbae40143c869750"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.030553'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:01,151 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/c9fc8163-9039-4f30-b9e8-0d4ac781745e?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:01,151 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:01,152 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:01,152 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:01,152 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:03,101 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:03,102 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:03,102 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:03,102 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:03,102 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:03,182 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:03 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'656'), (b'X-RateLimit-Reset', b'1764514083'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"eb41309794c30c2eeac3effa7cdd8b96"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.061163'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:03,183 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/f7da47cf-e37e-4c3b-8207-0ad53f5e9d85?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:03,184 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:03,184 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:03,185 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:03,185 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:05,101 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:05,102 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:05,102 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:05,102 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:05,103 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:05,155 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:05 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'643'), (b'X-RateLimit-Reset', b'1764514085'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"fc9af1862fed3d0e994b7377993f9a21"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.033931'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:05,156 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/46fe768c-7b38-4147-9f02-815b9f0759e2?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:05,156 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:05,157 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:05,157 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:05,157 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:07,102 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:07,103 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:07,103 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:07,103 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:07,103 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:07,260 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:07 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'680'), (b'X-RateLimit-Reset', b'1764514087'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"86b7fb8eba617dde01c0f73ef8279356"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.139559'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:07,261 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/f1248820-11bf-4c35-8b70-0660b05325e5?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:07,262 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:07,262 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:07,263 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:07,263 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:09,101 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:09,101 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:09,101 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:09,101 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:09,102 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:09,163 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:09 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'641'), (b'X-RateLimit-Reset', b'1764514089'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"a022cbbc525bb764c65599b5c83ebb30"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.043252'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:09,164 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/40041b26-3edd-4ccc-aab4-32502638f145?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:09,164 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:09,165 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:09,165 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:09,165 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:11,102 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:11,103 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:11,103 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:11,103 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:11,103 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:11,152 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:11 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'637'), (b'X-RateLimit-Reset', b'1764514091'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"012a0e8e2c2f2dd4a40669a99f583379"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.030641'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:11,152 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/f50f9dd1-16f7-4fd6-9534-d19c0de4367c?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:11,153 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:11,153 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:11,154 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:11,154 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:13,103 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:13,103 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:13,104 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:13,104 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:13,104 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:13,289 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:13 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'690'), (b'X-RateLimit-Reset', b'1764514093'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"292a1da58f8e4aea1bd4ca5225531d34"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.143607'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:13,290 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/c3d7ed3b-05ab-4fd2-b70c-4068e5c3e1ba?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:13,290 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:13,291 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:13,291 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:13,291 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:15,103 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:15,103 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:15,104 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:15,104 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:15,104 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:15,150 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:15 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'640'), (b'X-RateLimit-Reset', b'1764514095'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"8cdbf054a4b1cffb5baf26859e50a9fd"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.027827'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:15,151 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/3b843653-3040-4f10-89c1-94dc40da27ed?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:15,151 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:15,152 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:15,152 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:15,152 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:17,103 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:17,104 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:17,104 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:17,104 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:17,104 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:17,156 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:17 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'661'), (b'X-RateLimit-Reset', b'1764514097'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"e724955d2f478fb3fcf620be0b513fdf"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.033752'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:17,157 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/5c5e6e29-a48c-4050-a0f8-898e0a92ef0b?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:17,158 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:17,159 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:17,159 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:17,159 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:19,103 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:19,104 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:19,104 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:19,104 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:19,105 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:19,260 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:19 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'653'), (b'X-RateLimit-Reset', b'1764514099'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"b0075b14327747d9a55c6188bc846766"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.135443'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:19,261 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/569d53df-94d6-4451-aa78-251b62429c77?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:19,261 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:19,261 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:19,262 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:19,262 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:21,104 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:21,104 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:21,104 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:21,105 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:21,105 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:21,309 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:21 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'644'), (b'X-RateLimit-Reset', b'1764514101'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"b05d9fff0f21e3d047ee005460e6427a"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.137329'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:21,310 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/ecfa6746-7bc4-4088-ace6-d209477bd63f?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:21,310 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:21,311 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:21,311 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:21,311 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:23,104 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:23,104 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:23,104 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:23,105 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:23,105 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:23,279 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:23 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'473'), (b'X-RateLimit-Reset', b'1764514103'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"b964e88d3b765ddd0ee88c545674c1bb"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.156114'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:23,280 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/2bb98783-c4e2-49a3-af3b-650ba7a8ec14?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:23,281 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:23,281 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:23,281 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:23,281 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:25,104 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:25,105 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:25,105 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:25,105 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:25,105 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:25,178 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:25 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'655'), (b'X-RateLimit-Reset', b'1764514105'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"21c5bb344dc8b72470d74d24c4259af9"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.054133'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:25,178 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/f0b50254-fafc-4f49-a56e-8961ad56aa09?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:25,179 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:25,179 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:25,180 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:25,180 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:27,104 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:27,105 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:27,105 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:27,106 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:27,106 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:27,158 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:27 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'612'), (b'X-RateLimit-Reset', b'1764514107'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"2e4ab83d2678f489e376e02122484486"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.033766'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:27,159 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/dd7e5d7b-9f61-468a-9ef2-7ddd7ef85478?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:27,159 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:27,160 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:27,160 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:27,160 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:29,105 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:29,105 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:29,105 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:29,106 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:29,106 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:29,189 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:29 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'665'), (b'X-RateLimit-Reset', b'1764514109'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"1d9544cab0b8876d9106950a9e79511c"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.065445'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:29,190 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/6de5e6f4-6b4e-4e44-ba8c-f7efe352e081?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:29,191 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:29,191 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:29,191 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:29,192 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:31,105 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:31,106 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:31,106 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:31,106 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:31,106 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:31,156 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:31 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'676'), (b'X-RateLimit-Reset', b'1764514111'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"d9a07056bb547127d78b79a9926d1a9c"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.031941'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:31,157 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/41371bec-026d-4870-be67-625f9b2551ca?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:31,158 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:31,158 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:31,159 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:31,159 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:33,105 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:33,106 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:33,106 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:33,106 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:33,106 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:33,158 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:33 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'504'), (b'X-RateLimit-Reset', b'1764514113'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"5845f4ed64662436acac83273329c52c"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.033834'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:33,158 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/adbab46f-fdfa-4784-b34a-fe7771af1d24?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:33,158 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:33,159 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:33,159 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:33,159 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:35,105 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:35,106 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:35,106 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:35,107 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:35,107 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:35,169 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:35 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'661'), (b'X-RateLimit-Reset', b'1764514115'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"0340b8d6d3f8072c787a98723dfa59c3"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.044588'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:35,170 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/d20f3dc3-0687-4832-a918-fbd2af7276a0?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:35,170 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:35,171 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:35,171 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:35,171 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:37,106 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:37,106 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:37,106 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:37,107 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:37,107 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:37,178 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:37 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'646'), (b'X-RateLimit-Reset', b'1764514117'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"0acfc681221cb41985789ff4cfd95bdd"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.053306'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:37,179 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/106d1527-d378-4e55-ba49-d18f8e63ae8a?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:37,179 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:37,180 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:37,180 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:37,180 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:39,106 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:39,106 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:39,107 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:39,107 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:39,107 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:39,160 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:39 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'649'), (b'X-RateLimit-Reset', b'1764514119'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"12eebf4a44b2dd12ce476c7fbf23bf14"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.033937'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:39,161 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/25953025-a984-4cff-8652-c4082c3ede37?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:39,162 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:39,162 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:39,162 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:39,162 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:41,105 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:41,105 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:41,105 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:41,105 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:41,105 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:41,165 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:41 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'639'), (b'X-RateLimit-Reset', b'1764514121'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"9c1a6c87da205239016990e4c09c700e"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.041575'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:41,166 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/225021ab-4e4d-41f9-8b04-1fb7abc124dd?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:41,166 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:41,167 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:41,167 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:41,167 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:43,105 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:43,106 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:43,106 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:43,106 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:43,106 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:43,337 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:43 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'484'), (b'X-RateLimit-Reset', b'1764514123'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"628a8dd49d0f159e3220af81093bb00d"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.138008'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:43,338 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/4f954e2a-2f44-41fe-98dc-946421051b24?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:43,339 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:43,339 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:43,339 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:43,340 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:45,107 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:45,107 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:45,107 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:45,108 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:45,108 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:45,179 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 30 Nov 2025 14:48:45 GMT'), (b'Content-Type', b'application/json; charset=utf-8'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Keep-Alive', b'timeout=15'), (b'Vary', b'Accept-Encoding'), (b'X-RateLimit-Limit', b'1200'), (b'X-RateLimit-Remaining', b'625'), (b'X-RateLimit-Reset', b'1764514125'), (b'Server', b'Plack::Handler::Starlet'), (b'ETag', b'W/"3e8d762f411a44a6342aff5ebd5c3233"'), (b'Access-Control-Allow-Origin', b'*'), (b'X-Runtime', b'0.053240'), (b'X-Cache-Status', b'MISS'), (b'Content-Encoding', b'gzip')])
+2025-11-30 15:48:45,180 - httpx - INFO - HTTP Request: GET https://musicbrainz.org/ws/2/recording/b4c0fd8d-38b4-4c64-ae48-5b0b28b91379?inc=artists%2Bisrcs%2Breleases%2Brelease-groups%2Burl-rels&fmt=json "HTTP/1.1 200 OK"
+2025-11-30 15:48:45,180 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:45,181 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:45,181 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:45,181 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:46,136 - httpcore.connection - DEBUG - connect_tcp.started host='api.discogs.com' port=443 local_address=None timeout=30.0 socket_options=None
+2025-11-30 15:48:46,154 - httpcore.connection - DEBUG - connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99b6bac0>
+2025-11-30 15:48:46,154 - httpcore.connection - DEBUG - start_tls.started ssl_context=<ssl.SSLContext object at 0x7f2e99b36e90> server_hostname='api.discogs.com' timeout=30.0
+2025-11-30 15:48:46,170 - httpcore.connection - DEBUG - start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x7f2e99f77450>
+2025-11-30 15:48:46,170 - httpcore.http11 - DEBUG - send_request_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:46,170 - httpcore.http11 - DEBUG - send_request_headers.complete
+2025-11-30 15:48:46,171 - httpcore.http11 - DEBUG - send_request_body.started request=<Request [b'GET']>
+2025-11-30 15:48:46,171 - httpcore.http11 - DEBUG - send_request_body.complete
+2025-11-30 15:48:46,171 - httpcore.http11 - DEBUG - receive_response_headers.started request=<Request [b'GET']>
+2025-11-30 15:48:46,380 - httpcore.http11 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 404, b'Not Found', [(b'Date', b'Sun, 30 Nov 2025 14:48:46 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'Content-Encoding', b'gzip'), (b'strict-transport-security', b'max-age=15552000'), (b'vary', b'Accept-Encoding'), (b'x-discogs-ratelimit', b'60'), (b'x-discogs-ratelimit-remaining', b'60'), (b'x-discogs-ratelimit-used', b'0'), (b'cf-cache-status', b'DYNAMIC'), (b'Set-Cookie', b'__cf_bm=Lu1ZQDeM65wW1Bf0RN1Dg2Uq9iEC.3mTSug_5jG8tHA-1764514126-1.0.1.1-Kc9tSN0TRhamotxMmDCNvvbmyih_d26JIS8OCeCT_ibuqbt68sevTv5XQqBmOJHjwWjjN4nj1zA6qiDKeb7DsEaUI.rZbh9fJhRTWcfG4Wc; path=/; expires=Sun, 30-Nov-25 15:18:46 GMT; domain=.discogs.com; HttpOnly; Secure; SameSite=None'), (b'Server', b'cloudflare'), (b'CF-RAY', b'9a6b25c8985dd251-AMS'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2025-11-30 15:48:46,381 - httpx - INFO - HTTP Request: GET https://api.discogs.com/releases/4934474 "HTTP/1.1 404 Not Found"
+2025-11-30 15:48:46,381 - httpcore.http11 - DEBUG - receive_response_body.started request=<Request [b'GET']>
+2025-11-30 15:48:46,381 - httpcore.http11 - DEBUG - receive_response_body.complete
+2025-11-30 15:48:46,381 - httpcore.http11 - DEBUG - response_closed.started
+2025-11-30 15:48:46,381 - httpcore.http11 - DEBUG - response_closed.complete
+2025-11-30 15:48:46,381 - chart_binder.resolve - DEBUG - Failed to fetch Discogs release 4934474: Client error '404 Not Found' for url 'https://api.discogs.com/releases/4934474'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+2025-11-30 15:48:46,447 - chart_binder.candidates - INFO - Starting title/artist/length discovery: title=Bohemian Rhapsody, artist=Queen, length=None
+2025-11-30 15:48:46,449 - chart_binder.candidates - DEBUG - Normalized: title_core=bohemian rhapsody, artist_core=queen
+2025-11-30 15:48:46,449 - chart_binder.candidates - DEBUG - Fuzzy search: title=bohemian rhapsody, artist=queen, length=None-None
+2025-11-30 15:48:46,449 - chart_binder.musicgraph - DEBUG - Fuzzy search: title=bohemian rhapsody, artist=queen, length=None-None, limit=100
+2025-11-30 15:48:46,449 - chart_binder.musicgraph - DEBUG - Fuzzy search returned 59 recordings
+2025-11-30 15:48:46,450 - chart_binder.candidates - INFO - Found 59 recording(s) via fuzzy match
+2025-11-30 15:48:46,450 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 3eea5cf7-feba-49bc-be94-1b155dbcb165
+2025-11-30 15:48:46,450 - chart_binder.candidates - INFO - Found 5 release group(s) for recording 3eea5cf7-feba-49bc-be94-1b155dbcb165
+2025-11-30 15:48:46,450 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f8842b89-faa8-495d-900c-9359fab2d372
+2025-11-30 15:48:46,450 - chart_binder.candidates - INFO - Found 1 release group(s) for recording f8842b89-faa8-495d-900c-9359fab2d372
+2025-11-30 15:48:46,450 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 545590aa-f6fe-4180-a447-e64d27ed55e5
+2025-11-30 15:48:46,451 - chart_binder.candidates - INFO - Found 2 release group(s) for recording 545590aa-f6fe-4180-a447-e64d27ed55e5
+2025-11-30 15:48:46,451 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: b9e3eb37-6335-4adf-8550-bdf7f84385e8
+2025-11-30 15:48:46,451 - chart_binder.candidates - INFO - Found 1 release group(s) for recording b9e3eb37-6335-4adf-8550-bdf7f84385e8
+2025-11-30 15:48:46,451 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 7e052a3f-4149-46d9-8fff-1da298f0ac40
+2025-11-30 15:48:46,451 - chart_binder.candidates - INFO - Found 2 release group(s) for recording 7e052a3f-4149-46d9-8fff-1da298f0ac40
+2025-11-30 15:48:46,451 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: discogs-recording-4188476
+2025-11-30 15:48:46,451 - chart_binder.candidates - INFO - Found 1 release group(s) for recording discogs-recording-4188476
+2025-11-30 15:48:46,451 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: discogs-recording-5278615
+2025-11-30 15:48:46,452 - chart_binder.candidates - INFO - Found 1 release group(s) for recording discogs-recording-5278615
+2025-11-30 15:48:46,452 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: discogs-recording-16442286
+2025-11-30 15:48:46,452 - chart_binder.candidates - INFO - Found 1 release group(s) for recording discogs-recording-16442286
+2025-11-30 15:48:46,452 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: discogs-recording-16621611
+2025-11-30 15:48:46,452 - chart_binder.candidates - INFO - Found 1 release group(s) for recording discogs-recording-16621611
+2025-11-30 15:48:46,452 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: a4803b45-0644-453f-aa1b-c762dc2f6941
+2025-11-30 15:48:46,452 - chart_binder.candidates - INFO - Found 1 release group(s) for recording a4803b45-0644-453f-aa1b-c762dc2f6941
+2025-11-30 15:48:46,452 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 40212eb6-01b0-41bb-ac71-4a4328871b5a
+2025-11-30 15:48:46,452 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 40212eb6-01b0-41bb-ac71-4a4328871b5a
+2025-11-30 15:48:46,452 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: b41f4846-5550-46de-84a0-ed4790f68bfe
+2025-11-30 15:48:46,453 - chart_binder.candidates - INFO - Found 1 release group(s) for recording b41f4846-5550-46de-84a0-ed4790f68bfe
+2025-11-30 15:48:46,453 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 809481c9-27ee-412d-b902-66659bbc7936
+2025-11-30 15:48:46,453 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 809481c9-27ee-412d-b902-66659bbc7936
+2025-11-30 15:48:46,453 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 30db48ed-437a-4462-a9e0-933ae18c0b42
+2025-11-30 15:48:46,453 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 30db48ed-437a-4462-a9e0-933ae18c0b42
+2025-11-30 15:48:46,453 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 3263ba2f-bf33-4129-b6d7-53f437269323
+2025-11-30 15:48:46,453 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 3263ba2f-bf33-4129-b6d7-53f437269323
+2025-11-30 15:48:46,453 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: b05cbcb3-8b83-4865-91d6-cef7cc042268
+2025-11-30 15:48:46,453 - chart_binder.candidates - INFO - Found 1 release group(s) for recording b05cbcb3-8b83-4865-91d6-cef7cc042268
+2025-11-30 15:48:46,453 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: c310229d-1e38-4eb2-b974-c67b3e2bcd3e
+2025-11-30 15:48:46,454 - chart_binder.candidates - INFO - Found 1 release group(s) for recording c310229d-1e38-4eb2-b974-c67b3e2bcd3e
+2025-11-30 15:48:46,454 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 31c6faf8-ea10-4725-b872-ba602a631197
+2025-11-30 15:48:46,454 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 31c6faf8-ea10-4725-b872-ba602a631197
+2025-11-30 15:48:46,454 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: bb6348f3-30f0-4463-afff-6091757ecdef
+2025-11-30 15:48:46,454 - chart_binder.candidates - INFO - Found 1 release group(s) for recording bb6348f3-30f0-4463-afff-6091757ecdef
+2025-11-30 15:48:46,454 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: d77da799-f157-46dd-b0fb-5c181383624e
+2025-11-30 15:48:46,454 - chart_binder.candidates - INFO - Found 1 release group(s) for recording d77da799-f157-46dd-b0fb-5c181383624e
+2025-11-30 15:48:46,454 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 79e6c130-6e1b-4bf9-b395-aaebf753bae3
+2025-11-30 15:48:46,454 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 79e6c130-6e1b-4bf9-b395-aaebf753bae3
+2025-11-30 15:48:46,454 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 5e45ef6c-1920-4949-b8fb-2347e1b33c0d
+2025-11-30 15:48:46,455 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 5e45ef6c-1920-4949-b8fb-2347e1b33c0d
+2025-11-30 15:48:46,455 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 41a073cf-cf4f-49b7-8456-a492e8e11b7d
+2025-11-30 15:48:46,455 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 41a073cf-cf4f-49b7-8456-a492e8e11b7d
+2025-11-30 15:48:46,455 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 0e4130f4-9ae4-46eb-9ffb-69c53068a8ca
+2025-11-30 15:48:46,455 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 0e4130f4-9ae4-46eb-9ffb-69c53068a8ca
+2025-11-30 15:48:46,455 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: bf1085b9-dafa-428b-baef-92db4189b99d
+2025-11-30 15:48:46,455 - chart_binder.candidates - INFO - Found 1 release group(s) for recording bf1085b9-dafa-428b-baef-92db4189b99d
+2025-11-30 15:48:46,455 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: a897adf5-d0b0-4827-9a88-90a3519a8a52
+2025-11-30 15:48:46,455 - chart_binder.candidates - INFO - Found 1 release group(s) for recording a897adf5-d0b0-4827-9a88-90a3519a8a52
+2025-11-30 15:48:46,456 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f2e4b9f7-c451-4a27-adae-9b1e86fccda1
+2025-11-30 15:48:46,456 - chart_binder.candidates - INFO - Found 1 release group(s) for recording f2e4b9f7-c451-4a27-adae-9b1e86fccda1
+2025-11-30 15:48:46,456 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: c48136c0-1a49-42c5-af32-6206294b1937
+2025-11-30 15:48:46,456 - chart_binder.candidates - INFO - Found 1 release group(s) for recording c48136c0-1a49-42c5-af32-6206294b1937
+2025-11-30 15:48:46,456 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 2b6146f7-7de7-4d79-a7db-ce88586153e6
+2025-11-30 15:48:46,456 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 2b6146f7-7de7-4d79-a7db-ce88586153e6
+2025-11-30 15:48:46,456 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: e44632b9-2d39-45e4-aab1-1bebeddc5c8c
+2025-11-30 15:48:46,456 - chart_binder.candidates - INFO - Found 1 release group(s) for recording e44632b9-2d39-45e4-aab1-1bebeddc5c8c
+2025-11-30 15:48:46,456 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: df3543df-dd02-4415-a92b-15ee3e3da451
+2025-11-30 15:48:46,456 - chart_binder.candidates - INFO - Found 1 release group(s) for recording df3543df-dd02-4415-a92b-15ee3e3da451
+2025-11-30 15:48:46,457 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 80bc6033-c749-4497-a7db-b8105e89c013
+2025-11-30 15:48:46,457 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 80bc6033-c749-4497-a7db-b8105e89c013
+2025-11-30 15:48:46,457 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f8066fb5-8fd2-490c-ac09-11973104cc39
+2025-11-30 15:48:46,457 - chart_binder.candidates - INFO - Found 1 release group(s) for recording f8066fb5-8fd2-490c-ac09-11973104cc39
+2025-11-30 15:48:46,457 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 84ce643b-6106-4808-b8d2-65ef72b43753
+2025-11-30 15:48:46,457 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 84ce643b-6106-4808-b8d2-65ef72b43753
+2025-11-30 15:48:46,457 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 04601910-e48d-4b21-ae01-ae2b6423470f
+2025-11-30 15:48:46,457 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 04601910-e48d-4b21-ae01-ae2b6423470f
+2025-11-30 15:48:46,457 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: dc6b33ac-c649-414d-bd5d-b6403d23969c
+2025-11-30 15:48:46,458 - chart_binder.candidates - INFO - Found 1 release group(s) for recording dc6b33ac-c649-414d-bd5d-b6403d23969c
+2025-11-30 15:48:46,458 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: c9fc8163-9039-4f30-b9e8-0d4ac781745e
+2025-11-30 15:48:46,458 - chart_binder.candidates - INFO - Found 1 release group(s) for recording c9fc8163-9039-4f30-b9e8-0d4ac781745e
+2025-11-30 15:48:46,458 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f7da47cf-e37e-4c3b-8207-0ad53f5e9d85
+2025-11-30 15:48:46,458 - chart_binder.candidates - INFO - Found 3 release group(s) for recording f7da47cf-e37e-4c3b-8207-0ad53f5e9d85
+2025-11-30 15:48:46,458 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 46fe768c-7b38-4147-9f02-815b9f0759e2
+2025-11-30 15:48:46,458 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 46fe768c-7b38-4147-9f02-815b9f0759e2
+2025-11-30 15:48:46,458 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f1248820-11bf-4c35-8b70-0660b05325e5
+2025-11-30 15:48:46,458 - chart_binder.candidates - INFO - Found 1 release group(s) for recording f1248820-11bf-4c35-8b70-0660b05325e5
+2025-11-30 15:48:46,458 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 40041b26-3edd-4ccc-aab4-32502638f145
+2025-11-30 15:48:46,459 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 40041b26-3edd-4ccc-aab4-32502638f145
+2025-11-30 15:48:46,459 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f50f9dd1-16f7-4fd6-9534-d19c0de4367c
+2025-11-30 15:48:46,459 - chart_binder.candidates - INFO - Found 1 release group(s) for recording f50f9dd1-16f7-4fd6-9534-d19c0de4367c
+2025-11-30 15:48:46,459 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: c3d7ed3b-05ab-4fd2-b70c-4068e5c3e1ba
+2025-11-30 15:48:46,459 - chart_binder.candidates - INFO - Found 1 release group(s) for recording c3d7ed3b-05ab-4fd2-b70c-4068e5c3e1ba
+2025-11-30 15:48:46,459 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 3b843653-3040-4f10-89c1-94dc40da27ed
+2025-11-30 15:48:46,459 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 3b843653-3040-4f10-89c1-94dc40da27ed
+2025-11-30 15:48:46,459 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 5c5e6e29-a48c-4050-a0f8-898e0a92ef0b
+2025-11-30 15:48:46,459 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 5c5e6e29-a48c-4050-a0f8-898e0a92ef0b
+2025-11-30 15:48:46,460 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 569d53df-94d6-4451-aa78-251b62429c77
+2025-11-30 15:48:46,460 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 569d53df-94d6-4451-aa78-251b62429c77
+2025-11-30 15:48:46,460 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: ecfa6746-7bc4-4088-ace6-d209477bd63f
+2025-11-30 15:48:46,460 - chart_binder.candidates - INFO - Found 1 release group(s) for recording ecfa6746-7bc4-4088-ace6-d209477bd63f
+2025-11-30 15:48:46,460 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 2bb98783-c4e2-49a3-af3b-650ba7a8ec14
+2025-11-30 15:48:46,460 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 2bb98783-c4e2-49a3-af3b-650ba7a8ec14
+2025-11-30 15:48:46,460 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: f0b50254-fafc-4f49-a56e-8961ad56aa09
+2025-11-30 15:48:46,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording f0b50254-fafc-4f49-a56e-8961ad56aa09
+2025-11-30 15:48:46,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: dd7e5d7b-9f61-468a-9ef2-7ddd7ef85478
+2025-11-30 15:48:46,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording dd7e5d7b-9f61-468a-9ef2-7ddd7ef85478
+2025-11-30 15:48:46,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 6de5e6f4-6b4e-4e44-ba8c-f7efe352e081
+2025-11-30 15:48:46,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 6de5e6f4-6b4e-4e44-ba8c-f7efe352e081
+2025-11-30 15:48:46,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 41371bec-026d-4870-be67-625f9b2551ca
+2025-11-30 15:48:46,461 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 41371bec-026d-4870-be67-625f9b2551ca
+2025-11-30 15:48:46,461 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: adbab46f-fdfa-4784-b34a-fe7771af1d24
+2025-11-30 15:48:46,462 - chart_binder.candidates - INFO - Found 1 release group(s) for recording adbab46f-fdfa-4784-b34a-fe7771af1d24
+2025-11-30 15:48:46,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: d20f3dc3-0687-4832-a918-fbd2af7276a0
+2025-11-30 15:48:46,462 - chart_binder.candidates - INFO - Found 1 release group(s) for recording d20f3dc3-0687-4832-a918-fbd2af7276a0
+2025-11-30 15:48:46,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 106d1527-d378-4e55-ba49-d18f8e63ae8a
+2025-11-30 15:48:46,462 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 106d1527-d378-4e55-ba49-d18f8e63ae8a
+2025-11-30 15:48:46,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 25953025-a984-4cff-8652-c4082c3ede37
+2025-11-30 15:48:46,462 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 25953025-a984-4cff-8652-c4082c3ede37
+2025-11-30 15:48:46,462 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 225021ab-4e4d-41f9-8b04-1fb7abc124dd
+2025-11-30 15:48:46,463 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 225021ab-4e4d-41f9-8b04-1fb7abc124dd
+2025-11-30 15:48:46,463 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: 4f954e2a-2f44-41fe-98dc-946421051b24
+2025-11-30 15:48:46,463 - chart_binder.candidates - INFO - Found 1 release group(s) for recording 4f954e2a-2f44-41fe-98dc-946421051b24
+2025-11-30 15:48:46,463 - chart_binder.candidates - DEBUG - Searching for release groups containing recording: b4c0fd8d-38b4-4c64-ae48-5b0b28b91379
+2025-11-30 15:48:46,463 - chart_binder.candidates - INFO - Found 1 release group(s) for recording b4c0fd8d-38b4-4c64-ae48-5b0b28b91379
+2025-11-30 15:48:46,463 - chart_binder.candidates - INFO - Title/artist/length discovery complete: found 67 candidates
+2025-11-30 15:48:46,463 - chart_binder.candidates - INFO - Building evidence bundle from 67 candidates
+2025-11-30 15:48:46,463 - chart_binder.candidates - DEBUG - Fetching artist data for 0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-30 15:48:46,463 - chart_binder.musicgraph - DEBUG - Querying artist: mbid=0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-30 15:48:46,463 - chart_binder.musicgraph - DEBUG - Artist query result: found
+2025-11-30 15:48:46,464 - chart_binder.candidates - INFO - Added artist: Queen
+2025-11-30 15:48:46,472 - chart_binder.candidates - INFO - Added 59 unique recording(s)
+2025-11-30 15:48:46,480 - chart_binder.candidates - INFO - Added 57 unique release group(s)
+2025-11-30 15:48:46,480 - chart_binder.candidates - DEBUG - Timeline facts: {'earliest_album_date': '1975-11-21'}
+2025-11-30 15:48:46,480 - chart_binder.candidates - INFO - Evidence bundle built: 59 recordings, 57 release groups, hash=531f9ef03ca6
+2025-11-30 15:48:46,654 - httpcore.connection - DEBUG - close.started
+2025-11-30 15:48:46,655 - httpcore.connection - DEBUG - close.complete
+2025-11-30 15:48:46,655 - httpcore.connection - DEBUG - close.started
+2025-11-30 15:48:46,655 - httpcore.connection - DEBUG - close.complete
+2025-11-30 15:48:46,656 - httpcore.connection - DEBUG - close.started
+2025-11-30 15:48:46,656 - httpcore.connection - DEBUG - close.complete
+2025-11-30 15:48:46,656 - httpcore.connection - DEBUG - close.started
+2025-11-30 15:48:46,656 - httpcore.connection - DEBUG - close.complete
+Query: Queen - Bohemian Rhapsody
+State: decided
+2025-11-30 15:48:46,671 - chart_binder.musicgraph - INFO - Initializing MusicGraphDB at musicgraph.sqlite
+2025-11-30 15:48:46,672 - chart_binder.musicgraph - DEBUG - MusicGraphDB initialization complete
+2025-11-30 15:48:46,673 - chart_binder.musicgraph - DEBUG - Querying artist: mbid=0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-30 15:48:46,674 - chart_binder.musicgraph - DEBUG - Artist query result: found
 
-∆ /mnt/music/Q/Queen/[1974] Queen - Sheer Heart Attack/02. Queen - Killer Queen.flac
-  Artist: Queen
-  State: indeterminate
-  Trace: evh=d331c282;crg=;rr=;src=mb;cfg=lw90,rg10
+Canonical Release Group (CRG):
+  Queen - A Night at the Opera
+  Type: Album | First Release: 1975-11-21
+  MBID: 6b47c9a0-b9e1-3df9-a5e8-50a6ce0dbdbd
+  Rule: CRG:EARLIEST_OFFICIAL
 
+Representative Release (RR):
+  A Night at the Opera
+  Date: 2001 | Country: US
+  MBID: 96e5dc55-fa8b-483e-a673-e04e1f4cfd2b
+  Rule: RR:WORLD_EARLIEST
+2025-11-30 15:48:46,676 - chart_binder.musicgraph - DEBUG - Querying artist: mbid=0383dadf-2a4e-4d10-a46a-e9e041da8eb3
+2025-11-30 15:48:46,677 - chart_binder.musicgraph - DEBUG - Artist query result: found
+
+Matched Recording:
+  Queen - Bohemian Rhapsody
+  MBID: 3eea5cf7-feba-49bc-be94-1b155dbcb165
+
+Decision Trace:
 Decision Trace
 ==================================================
 Ruleset Version: 1.0
-Evidence Hash: d331c282a565e763...
+Evidence Hash: 8549b3327a36afc4...
 Artist Origin Country: GB
 
 CRG Selection:
-  Rule Applied: unknown
+  Rule Applied: CRG:EARLIEST_OFFICIAL
+  First Release Date: 1975-11-21
 
 RR Selection:
+  Rule Applied: RR:WORLD_EARLIEST
+  Release Date: 2001
+  Country: US
 
-Candidates Considered: 88
-  1. Single RG c62156a9...
-      First date: 1974-10
-  2. Album RG 515b1954...
-      First date: 2004
-  3. Album RG 69ce61c8...
-      First date: 1981-11-03
-  4. Album RG e7ad7dc7...
-      First date: 1981
-  5. Single RG 178f6e5d...
-      First date: 1984
-
-Missing Facts:
-  - tie_between_8_release_groups_with_same_earliest_date
+Candidates Considered: 3363
+  1. Album RG dd758e99...
+      First date: 2007-07-10
+  2. Album RG 1528e521...
+      First date: 2020-01-15
+  3. Album RG 513f0d0f...
+      First date: 2002
+  4. Album RG 3903cc52...
+      First date: 2012-08-28
+  5. Album RG 62de3d64...
+      First date: 1993-02
 
 Config:
   Lead Window: 90 days
   Reissue Gap: 10 years
-
-Missing Facts:
-  - tie_between_8_release_groups_with_same_earliest_date
