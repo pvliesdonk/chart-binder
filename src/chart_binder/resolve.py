@@ -210,6 +210,9 @@ def resolve_artist_title(
         # Resolve
         decision = resolver.resolve(evidence_bundle)
 
+        # Log decision state for debugging
+        log.info(f"Resolver decision for {artist} - {title}: state={decision.state.value}, adjudicator={'present' if adjudicator else 'None'}")
+
         # Build initial result
         result = ResolutionResult(
             state=decision.state.value,
@@ -232,8 +235,13 @@ def resolve_artist_title(
                     break
 
         # LLM adjudication for INDETERMINATE decisions
+        if decision.state == DecisionState.INDETERMINATE:
+            if adjudicator:
+                log.info(f"Decision INDETERMINATE for {artist} - {title}, invoking LLM adjudication...")
+            else:
+                log.warning(f"Decision INDETERMINATE for {artist} - {title}, but no adjudicator available")
+
         if decision.state == DecisionState.INDETERMINATE and adjudicator:
-            log.info(f"Decision INDETERMINATE for {artist} - {title}, invoking LLM adjudication...")
             try:
                 from chart_binder.llm.adjudicator import AdjudicationOutcome
 
