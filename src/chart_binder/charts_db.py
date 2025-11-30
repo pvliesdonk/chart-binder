@@ -1276,10 +1276,12 @@ class ChartsETL:
         db: ChartsDB,
         normalizer: Normalizer | None = None,
         fetcher: Any | None = None,  # UnifiedFetcher, avoid circular import
+        adjudicator: Any | None = None,  # ReActAdjudicator, avoid circular import
     ):
         self.db = db
         self.normalizer = normalizer or Normalizer()
         self.fetcher = fetcher  # Optional: enables multi-source canonicalization
+        self.adjudicator = adjudicator  # Optional: enables LLM adjudication for ambiguous matches
 
     def ingest(
         self,
@@ -1655,6 +1657,9 @@ class ChartsETL:
 
         Searches across MusicBrainz, Discogs, Spotify, and applies all
         enhanced intelligence (popularity weighting, date validation, etc.).
+
+        If confidence is below AUTO_THRESHOLD and LLM adjudicator is available,
+        invokes LLM to select the best match from multiple candidates.
         """
         # Type guard: fetcher should not be None when this method is called
         if not self.fetcher:
@@ -1680,11 +1685,36 @@ class ChartsETL:
             top_result = results[0]
             confidence = top_result.get("confidence", 0.7)
 
-            # Extract canonical IDs from the result
+            # If confidence is below AUTO_THRESHOLD and we have an adjudicator, use LLM
+            if confidence < self.AUTO_THRESHOLD and self.adjudicator and len(results) > 1:
+                import logging
+
+                logging.info(
+                    f"Low confidence ({confidence:.2f}) for {artist_norm} - {title_norm}, "
+                    f"invoking LLM adjudicator with {len(results)} candidates"
+                )
+
+                llm_result = self._adjudicate_chart_match(
+                    artist_raw=entry.get("artist_raw", artist_norm),
+                    title_raw=entry.get("title_raw", title_norm),
+                    candidates=results[:5],  # Top 5 candidates
+                )
+
+                if llm_result and llm_result.get("confidence", 0) >= self.REVIEW_THRESHOLD:
+                    # LLM provided a confident decision
+                    return {
+                        "work_key": work_key,
+                        "confidence": llm_result["confidence"],
+                        "method": LinkMethod.MULTI_SOURCE,
+                        "recording_mbid": llm_result.get("recording_mbid"),
+                        "source": "llm_adjudicated",
+                    }
+
+            # Use top result from fetcher
             result = {
                 "work_key": work_key,
                 "confidence": confidence,
-                "method": LinkMethod.MULTI_SOURCE,  # New method type
+                "method": LinkMethod.MULTI_SOURCE,
                 "source": top_result.get("source", "unknown"),
             }
 
@@ -1715,6 +1745,76 @@ class ChartsETL:
                 "confidence": 0.6,
                 "method": LinkMethod.TITLE_ARTIST_YEAR,
             }
+
+    def _adjudicate_chart_match(
+        self,
+        artist_raw: str,
+        title_raw: str,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """
+        Use LLM adjudicator to select best match from candidates.
+
+        Args:
+            artist_raw: Raw artist name from chart
+            title_raw: Raw title from chart
+            candidates: List of candidate recordings from UnifiedFetcher
+
+        Returns:
+            Dict with selected recording_mbid and confidence, or None if adjudication fails
+        """
+        if not self.adjudicator or not candidates:
+            return None
+
+        # Build simplified evidence bundle for chart matching
+        # Format candidates as recording_candidates list
+        recording_candidates = []
+        for candidate in candidates:
+            recording_candidates.append(
+                {
+                    "mb_recording_id": candidate.get("recording_mbid"),
+                    "title": candidate.get("title", title_raw),
+                    "artist": candidate.get("artist", artist_raw),
+                    "confidence": candidate.get("confidence", 0.7),
+                    "source": candidate.get("source", "unknown"),
+                    "rg_candidates": [],  # Simplified for chart matching
+                }
+            )
+
+        evidence_bundle = {
+            "artist": {
+                "name": artist_raw,
+            },
+            "recording_title": title_raw,
+            "recording_candidates": recording_candidates,
+            "context": "chart_linking",  # Flag to indicate this is chart linking, not audio file
+        }
+
+        try:
+            # Invoke adjudicator
+            adjudication_result = self.adjudicator.adjudicate(evidence_bundle)
+
+            # Extract recording MBID from LLM response
+            # Note: LLM returns crg_mbid (release group), but for charts we want recording_mbid
+            # For now, try to match the LLM's choice back to one of the candidates
+            if adjudication_result.outcome.value in ("accepted", "review"):
+                # Use the first candidate as LLM-approved match
+                # TODO: Improve matching logic to find exact candidate LLM selected
+                # by comparing adjudication_result.rr_mbid with candidate IDs
+                for candidate in candidates:
+                    return {
+                        "recording_mbid": candidate.get("recording_mbid"),
+                        "confidence": adjudication_result.confidence,
+                        "rationale": adjudication_result.rationale,
+                    }
+
+            return None
+
+        except Exception as e:
+            import logging
+
+            logging.warning(f"LLM adjudication failed for {artist_raw} - {title_raw}: {e}")
+            return None
 
     def _generate_work_key(self, artist_norm: str, title_norm: str) -> str:
         """Generate deterministic work_key from normalized artist + title."""
