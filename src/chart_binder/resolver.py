@@ -298,7 +298,9 @@ class Resolver:
 
         Returns dict with: state, crg_mbid, rationale, and rule-specific metadata
         """
+        log.debug("=== _select_crg CALLED ===")
         recording_candidates = evidence_bundle.get("recording_candidates", [])
+        log.debug(f"Found {len(recording_candidates)} recording candidates")
 
         if not recording_candidates:
             return {
