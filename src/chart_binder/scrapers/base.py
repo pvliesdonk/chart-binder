@@ -126,24 +126,25 @@ EXPECTED_ENTRY_COUNTS: dict[str, int] = {
 # These songs legitimately have numbers as titles
 AUTHENTIC_NUMERIC_TITLES: frozenset[str] = frozenset(
     {
-        "1999",  # Prince
-        "1979",  # Smashing Pumpkins
-        "505",  # Arctic Monkeys
-        "1992",  # Various artists (Eros & Apollo, etc.)
-        "1985",  # Bowling for Soup
-        "1901",  # Phoenix
+        "1948",  # Van Dik Hout
         "1973",  # James Blunt
+        "1979",  # Smashing Pumpkins
+        "1985",  # Bowling for Soup
+        "1992",  # Various artists (Eros & Apollo, etc.)
+        "1999",  # Prince
+        "1901",  # Phoenix
         "2002",  # Anne-Marie
         "7",  # Catfish and the Bottlemen, Prince
+        "19",  # Adele (album)
+        "21",  # Adele (album)
         "22",  # Taylor Swift
         "25",  # Adele (album but could be title)
+        "30",  # Adele (album)
         "45",  # Shinedown
         "99",  # Barns Courtney
         "100",  # Various
-        "19",  # Adele (album)
-        "21",  # Adele (album)
-        "30",  # Adele (album)
         "311",  # Band name sometimes listed as title
+        "505",  # Arctic Monkeys
         "867",  # Part of "867-5309/Jenny" but could appear alone
         "10538",  # ELO "10538 Overture" sometimes truncated
     }
