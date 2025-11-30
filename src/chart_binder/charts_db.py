@@ -1546,6 +1546,7 @@ class ChartsETL:
         links = []
         processed = 0
         total_to_process = len(entries)
+        spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
         if progress:
             print(f"Processing {total_to_process} entries (out of {total_entries} total)")
@@ -1564,18 +1565,39 @@ class ChartsETL:
                 entry["artist_normalized"] = ""
                 entry["title_normalized"] = ""
 
-            # Show current entry being processed
+            # Show current entry being processed with spinner
             if progress:
                 rank = entry.get("rank", "?")
                 pct = ((processed + 1) / total_to_process) * 100
+                spinner = spinner_chars[processed % len(spinner_chars)]
                 status = (
-                    f"  [{processed + 1}/{total_to_process}] ({pct:.1f}%) "
-                    f"Rank {rank}: {artist_raw} - {title_raw}"
+                    f"  {spinner} [{processed + 1}/{total_to_process}] ({pct:.1f}%) "
+                    f"Working on rank {rank}: {artist_raw} - {title_raw}"
                 )
-                # Use \r to overwrite line, flush to show immediately
                 print(f"\r{status:<120}", end="", file=sys.stderr, flush=True)
 
             link_result = self._compute_link(entry, strategy)
+
+            # Show match result
+            if progress:
+                rank = entry.get("rank", "?")
+                pct = ((processed + 1) / total_to_process) * 100
+                work_key = link_result.get("work_key")
+                confidence = link_result.get("confidence", 0.0)
+                source = link_result.get("source", "unknown")
+
+                if work_key:
+                    match_icon = "✓"
+                    match_info = f"{source} ({confidence:.0%})"
+                else:
+                    match_icon = "✗"
+                    match_info = "no match"
+
+                status = (
+                    f"  {match_icon} [{processed + 1}/{total_to_process}] ({pct:.1f}%) "
+                    f"Rank {rank}: {artist_raw} - {title_raw} → {match_info}"
+                )
+                print(f"\r{status:<120}", file=sys.stderr, flush=True)
 
             link = ChartLink(
                 run_id=run_id,
