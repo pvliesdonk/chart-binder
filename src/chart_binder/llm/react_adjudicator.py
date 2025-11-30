@@ -617,13 +617,26 @@ class ReActAdjudicator:
                         lines.append(f"     - {' '.join(parts)}")
                 lines.append("")
 
-        # Timeline facts
-        timeline = evidence_bundle.get("timeline_facts", {})
-        if timeline:
-            lines.append("## Timeline Analysis")
+        # Compute timeline from FILTERED release groups (not pre-computed timeline_facts)
+        # This ensures timeline reflects only viable candidates after filtering
+        earliest_album = None
+        earliest_single = None
 
-            earliest_album = timeline.get("earliest_album_date")
-            earliest_single = timeline.get("earliest_single_date")
+        for rg in rg_map.values():
+            first_date = rg.get("first_release_date")
+            if not first_date:
+                continue
+
+            primary_type = rg.get("primary_type")
+            if primary_type == "Album":
+                if not earliest_album or first_date < earliest_album:
+                    earliest_album = first_date
+            elif primary_type in ["Single", "EP"]:
+                if not earliest_single or first_date < earliest_single:
+                    earliest_single = first_date
+
+        if earliest_single or earliest_album:
+            lines.append("## Timeline Analysis")
 
             if earliest_single:
                 lines.append(f"- Earliest Single/EP: {earliest_single}")
@@ -632,16 +645,8 @@ class ReActAdjudicator:
 
             if earliest_single and earliest_album:
                 try:
-                    from datetime import datetime
-
-                    def parse_date(date_str: str) -> datetime:
-                        if len(date_str) == 7:
-                            return datetime.strptime(date_str, "%Y-%m")
-                        else:
-                            return datetime.strptime(date_str, "%Y-%m-%d")
-
-                    single_date = parse_date(earliest_single)
-                    album_date = parse_date(earliest_album)
+                    single_date = self._parse_date(earliest_single)
+                    album_date = self._parse_date(earliest_album)
                     gap_days = (album_date - single_date).days
 
                     lines.append(f"\n**GAP: {gap_days} days**")

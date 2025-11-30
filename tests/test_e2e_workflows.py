@@ -178,9 +178,9 @@ class TestCandidateDiscoveryE2E:
         assert rec["flags"]["is_live"] is False
 
         assert len(evidence_bundle.release_groups) == 3
-        assert evidence_bundle.timeline_facts["earliest_album_date"] == "1965-08-06"
-        assert evidence_bundle.timeline_facts["earliest_single_date"] == "1965-09-13"
-        assert evidence_bundle.timeline_facts["earliest_soundtrack_date"] == "1965-08-06"
+
+        # Timeline facts no longer computed in evidence bundle (moved to resolver)
+        assert evidence_bundle.timeline_facts == {}
 
         # Verify provenance
         assert "MB" in evidence_bundle.provenance["sources_used"]

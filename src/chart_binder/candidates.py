@@ -177,8 +177,10 @@ class CandidateBuilder:
         - artist.begin_area_country, wikidata_qid
         - recording.flags (is_live, is_remix, etc.), isrcs
         - release_group.type, secondary_types, first_release_date, labels, countries
-        - timeline_facts (earliest_soundtrack_date, earliest_album_date, etc.)
         - provenance: sources_used, discovery_methods (sorted)
+
+        Note: timeline_facts is left empty. The resolver computes timeline from
+        filtered candidates to avoid pollution from compilations/re-releases.
         """
         logger.info(f"Building evidence bundle from {len(candidate_set.candidates)} candidates")
         bundle = EvidenceBundle()
@@ -314,39 +316,11 @@ class CandidateBuilder:
         bundle.release_groups = list(release_groups_map.values())
         logger.info(f"Added {len(bundle.release_groups)} unique release group(s)")
 
-        # Build timeline facts (earliest dates for different types)
-        timeline_facts = {}
-        earliest_album_date = None
-        earliest_single_date = None
-        earliest_soundtrack_date = None
-
-        for rg in bundle.release_groups:
-            first_date = rg.get("first_release_date")
-            if not first_date:
-                continue
-
-            rg_type = rg.get("type")
-            if rg_type == "Album":
-                if not earliest_album_date or first_date < earliest_album_date:
-                    earliest_album_date = first_date
-            elif rg_type == "Single":
-                if not earliest_single_date or first_date < earliest_single_date:
-                    earliest_single_date = first_date
-
-            # Check secondary types for Soundtrack
-            if "Soundtrack" in rg.get("secondary_types", []):
-                if not earliest_soundtrack_date or first_date < earliest_soundtrack_date:
-                    earliest_soundtrack_date = first_date
-
-        if earliest_album_date:
-            timeline_facts["earliest_album_date"] = earliest_album_date
-        if earliest_single_date:
-            timeline_facts["earliest_single_date"] = earliest_single_date
-        if earliest_soundtrack_date:
-            timeline_facts["earliest_soundtrack_date"] = earliest_soundtrack_date
-
-        bundle.timeline_facts = timeline_facts
-        logger.debug(f"Timeline facts: {timeline_facts}")
+        # Timeline facts removed - was computed from unfiltered data including compilations
+        # The resolver now computes timeline from filtered candidates when needed
+        # This ensures timeline is based on clean data without compilation pollution
+        bundle.timeline_facts = {}
+        logger.debug("Timeline facts computation moved to resolver (operates on filtered data)")
 
         bundle.provenance = {
             "sources_used": ["MB"],  # Currently only MusicBrainz
@@ -657,10 +631,8 @@ def test_candidate_builder_evidence_bundle(tmp_path):
     assert rg2["type"] == "Single"
     assert rg2["first_release_date"] == "1965-09-13"
 
-    # Verify timeline facts
-    assert bundle.timeline_facts["earliest_album_date"] == "1965-08-06"
-    assert bundle.timeline_facts["earliest_single_date"] == "1965-09-13"
-    assert bundle.timeline_facts["earliest_soundtrack_date"] == "1965-08-06"
+    # Timeline facts no longer computed in evidence bundle (moved to resolver)
+    assert bundle.timeline_facts == {}
 
     # Verify provenance
     assert "MB" in bundle.provenance["sources_used"]
