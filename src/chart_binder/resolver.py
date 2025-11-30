@@ -12,10 +12,13 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 class CRGRationale(StrEnum):
@@ -326,8 +329,10 @@ class Resolver:
 
         # Apply filtering early to reduce noise for all subsequent rules
         # This prevents rules from seeing compilations and late re-releases
+        log.debug(f"Applying pre-filtering to {len(all_rg_candidates)} RG candidates")
         all_rg_candidates = self._filter_compilation_exclusion(all_rg_candidates)
         all_rg_candidates = self._filter_late_rereleases(all_rg_candidates)
+        log.info(f"After filtering: {len(all_rg_candidates)} RG candidates remain")
 
         # Rule 1: Soundtrack Origin
         result = self._rule_soundtrack_origin(all_rg_candidates, trace)
@@ -609,8 +614,15 @@ class Resolver:
         # If filtering removes everything, keep compilations as fallback
         # (e.g., recording only appears on compilations)
         if not non_compilation:
+            log.debug(
+                f"Compilation filtering: {len(candidates)} candidates, all are compilations, keeping all"
+            )
             return candidates
 
+        log.info(
+            f"Compilation filtering: {len(candidates)} → {len(non_compilation)} "
+            f"(removed {len(candidates) - len(non_compilation)} compilations)"
+        )
         return non_compilation
 
     def _filter_late_rereleases(self, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -650,8 +662,15 @@ class Resolver:
 
         # If filtering removes everything, keep original candidates
         if not filtered:
+            log.debug(
+                f"Late re-release filtering: all candidates filtered out, keeping original {len(candidates)}"
+            )
             return candidates
 
+        log.info(
+            f"Late re-release filtering: {len(candidates_with_dates)} → {len(filtered)} "
+            f"(removed {len(candidates_with_dates) - len(filtered)} late re-releases)"
+        )
         return filtered
 
     def _rule_earliest_official(
