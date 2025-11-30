@@ -71,6 +71,7 @@ db.sqlite3-journal
 
 # Chart-binder SQLite databases (runtime artifacts)
 *.sqlite
+*.sqlite-journal
 .cache/
 
 # Flask stuff:
