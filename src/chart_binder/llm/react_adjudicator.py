@@ -538,7 +538,7 @@ class ReActAdjudicator:
             lines.append("## Timeline Analysis")
 
             earliest_album = timeline.get("earliest_album_date")
-            earliest_single = timeline.get("earliest_single_date")
+            earliest_single = timeline.get("earliest_single_ep_date")
 
             if earliest_single:
                 lines.append(f"- Earliest Single/EP: {earliest_single}")

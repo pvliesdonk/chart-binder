@@ -317,7 +317,7 @@ class CandidateBuilder:
         # Build timeline facts (earliest dates for different types)
         timeline_facts = {}
         earliest_album_date = None
-        earliest_single_date = None
+        earliest_single_ep_date = None
         earliest_soundtrack_date = None
 
         for rg in bundle.release_groups:
@@ -325,23 +325,28 @@ class CandidateBuilder:
             if not first_date:
                 continue
 
+            # Skip compilations for timeline analysis
+            secondary_types = rg.get("secondary_types", [])
+            if "Compilation" in secondary_types:
+                continue
+
             rg_type = rg.get("type")
             if rg_type == "Album":
                 if not earliest_album_date or first_date < earliest_album_date:
                     earliest_album_date = first_date
-            elif rg_type == "Single":
-                if not earliest_single_date or first_date < earliest_single_date:
-                    earliest_single_date = first_date
+            elif rg_type in ("Single", "EP"):
+                if not earliest_single_ep_date or first_date < earliest_single_ep_date:
+                    earliest_single_ep_date = first_date
 
             # Check secondary types for Soundtrack
-            if "Soundtrack" in rg.get("secondary_types", []):
+            if "Soundtrack" in secondary_types:
                 if not earliest_soundtrack_date or first_date < earliest_soundtrack_date:
                     earliest_soundtrack_date = first_date
 
         if earliest_album_date:
             timeline_facts["earliest_album_date"] = earliest_album_date
-        if earliest_single_date:
-            timeline_facts["earliest_single_date"] = earliest_single_date
+        if earliest_single_ep_date:
+            timeline_facts["earliest_single_ep_date"] = earliest_single_ep_date
         if earliest_soundtrack_date:
             timeline_facts["earliest_soundtrack_date"] = earliest_soundtrack_date
 
@@ -659,7 +664,7 @@ def test_candidate_builder_evidence_bundle(tmp_path):
 
     # Verify timeline facts
     assert bundle.timeline_facts["earliest_album_date"] == "1965-08-06"
-    assert bundle.timeline_facts["earliest_single_date"] == "1965-09-13"
+    assert bundle.timeline_facts["earliest_single_ep_date"] == "1965-09-13"
     assert bundle.timeline_facts["earliest_soundtrack_date"] == "1965-08-06"
 
     # Verify provenance

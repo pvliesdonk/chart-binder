@@ -179,7 +179,7 @@ class TestCandidateDiscoveryE2E:
 
         assert len(evidence_bundle.release_groups) == 3
         assert evidence_bundle.timeline_facts["earliest_album_date"] == "1965-08-06"
-        assert evidence_bundle.timeline_facts["earliest_single_date"] == "1965-09-13"
+        assert evidence_bundle.timeline_facts["earliest_single_ep_date"] == "1965-09-13"
         assert evidence_bundle.timeline_facts["earliest_soundtrack_date"] == "1965-08-06"
 
         # Verify provenance
@@ -333,7 +333,7 @@ class TestResolverE2E:
             ],
             "timeline_facts": {
                 "earliest_album_date": "1965-08-06",
-                "earliest_single_date": "1965-09-13",
+                "earliest_single_ep_date": "1965-09-13",
                 "earliest_soundtrack_date": "1965-08-06",
             },
             "provenance": {"sources_used": ["MB"]},

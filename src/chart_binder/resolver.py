@@ -433,11 +433,9 @@ class Resolver:
             # delta_days > 0 means album came AFTER single (lead single scenario)
             delta_days = (album_date - single_date).days
 
-            # Check if single is promo/lead
-            # TODO: Implement promo detection from secondary types, Discogs notes, pattern match
-            is_promo_single = False  # Placeholder
-
-            if 0 < delta_days <= self.config.lead_window_days and is_promo_single:
+            # Lead Window Rule: If single is within 90 days before album, prefer album
+            # This catches promo/lead singles that typically precede album releases
+            if 0 < delta_days <= self.config.lead_window_days:
                 # Select Album RG
                 album_candidates = [
                     c
@@ -585,12 +583,20 @@ class Resolver:
         """
         Rule 5: Compilation Exclusion.
 
-        Filter out Various-Artists compilations unless they are strictly earliest
-        with explicit premiere evidence.
+        Filter out compilations - they are never canonical release groups.
+        A recording's canonical home is always the original single/album, not
+        a "Greatest Hits" or other compilation.
         """
-        # TODO: Implement VA compilation detection and premiere evidence check
-        # For now, return candidates unchanged
-        return candidates
+        non_compilation = [
+            c for c in candidates if "Compilation" not in c.get("secondary_types", [])
+        ]
+
+        # If all candidates are compilations, fall through to INDETERMINATE
+        # (this would be unusual but possible for obscure recordings)
+        if not non_compilation:
+            return candidates
+
+        return non_compilation
 
     def _rule_earliest_official(
         self, candidates: list[dict[str, Any]], trace: DecisionTrace
