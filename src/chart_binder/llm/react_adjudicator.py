@@ -69,7 +69,7 @@ Final Answer:
   "crg_mbid": "selected release group MBID",
   "rr_mbid": "selected release MBID within CRG",
   "confidence": 0.0-1.0,
-  "rationale": "one-line summary, max 100 chars"
+  "rationale": "concise one-line explanation"
 }
 ```
 
