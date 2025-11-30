@@ -664,11 +664,13 @@ class Resolver:
         if len(unique_rg_mbids) > 1:
             # Group by primary type
             albums = [
-                c for c in earliest_candidates
+                c
+                for c in earliest_candidates
                 if c["primary_type"] == "Album" and c["rg_mbid"] in unique_rg_mbids
             ]
             singles_eps = [
-                c for c in earliest_candidates
+                c
+                for c in earliest_candidates
                 if c["primary_type"] in ("Single", "EP") and c["rg_mbid"] in unique_rg_mbids
             ]
 
