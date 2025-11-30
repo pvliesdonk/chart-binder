@@ -62,7 +62,11 @@ class SearxNGConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    """LLM adjudication configuration (Epic 13)."""
+    """LLM adjudication configuration (Epic 13).
+
+    Uses ReAct (Reasoning + Acting) pattern for tool calling via prompt engineering.
+    This approach is more transparent and works consistently across LLM providers.
+    """
 
     # Enable/disable LLM adjudication
     enabled: bool = Field(default=False)
