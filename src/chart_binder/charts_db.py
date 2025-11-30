@@ -1547,6 +1547,19 @@ class ChartsETL:
             print(f"Processing {total_to_process} entries (out of {total_entries} total)")
 
         for entry in entries:
+            # Normalize entry fields for linking
+            artist_raw = entry.get("artist_raw", "")
+            title_raw = entry.get("title_raw", "")
+
+            if artist_raw and title_raw:
+                artist_result = self.normalizer.normalize_artist(artist_raw)
+                title_result = self.normalizer.normalize_title(title_raw)
+                entry["artist_normalized"] = artist_result.core
+                entry["title_normalized"] = title_result.core
+            else:
+                entry["artist_normalized"] = ""
+                entry["title_normalized"] = ""
+
             link_result = self._compute_link(entry, strategy)
 
             link = ChartLink(
