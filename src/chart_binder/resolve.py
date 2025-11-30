@@ -233,7 +233,7 @@ def resolve_artist_title(
 
         # LLM adjudication for INDETERMINATE decisions
         if decision.state == DecisionState.INDETERMINATE and adjudicator:
-            log.debug("Decision is INDETERMINATE, attempting LLM adjudication...")
+            log.info(f"Decision INDETERMINATE for {artist} - {title}, invoking LLM adjudication...")
             try:
                 from chart_binder.llm.adjudicator import AdjudicationOutcome
 
@@ -259,11 +259,16 @@ def resolve_artist_title(
                     result.confidence = adjudication_result.confidence
 
                     log.info(
-                        f"LLM adjudicated: CRG={adjudication_result.crg_mbid}, "
+                        f"✓ LLM auto-accepted: CRG={adjudication_result.crg_mbid}, "
                         f"confidence={adjudication_result.confidence:.2f}"
                     )
+                else:
+                    log.info(
+                        f"⚠ LLM adjudication below threshold: "
+                        f"confidence={adjudication_result.confidence:.2f} < {auto_accept_threshold}"
+                    )
             except Exception as e:
-                log.warning(f"LLM adjudication failed: {e}")
+                log.warning(f"✗ LLM adjudication failed: {e}")
 
         return result
 

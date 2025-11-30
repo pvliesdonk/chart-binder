@@ -1587,8 +1587,16 @@ class ChartsETL:
                 source = link_result.get("source", "unknown")
 
                 if work_key:
-                    match_icon = "✓"
-                    match_info = f"{source} ({confidence:.0%})"
+                    # Show different icons based on source
+                    if source == "llm_adjudicated":
+                        match_icon = "🤖"
+                        match_info = f"LLM ({confidence:.0%})"
+                    elif source == "resolver_indeterminate":
+                        match_icon = "⚠"
+                        match_info = f"indeterminate ({confidence:.0%})"
+                    else:
+                        match_icon = "✓"
+                        match_info = f"{source} ({confidence:.0%})"
                 else:
                     match_icon = "✗"
                     match_info = "no match"
