@@ -348,6 +348,9 @@ class Resolver:
         # (This is more of a filter than a direct selection)
         all_rg_candidates = self._filter_compilation_exclusion(all_rg_candidates)
 
+        # Filter late re-releases (releases significantly later than earliest)
+        all_rg_candidates = self._filter_late_rereleases(all_rg_candidates)
+
         # Rule 6: Fallback by Earliest Official Date
         result = self._rule_earliest_official(all_rg_candidates, trace)
         if result:
@@ -433,11 +436,10 @@ class Resolver:
             # delta_days > 0 means album came AFTER single (lead single scenario)
             delta_days = (album_date - single_date).days
 
-            # Check if single is promo/lead
-            # TODO: Implement promo detection from secondary types, Discogs notes, pattern match
-            is_promo_single = False  # Placeholder
-
-            if 0 < delta_days <= self.config.lead_window_days and is_promo_single:
+            # If single came within lead window before album, prefer album
+            # This handles the common "lead single" pattern where a single is released
+            # to promote an upcoming album
+            if 0 < delta_days <= self.config.lead_window_days:
                 # Select Album RG
                 album_candidates = [
                     c
@@ -588,9 +590,57 @@ class Resolver:
         Filter out Various-Artists compilations unless they are strictly earliest
         with explicit premiere evidence.
         """
-        # TODO: Implement VA compilation detection and premiere evidence check
-        # For now, return candidates unchanged
-        return candidates
+        non_compilation = [
+            c for c in candidates if "Compilation" not in c.get("secondary_types", [])
+        ]
+
+        # If filtering removes everything, keep compilations as fallback
+        # (e.g., recording only appears on compilations)
+        if not non_compilation:
+            return candidates
+
+        return non_compilation
+
+    def _filter_late_rereleases(self, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Filter out re-releases that are significantly later than the earliest release.
+
+        A release is considered a "late re-release" if it's more than reissue_long_gap_years
+        (default 10 years) after the earliest release date.
+        """
+        candidates_with_dates = [c for c in candidates if c.get("first_release_date")]
+
+        if not candidates_with_dates:
+            return candidates
+
+        # Find earliest date
+        try:
+            earliest_date = min(
+                self._parse_date(c["first_release_date"]) for c in candidates_with_dates
+            )
+        except (ValueError, KeyError):
+            # If date parsing fails, return candidates unchanged
+            return candidates
+
+        # Filter out candidates significantly later than earliest
+        filtered = []
+        for c in candidates_with_dates:
+            try:
+                release_date = self._parse_date(c["first_release_date"])
+                years_gap = (release_date - earliest_date).days / 365.25
+
+                # Keep if within the reissue gap threshold
+                if years_gap <= self.config.reissue_long_gap_years:
+                    filtered.append(c)
+            except (ValueError, KeyError):
+                # If date parsing fails for this candidate, keep it
+                filtered.append(c)
+
+        # If filtering removes everything, keep original candidates
+        if not filtered:
+            return candidates
+
+        return filtered
 
     def _rule_earliest_official(
         self, candidates: list[dict[str, Any]], trace: DecisionTrace
