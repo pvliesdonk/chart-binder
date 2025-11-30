@@ -456,7 +456,7 @@ def resolve(
                         rg_artist = artist_data.get("name", "")
                 rg_type = rg_data.get("type", "")
                 rg_date = rg_data.get("first_release_date", "")
-                click.echo(f"\nCanonical Release Group (CRG):")
+                click.echo("\nCanonical Release Group (CRG):")
                 click.echo(f"  {rg_artist} - {rg_data.get('title', '')}")
                 click.echo(f"  Type: {rg_type} | First Release: {rg_date}")
                 click.echo(f"  MBID: {result.crg_mbid}")
@@ -470,7 +470,7 @@ def resolve(
             if rel_data:
                 rel_date = rel_data.get("release_date", rel_data.get("date", ""))
                 rel_country = rel_data.get("country", "")
-                click.echo(f"\nRepresentative Release (RR):")
+                click.echo("\nRepresentative Release (RR):")
                 click.echo(f"  {rel_data.get('title', '')}")
                 click.echo(f"  Date: {rel_date} | Country: {rel_country}")
                 click.echo(f"  MBID: {result.rr_mbid}")
@@ -486,7 +486,7 @@ def resolve(
                     artist_data = musicgraph_db.get_artist(rec_data["artist_mbid"])
                     if artist_data:
                         rec_artist = artist_data.get("name", "")
-                click.echo(f"\nMatched Recording:")
+                click.echo("\nMatched Recording:")
                 click.echo(f"  {rec_artist} - {rec_data.get('title', '')}")
                 click.echo(f"  MBID: {result.recording_mbid}")
 

@@ -3,6 +3,11 @@
 This module implements the ReAct (Reasoning + Acting) pattern via prompts rather than
 relying on native LLM tool calling APIs. This approach is more transparent, debuggable,
 and works across different LLM providers without API-specific fragility.
+
+Tools available:
+- Web search/fetch (via SearxNG)
+- MusicBrainz API queries (search artists, recordings, release groups)
+- Local database lookups with API fallback for MBIDs
 """
 
 from __future__ import annotations
@@ -21,10 +26,14 @@ from chart_binder.llm.adjudicator import (
     AdjudicationOutcome,
     AdjudicationResult,
 )
+from chart_binder.llm.search_tool import SearchTool
 
 if TYPE_CHECKING:
     from chart_binder.config import LLMConfig
+    from chart_binder.fetcher import UnifiedFetcher as Fetcher
     from chart_binder.llm.searxng import SearxNGSearchTool
+    from chart_binder.musicbrainz import MusicBrainzClient
+    from chart_binder.musicgraph import MusicGraphDB
 
 log = logging.getLogger(__name__)
 
@@ -33,17 +42,55 @@ REACT_SYSTEM_PROMPT = """You are a music canonicalization expert helping identif
 
 You have access to these tools:
 
-**Tool: web_search**
-Description: Search the web for information about music releases, artists, and recordings.
+**Tool: search_artist**
+Description: Search for artists by name. Returns artist info including MBID, country, disambiguation.
 Arguments:
-  - query (string): Search query (e.g., "Queen Killer Queen single release date 1974")
-Returns: Search results as formatted text with titles, URLs, and snippets
+  - query (string): Artist name to search
+Returns: List of matching artists with MBIDs
 
-**Tool: web_fetch**
-Description: Fetch and extract text content from a specific URL.
+**Tool: get_artist**
+Description: Get artist details by MBID. Fetches from API if not in local database.
 Arguments:
-  - url (string): URL to fetch (must be http:// or https://)
-Returns: Extracted text content from the page
+  - mbid (string): MusicBrainz artist ID
+Returns: Artist details including name, country, disambiguation
+
+**Tool: search_recording**
+Description: Search for recordings by title and artist. Searches MusicBrainz directly.
+Arguments:
+  - title (string): Recording title
+  - artist (string, optional): Artist name to filter results
+Returns: List of matching recordings with MBIDs
+
+**Tool: get_recording**
+Description: Get recording details by MBID. Fetches from API if not in local database.
+Arguments:
+  - mbid (string): MusicBrainz recording ID
+Returns: Recording details including title, artist, duration
+
+**Tool: search_release_group**
+Description: Search for release groups by title. Searches MusicBrainz directly.
+Arguments:
+  - title (string): Release group title
+  - artist (string, optional): Artist name to filter results
+Returns: List of matching release groups with MBIDs, types, and first release dates
+
+**Tool: get_release_group**
+Description: Get release group details by MBID. Fetches from API if not in local database.
+Arguments:
+  - mbid (string): MusicBrainz release group ID
+Returns: Release group details including title, type, first release date
+
+**Tool: get_releases_in_group**
+Description: Get all releases within a release group.
+Arguments:
+  - rg_mbid (string): Release group MBID
+Returns: List of releases with dates, countries, and MBIDs
+
+**Tool: web_search**
+Description: Search the web for general information about music releases.
+Arguments:
+  - query (string): Search query (e.g., "Queen Bohemian Rhapsody original release date")
+Returns: Search results with titles, URLs, and snippets
 
 ## How to Use Tools (ReAct Pattern)
 
@@ -78,7 +125,8 @@ Final Answer:
 - Always start with a Thought before taking an Action
 - You can use multiple tools in sequence if needed
 - Be concise but thorough in your reasoning
-- Include MBID values exactly as shown in the evidence
+- You CAN propose MBIDs not in the original evidence if you find better candidates
+- If the evidence seems wrong or incomplete, use tools to search for correct data
 - Confidence should reflect how certain you are (0.0 = not confident, 1.0 = very confident)
 """
 
@@ -94,6 +142,11 @@ class ReActAdjudicator:
     - Works consistently across providers
     - Less fragile than API-based tool calling
     - Easier to customize and extend
+
+    Tools available:
+    - MusicBrainz search/lookup (via SearchTool)
+    - Web search (via SearxNG)
+    - Local database with API fallback
     """
 
     MAX_ITERATIONS = 5  # Maximum reasoning/action loops
@@ -102,9 +155,23 @@ class ReActAdjudicator:
         self,
         config: LLMConfig,
         search_tool: SearxNGSearchTool | None = None,
+        music_search_tool: SearchTool | None = None,
+        db: MusicGraphDB | None = None,
+        fetcher: Fetcher | None = None,
+        mb_client: MusicBrainzClient | None = None,
     ):
         self.config = config
-        self.search_tool = search_tool
+        self.web_search_tool = search_tool  # Renamed for clarity
+
+        # Initialize music search tool with dependencies
+        if music_search_tool:
+            self.music_search_tool = music_search_tool
+        else:
+            self.music_search_tool = SearchTool(
+                music_graph_db=db,
+                fetcher=fetcher,
+                mb_client=mb_client,
+            )
 
         # Initialize LLM based on provider (no tool binding)
         if config.provider == "openai":
@@ -286,10 +353,29 @@ class ReActAdjudicator:
 
     def _execute_tool(self, tool_name: str, tool_args: dict[str, Any]) -> str:
         """Execute a tool and return the observation."""
+        # Web tools
         if tool_name == "web_search":
             return self._tool_web_search(tool_args.get("query", ""))
         elif tool_name == "web_fetch":
             return self._tool_web_fetch(tool_args.get("url", ""))
+
+        # Music search tools
+        elif tool_name == "search_artist":
+            return self._tool_search_artist(tool_args.get("query", ""))
+        elif tool_name == "get_artist":
+            return self._tool_get_artist(tool_args.get("mbid", ""))
+        elif tool_name == "search_recording":
+            return self._tool_search_recording(tool_args.get("title", ""), tool_args.get("artist"))
+        elif tool_name == "get_recording":
+            return self._tool_get_recording(tool_args.get("mbid", ""))
+        elif tool_name == "search_release_group":
+            return self._tool_search_release_group(
+                tool_args.get("title", ""), tool_args.get("artist")
+            )
+        elif tool_name == "get_release_group":
+            return self._tool_get_release_group(tool_args.get("mbid", ""))
+        elif tool_name == "get_releases_in_group":
+            return self._tool_get_releases_in_group(tool_args.get("rg_mbid", ""))
         else:
             return f"Error: Unknown tool '{tool_name}'"
 
@@ -298,12 +384,12 @@ class ReActAdjudicator:
         if not query:
             return "Error: Missing 'query' argument for web_search"
 
-        if self.search_tool is None:
+        if self.web_search_tool is None:
             return "Error: Web search is not available (SearxNG not configured)"
 
         try:
             log.debug(f"Tool execution: web_search('{query}')")
-            response = self.search_tool.search_web(query, max_results=5)
+            response = self.web_search_tool.search_web(query, max_results=5)
 
             if not response.results:
                 return f"No web results found for: {query}"
@@ -325,6 +411,97 @@ class ReActAdjudicator:
         except Exception as e:
             log.error(f"Web search tool error: {e}")
             return f"Error performing web search: {e}"
+
+    def _tool_search_artist(self, query: str) -> str:
+        """Execute search_artist tool."""
+        if not query:
+            return "Error: Missing 'query' argument for search_artist"
+
+        try:
+            log.debug(f"Tool execution: search_artist('{query}')")
+            response = self.music_search_tool.search_artist(query)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Artist search error: {e}")
+            return f"Error searching artists: {e}"
+
+    def _tool_get_artist(self, mbid: str) -> str:
+        """Execute get_artist tool."""
+        if not mbid:
+            return "Error: Missing 'mbid' argument for get_artist"
+
+        try:
+            log.debug(f"Tool execution: get_artist('{mbid}')")
+            response = self.music_search_tool.search_artist(mbid, by_mbid=True)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Artist lookup error: {e}")
+            return f"Error getting artist: {e}"
+
+    def _tool_search_recording(self, title: str, artist: str | None) -> str:
+        """Execute search_recording tool."""
+        if not title:
+            return "Error: Missing 'title' argument for search_recording"
+
+        try:
+            log.debug(f"Tool execution: search_recording('{title}', artist='{artist}')")
+            response = self.music_search_tool.search_recording(title, artist=artist)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Recording search error: {e}")
+            return f"Error searching recordings: {e}"
+
+    def _tool_get_recording(self, mbid: str) -> str:
+        """Execute get_recording tool."""
+        if not mbid:
+            return "Error: Missing 'mbid' argument for get_recording"
+
+        try:
+            log.debug(f"Tool execution: get_recording('{mbid}')")
+            response = self.music_search_tool.search_recording(mbid, by_mbid=True)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Recording lookup error: {e}")
+            return f"Error getting recording: {e}"
+
+    def _tool_search_release_group(self, title: str, artist: str | None) -> str:
+        """Execute search_release_group tool."""
+        if not title:
+            return "Error: Missing 'title' argument for search_release_group"
+
+        try:
+            log.debug(f"Tool execution: search_release_group('{title}', artist='{artist}')")
+            response = self.music_search_tool.search_release_group(title, artist=artist)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Release group search error: {e}")
+            return f"Error searching release groups: {e}"
+
+    def _tool_get_release_group(self, mbid: str) -> str:
+        """Execute get_release_group tool."""
+        if not mbid:
+            return "Error: Missing 'mbid' argument for get_release_group"
+
+        try:
+            log.debug(f"Tool execution: get_release_group('{mbid}')")
+            response = self.music_search_tool.search_release_group(mbid, by_mbid=True)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Release group lookup error: {e}")
+            return f"Error getting release group: {e}"
+
+    def _tool_get_releases_in_group(self, rg_mbid: str) -> str:
+        """Execute get_releases_in_group tool."""
+        if not rg_mbid:
+            return "Error: Missing 'rg_mbid' argument for get_releases_in_group"
+
+        try:
+            log.debug(f"Tool execution: get_releases_in_group('{rg_mbid}')")
+            response = self.music_search_tool.get_release_group_releases(rg_mbid)
+            return response.to_context_string()
+        except Exception as e:
+            log.error(f"Releases in group lookup error: {e}")
+            return f"Error getting releases: {e}"
 
     def _tool_web_fetch(self, url: str) -> str:
         """Execute web_fetch tool."""

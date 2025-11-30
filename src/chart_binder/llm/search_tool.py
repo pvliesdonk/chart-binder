@@ -1,8 +1,9 @@
 """Search tool for LLM adjudication in Chart-Binder.
 
 Provides a search interface that the LLM can use to gather additional
-context about recordings, artists, and releases from the music graph
-database and external sources.
+context about recordings, artists, and releases. Hybrid approach:
+- ID lookups: Local DB first, fetch from API if not found
+- Free text searches: Pass directly to external APIs (MusicBrainz, Discogs)
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from chart_binder.fetcher import UnifiedFetcher as Fetcher
+    from chart_binder.musicbrainz import MusicBrainzClient
     from chart_binder.musicgraph import MusicGraphDB
 
 log = logging.getLogger(__name__)
@@ -77,19 +80,29 @@ class SearchResponse:
 class SearchTool:
     """Search tool for LLM context gathering.
 
-    Provides methods to search the music graph database for:
+    Hybrid approach:
+    - ID lookups (MBID): Check local DB first, fetch from API if not found
+    - Free text searches: Pass directly to MusicBrainz API
+
+    Provides methods to search for:
     - Artists by name or MBID
     - Recordings by title, ISRC, or MBID
     - Release groups by title or MBID
-    - Releases by catalog number, barcode, or MBID
-    - Chart entries by title/artist
+    - Releases by MBID, barcode, or catalog number
 
     Results are formatted for LLM consumption.
     """
 
-    def __init__(self, music_graph_db: MusicGraphDB | None = None):
+    def __init__(
+        self,
+        music_graph_db: MusicGraphDB | None = None,
+        fetcher: Fetcher | None = None,
+        mb_client: MusicBrainzClient | None = None,
+    ):
         # Use Any type for dynamic attribute access
         self._db: Any = music_graph_db
+        self._fetcher: Any = fetcher
+        self._mb_client: Any = mb_client
         self._max_results = 10
 
     @property
@@ -101,6 +114,14 @@ class SearchTool:
         """Set the music graph database instance."""
         self._db = db
 
+    def set_fetcher(self, fetcher: Fetcher) -> None:
+        """Set the fetcher for API calls."""
+        self._fetcher = fetcher
+
+    def set_mb_client(self, mb_client: MusicBrainzClient) -> None:
+        """Set the MusicBrainz client for direct API calls."""
+        self._mb_client = mb_client
+
     def search_artist(
         self,
         query: str,
@@ -109,20 +130,31 @@ class SearchTool:
     ) -> SearchResponse:
         """Search for artists by name or MBID.
 
+        Hybrid approach:
+        - by_mbid=True: Check local DB, fetch from API if not found
+        - by_mbid=False: Search MusicBrainz API directly
+
         Args:
             query: Artist name or MBID to search for
-            by_mbid: If True, search by exact MBID match
+            by_mbid: If True, lookup by exact MBID
 
         Returns:
             SearchResponse with matching artists
         """
         results: list[SearchResult] = []
 
-        if self._db is None:
-            return SearchResponse(query=query, results=[], total_count=0)
-
         if by_mbid:
-            artist = self._db.get_artist(query)
+            # ID lookup: local first, then fetch
+            artist = self._db.get_artist(query) if self._db else None
+
+            if not artist and self._fetcher:
+                # Fetch from API and hydrate
+                try:
+                    self._fetcher.fetch_artist(query)
+                    artist = self._db.get_artist(query) if self._db else None
+                except Exception as e:
+                    log.debug(f"Failed to fetch artist {query}: {e}")
+
             if artist:
                 results.append(
                     SearchResult(
@@ -137,8 +169,27 @@ class SearchTool:
                     )
                 )
         else:
-            # Use search_artists if available, otherwise search by name directly
-            if hasattr(self._db, "search_artists"):
+            # Free text search: direct to MusicBrainz API
+            if self._mb_client:
+                try:
+                    api_results = self._mb_client.search_artists(query, limit=self._max_results)
+                    for artist in api_results:
+                        results.append(
+                            SearchResult(
+                                result_type=SearchResultType.ARTIST,
+                                id=artist.get("id", ""),
+                                title=artist.get("name", ""),
+                                metadata={
+                                    "sort_name": artist.get("sort-name"),
+                                    "country": artist.get("country"),
+                                    "disambiguation": artist.get("disambiguation"),
+                                },
+                            )
+                        )
+                except Exception as e:
+                    log.debug(f"MusicBrainz artist search failed: {e}")
+            elif self._db and hasattr(self._db, "search_artists"):
+                # Fallback to local DB search
                 artists = self._db.search_artists(query, limit=self._max_results)
                 for artist in artists:
                     results.append(
@@ -170,9 +221,14 @@ class SearchTool:
     ) -> SearchResponse:
         """Search for recordings by title, MBID, or ISRC.
 
+        Hybrid approach:
+        - by_mbid=True: Check local DB, fetch from API if not found
+        - by_isrc=True: Search MusicBrainz API by ISRC
+        - Otherwise: Search MusicBrainz API by title/artist
+
         Args:
             query: Recording title, MBID, or ISRC
-            by_mbid: Search by exact MBID
+            by_mbid: Lookup by exact MBID
             by_isrc: Search by ISRC code
             artist: Optional artist name filter (used with text search)
 
@@ -181,27 +237,66 @@ class SearchTool:
         """
         results: list[SearchResult] = []
 
-        if self._db is None:
-            return SearchResponse(query=query, results=[], total_count=0)
-
         if by_mbid:
-            recording = self._db.get_recording(query)
+            # ID lookup: local first, then fetch
+            recording = self._db.get_recording(query) if self._db else None
+
+            if not recording and self._fetcher:
+                try:
+                    self._fetcher.fetch_recording(query)
+                    recording = self._db.get_recording(query) if self._db else None
+                except Exception as e:
+                    log.debug(f"Failed to fetch recording {query}: {e}")
+
             if recording:
                 results.append(self._recording_to_result(recording))
+
         elif by_isrc:
-            # Use search_recordings_by_isrc if available
-            if hasattr(self._db, "search_recordings_by_isrc"):
-                recordings = self._db.search_recordings_by_isrc(query)
-                results.extend(
-                    self._recording_to_result(r) for r in recordings[: self._max_results]
-                )
+            # ISRC search: MusicBrainz API
+            if self._mb_client:
+                try:
+                    api_results = self._mb_client.search_recordings(
+                        isrc=query, limit=self._max_results
+                    )
+                    for rec in api_results:
+                        results.append(
+                            SearchResult(
+                                result_type=SearchResultType.RECORDING,
+                                id=rec.mbid,
+                                title=rec.title,
+                                metadata={
+                                    "artist": rec.artist_name,
+                                    "artist_mbid": rec.artist_mbid,
+                                    "duration_ms": rec.length_ms,
+                                    "isrcs": rec.isrcs,
+                                },
+                            )
+                        )
+                except Exception as e:
+                    log.debug(f"MusicBrainz ISRC search failed: {e}")
+
         else:
-            # Use search_recordings if available
-            if hasattr(self._db, "search_recordings"):
-                recordings = self._db.search_recordings(
-                    query, artist=artist, limit=self._max_results
-                )
-                results.extend(self._recording_to_result(r) for r in recordings)
+            # Free text search: MusicBrainz API
+            if self._mb_client:
+                try:
+                    api_results = self._mb_client.search_recordings(
+                        title=query, artist=artist, limit=self._max_results
+                    )
+                    for rec in api_results:
+                        results.append(
+                            SearchResult(
+                                result_type=SearchResultType.RECORDING,
+                                id=rec.mbid,
+                                title=rec.title,
+                                metadata={
+                                    "artist": rec.artist_name,
+                                    "artist_mbid": rec.artist_mbid,
+                                    "duration_ms": rec.length_ms,
+                                },
+                            )
+                        )
+                except Exception as e:
+                    log.debug(f"MusicBrainz recording search failed: {e}")
 
         return SearchResponse(
             query=query,
@@ -219,9 +314,13 @@ class SearchTool:
     ) -> SearchResponse:
         """Search for release groups by title or MBID.
 
+        Hybrid approach:
+        - by_mbid=True: Check local DB, fetch from API if not found
+        - Otherwise: Search MusicBrainz API by title/artist
+
         Args:
             query: Release group title or MBID
-            by_mbid: Search by exact MBID
+            by_mbid: Lookup by exact MBID
             artist: Optional artist name filter (used with text search)
 
         Returns:
@@ -229,20 +328,44 @@ class SearchTool:
         """
         results: list[SearchResult] = []
 
-        if self._db is None:
-            return SearchResponse(query=query, results=[], total_count=0)
-
         if by_mbid:
-            # Use get_release_group if available
-            if hasattr(self._db, "get_release_group"):
+            # ID lookup: local first, then fetch
+            rg = None
+            if self._db and hasattr(self._db, "get_release_group"):
                 rg = self._db.get_release_group(query)
-                if rg:
-                    results.append(self._release_group_to_result(rg))
+
+            if not rg and self._fetcher:
+                try:
+                    self._fetcher.fetch_release_group(query)
+                    if self._db:
+                        rg = self._db.get_release_group(query)
+                except Exception as e:
+                    log.debug(f"Failed to fetch release group {query}: {e}")
+
+            if rg:
+                results.append(self._release_group_to_result(rg))
         else:
-            # Use search_release_groups if available
-            if hasattr(self._db, "search_release_groups"):
-                rgs = self._db.search_release_groups(query, artist=artist, limit=self._max_results)
-                results.extend(self._release_group_to_result(rg) for rg in rgs)
+            # Free text search: MusicBrainz API
+            if self._mb_client and hasattr(self._mb_client, "search_release_groups"):
+                try:
+                    api_results = self._mb_client.search_release_groups(
+                        title=query, artist=artist, limit=self._max_results
+                    )
+                    for rg in api_results:
+                        results.append(
+                            SearchResult(
+                                result_type=SearchResultType.RELEASE_GROUP,
+                                id=rg.get("id", ""),
+                                title=rg.get("title", ""),
+                                metadata={
+                                    "primary_type": rg.get("primary-type"),
+                                    "secondary_types": rg.get("secondary-types", []),
+                                    "first_release_date": rg.get("first-release-date"),
+                                },
+                            )
+                        )
+                except Exception as e:
+                    log.debug(f"MusicBrainz release group search failed: {e}")
 
         return SearchResponse(
             query=query,
@@ -260,39 +383,71 @@ class SearchTool:
         by_catno: bool = False,
         release_group_mbid: str | None = None,
     ) -> SearchResponse:
-        """Search for releases by title, MBID, barcode, or catalog number.
+        """Search for releases by MBID, barcode, or catalog number.
+
+        Hybrid approach:
+        - by_mbid=True: Check local DB, fetch from API if not found
+        - by_barcode/by_catno: Search local DB (fetcher handles barcode lookups)
 
         Args:
-            query: Release title, MBID, barcode, or catalog number
-            by_mbid: Search by exact MBID
+            query: Release MBID, barcode, or catalog number
+            by_mbid: Lookup by exact MBID
             by_barcode: Search by barcode
             by_catno: Search by catalog number
-            release_group_mbid: Filter by release group (used with text search)
+            release_group_mbid: Filter by release group
 
         Returns:
             SearchResponse with matching releases
         """
         results: list[SearchResult] = []
 
-        if self._db is None:
-            return SearchResponse(query=query, results=[], total_count=0)
-
         if by_mbid:
-            # Use get_release if available
-            if hasattr(self._db, "get_release"):
+            # ID lookup: local first, then fetch
+            release = None
+            if self._db and hasattr(self._db, "get_release"):
                 release = self._db.get_release(query)
-                if release:
-                    results.append(self._release_to_result(release))
+
+            if not release and self._fetcher:
+                try:
+                    self._fetcher.fetch_release(query)
+                    if self._db:
+                        release = self._db.get_release(query)
+                except Exception as e:
+                    log.debug(f"Failed to fetch release {query}: {e}")
+
+            if release:
+                results.append(self._release_to_result(release))
+
         elif by_barcode:
-            if hasattr(self._db, "search_releases_by_barcode"):
-                releases = self._db.search_releases_by_barcode(query)
-                results.extend(self._release_to_result(r) for r in releases[: self._max_results])
+            # Barcode lookup via fetcher (searches multiple sources)
+            if self._fetcher:
+                try:
+                    search_results = self._fetcher.search_recordings(barcode=query)
+                    for r in search_results[: self._max_results]:
+                        if r.get("discogs_release_id"):
+                            results.append(
+                                SearchResult(
+                                    result_type=SearchResultType.RELEASE,
+                                    id=f"discogs:{r['discogs_release_id']}",
+                                    title=r.get("title", ""),
+                                    metadata={
+                                        "source": "discogs",
+                                        "artist": r.get("artist_name"),
+                                    },
+                                )
+                            )
+                except Exception as e:
+                    log.debug(f"Barcode search failed: {e}")
+
         elif by_catno:
-            if hasattr(self._db, "search_releases_by_catno"):
+            # Catalog number: local DB search
+            if self._db and hasattr(self._db, "search_releases_by_catno"):
                 releases = self._db.search_releases_by_catno(query)
                 results.extend(self._release_to_result(r) for r in releases[: self._max_results])
+
         else:
-            if hasattr(self._db, "search_releases"):
+            # General release search: local DB
+            if self._db and hasattr(self._db, "search_releases"):
                 releases = self._db.search_releases(
                     query,
                     release_group_mbid=release_group_mbid,
@@ -527,54 +682,42 @@ def test_search_tool_with_real_db_methods(tmp_path):
     db.upsert_recording_release("rec-1", "rel-1")
     db.upsert_recording_release("rec-2", "rel-2")
 
-    # Create search tool with database
+    # Create search tool with database only (no MB client for text searches)
     tool = SearchTool(music_graph_db=db)
 
-    # Test artist search by name
-    response = tool.search_artist("Beatles")
-    assert response.total_count >= 1
-    assert any(r.title == "The Beatles" for r in response.results)
-    assert any(r.metadata.get("country") == "GB" for r in response.results)
-
-    # Test artist search by MBID
+    # Test artist search by MBID (uses local DB)
     response = tool.search_artist("artist-1", by_mbid=True)
     assert response.total_count == 1
     assert response.results[0].title == "The Beatles"
     assert response.results[0].metadata["sort_name"] == "Beatles, The"
 
-    # Test recording search by ISRC
-    response = tool.search_recording("GBAYE0601315", by_isrc=True)
-    assert response.total_count == 1
-    assert response.results[0].title == "Yesterday"
-
-    # Test recording search by MBID
+    # Test recording search by MBID (uses local DB)
     response = tool.search_recording("rec-2", by_mbid=True)
     assert response.total_count == 1
     assert response.results[0].title == "Hey Jude"
 
-    # Test release group search
-    response = tool.search_release_group("Abbey", artist="Beatles")
-    assert response.total_count >= 1
-    assert any(r.title == "Abbey Road" for r in response.results)
-
-    # Test release group search by MBID
+    # Test release group search by MBID (uses local DB)
     response = tool.search_release_group("rg-1", by_mbid=True)
     assert response.total_count == 1
     assert response.results[0].title == "Help!"
 
-    # Test get releases in group
+    # Test get releases in group (uses local DB)
     response = tool.get_release_group_releases("rg-1")
     assert response.total_count >= 1
     assert any(r.title == "Help!" for r in response.results)
 
-    # Test get release groups for recording
+    # Test get release groups for recording (uses local DB)
     response = tool.get_recording_release_groups("rec-1")
     assert response.total_count >= 1
     assert any(r.title == "Help!" for r in response.results)
 
+    # Note: Text searches (search_artist, search_recording without by_mbid,
+    # search_release_group without by_mbid, by_isrc) now go to MusicBrainz API
+    # and are not tested here without a mock MB client
+
 
 def test_search_tool_format_for_llm_multiple_searches(tmp_path):
-    """Test format_for_llm with multiple search types."""
+    """Test format_for_llm with multiple search types using MBID lookups."""
     from chart_binder.musicgraph import MusicGraphDB
 
     # Create a populated database
@@ -586,11 +729,10 @@ def test_search_tool_format_for_llm_multiple_searches(tmp_path):
 
     tool = SearchTool(music_graph_db=db)
 
-    # Perform multiple types of searches
-    artist_search = tool.search_artist("Beatles")
-    # Search by MBID since text search requires search_recordings method
+    # Use MBID lookups (text searches require MB client)
+    artist_search = tool.search_artist("artist-1", by_mbid=True)
     recording_search = tool.search_recording("rec-1", by_mbid=True)
-    rg_search = tool.search_release_group("Help!")
+    rg_search = tool.search_release_group("rg-1", by_mbid=True)
 
     # Format all searches together
     searches = [

@@ -656,11 +656,16 @@ class TestSearchToolE2E:
         return db
 
     def test_search_tool_full_workflow(self, populated_db):
-        """Test SearchTool with all search methods against populated DB."""
+        """Test SearchTool with MBID lookups against populated DB.
+
+        Note: With the hybrid approach, MBID lookups use local DB,
+        while text searches and ISRC searches go to external APIs.
+        This test only covers local DB operations (MBID lookups).
+        """
         tool = SearchTool(populated_db)
 
-        # Test 1: Search artist by name
-        response = tool.search_artist("Beatles")
+        # Test 1: Search artist by MBID (local DB)
+        response = tool.search_artist("artist-beatles", by_mbid=True)
         assert response.total_count == 1
         assert response.results[0].title == "The Beatles"
         assert response.results[0].metadata["country"] == "GB"
@@ -670,41 +675,39 @@ class TestSearchToolE2E:
         assert response.total_count == 1
         assert response.results[0].title == "The Rolling Stones"
 
-        # Test 3: Search recording by ISRC
-        response = tool.search_recording("GBAYE0601315", by_isrc=True)
-        assert response.total_count == 1
-        assert response.results[0].title == "Yesterday"
-
-        # Test 4: Search recording by MBID
+        # Test 3: Search recording by MBID (local DB)
         response = tool.search_recording("rec-help", by_mbid=True)
         assert response.total_count == 1
         assert response.results[0].title == "Help!"
 
-        # Test 5: Search release group by MBID
+        # Test 4: Search release group by MBID (local DB)
         response = tool.search_release_group("rg-help", by_mbid=True)
         assert response.total_count == 1
         assert response.results[0].title == "Help!"
         assert response.results[0].metadata["primary_type"] == "Album"
 
-        # Test 6: Search release by MBID
+        # Test 5: Search release by MBID (local DB)
         response = tool.search_release("rel-help-uk", by_mbid=True)
         assert response.total_count == 1
         assert response.results[0].title == "Help!"
         assert response.results[0].metadata["country"] == "GB"
         assert response.results[0].metadata["label"] == "Parlophone"
 
-        # Test 7: Get release group releases
+        # Test 6: Get release group releases (local DB)
         response = tool.get_release_group_releases("rg-help")
         assert response.total_count == 1
         assert response.results[0].id == "rel-help-uk"
+
+        # Note: Text searches (search_artist("Beatles"), search_recording by title)
+        # and ISRC searches now go to MusicBrainz API and require an MB client
 
     def test_search_tool_context_formatting(self, populated_db):
         """Test that search results are formatted correctly for LLM context."""
         tool = SearchTool(populated_db)
 
-        # Perform multiple searches
-        artist_response = tool.search_artist("Beatles")
-        recording_response = tool.search_recording("GBAYE0601315", by_isrc=True)
+        # Use MBID lookups (text searches now require MB client)
+        artist_response = tool.search_artist("artist-beatles", by_mbid=True)
+        recording_response = tool.search_recording("rec-yesterday", by_mbid=True)
 
         # Format for LLM
         searches = [
