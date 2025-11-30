@@ -475,6 +475,130 @@ class UnifiedFetcher:
             },
         }
 
+    def discover_siblings_via_work(
+        self, recording_mbid: str, artist_mbid: str | None = None
+    ) -> list[str]:
+        """
+        Discover sibling recordings via the Work entity.
+
+        This provides DETERMINISTIC discovery:
+        1. Get the work linked to this recording
+        2. Browse ALL recordings linked to that work
+        3. Filter to same artist (to exclude covers)
+
+        Unlike search (which returns different subsets), browse is deterministic.
+
+        Note: Work entity has limitations:
+        - Covers link to same work (filtered by artist_mbid)
+        - Medleys may link to multiple works
+        - Live versions link to same work (may or may not be desired)
+        - Not all recordings have work relationships
+
+        Args:
+            recording_mbid: A recording MBID to use as starting point
+            artist_mbid: If provided, filter to recordings by this artist only
+
+        Returns:
+            List of sibling recording MBIDs by the same artist
+        """
+        if self.config.mode == FetchMode.OFFLINE:
+            return [recording_mbid]  # Can't discover in offline mode
+
+        try:
+            # Get work relationship from the recording
+            data = self.mb_client.get_recording_with_work(recording_mbid)
+
+            # Extract artist MBID if not provided
+            if not artist_mbid and "artist-credit" in data:
+                for credit in data.get("artist-credit", []):
+                    if isinstance(credit, dict) and "artist" in credit:
+                        artist_mbid = credit["artist"].get("id")
+                        break
+
+            # Find work MBID from relations
+            work_mbid = None
+            relations = data.get("relations", [])
+            for rel in relations:
+                if rel.get("type") == "performance" and "work" in rel:
+                    work_mbid = rel["work"].get("id")
+                    break
+
+            if not work_mbid:
+                # No work linked - can't discover siblings
+                return [recording_mbid]
+
+            # Browse ALL recordings of this work (deterministic!)
+            sibling_recordings = self.mb_client.browse_all_recordings_by_work(
+                work_mbid,
+                max_recordings=200,  # Safety limit
+            )
+
+            # Filter by artist to exclude covers
+            sibling_mbids = []
+            for rec in sibling_recordings:
+                rec_id = rec.get("id")
+                if not rec_id:
+                    continue
+
+                # Check if this recording is by the same artist
+                if artist_mbid:
+                    rec_artist_mbid = None
+                    for credit in rec.get("artist-credit", []):
+                        if isinstance(credit, dict) and "artist" in credit:
+                            rec_artist_mbid = credit["artist"].get("id")
+                            break
+                    if rec_artist_mbid != artist_mbid:
+                        continue  # Skip - different artist (likely a cover)
+
+                sibling_mbids.append(rec_id)
+
+            # Ensure the original is included
+            if recording_mbid not in sibling_mbids:
+                sibling_mbids.insert(0, recording_mbid)
+
+            return sibling_mbids
+
+        except Exception as e:
+            import logging
+
+            logging.warning(f"Work-based discovery failed for {recording_mbid}: {e}")
+            return [recording_mbid]
+
+    def hydrate_recordings_via_work(
+        self, seed_recording_mbid: str, artist_mbid: str | None = None, max_hydrate: int = 20
+    ) -> list[str]:
+        """
+        Discover and hydrate sibling recordings via Work entity.
+
+        This is the main entry point for deterministic discovery:
+        1. Use seed recording to find the Work
+        2. Browse all recordings of the Work (same artist only)
+        3. Hydrate top N recordings
+
+        Args:
+            seed_recording_mbid: Starting recording MBID
+            artist_mbid: Filter to this artist only (excludes covers)
+            max_hydrate: Maximum recordings to hydrate (default 20)
+
+        Returns:
+            List of hydrated recording MBIDs
+        """
+        # Discover all siblings by same artist
+        sibling_mbids = self.discover_siblings_via_work(seed_recording_mbid, artist_mbid)
+
+        # Hydrate up to max_hydrate
+        hydrated = []
+        for mbid in sibling_mbids[:max_hydrate]:
+            try:
+                self.fetch_recording(mbid)
+                hydrated.append(mbid)
+            except Exception as e:
+                import logging
+
+                logging.debug(f"Failed to hydrate sibling recording {mbid}: {e}")
+
+        return hydrated
+
     def _extract_wikidata_qid(self, entity_data: dict[str, Any]) -> str | None:
         """
         Extract Wikidata QID from MusicBrainz entity URL relationships.

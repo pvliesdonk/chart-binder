@@ -237,6 +237,69 @@ class MusicBrainzClient:
         params = {"inc": "artists+isrcs+releases+release-groups+url-rels"}
         return self._request(f"recording/{mbid}", params)
 
+    def get_recording_with_work(self, mbid: str) -> dict[str, Any]:
+        """
+        Get recording with work relationships.
+
+        Returns raw API response including work-rels which links
+        the recording to its abstract composition (work).
+        """
+        params = {"inc": "artists+work-rels"}
+        return self._request(f"recording/{mbid}", params)
+
+    def browse_recordings_by_work(
+        self, work_mbid: str, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """
+        Browse all recordings linked to a work.
+
+        This is deterministic - returns ALL recordings of a composition,
+        unlike search which returns relevance-sorted subsets.
+
+        Args:
+            work_mbid: MusicBrainz work ID
+            limit: Max results per page (max 100)
+            offset: Pagination offset
+
+        Returns:
+            List of recording dicts with basic info
+        """
+        params = {
+            "work": work_mbid,
+            "limit": str(min(limit, 100)),
+            "offset": str(offset),
+        }
+        data = self._request("recording", params)
+        return data.get("recordings", [])
+
+    def browse_all_recordings_by_work(
+        self, work_mbid: str, max_recordings: int = 500
+    ) -> list[dict[str, Any]]:
+        """
+        Browse ALL recordings linked to a work, handling pagination.
+
+        Args:
+            work_mbid: MusicBrainz work ID
+            max_recordings: Safety limit to prevent runaway queries
+
+        Returns:
+            List of all recording dicts
+        """
+        all_recordings: list[dict[str, Any]] = []
+        offset = 0
+        limit = 100
+
+        while len(all_recordings) < max_recordings:
+            batch = self.browse_recordings_by_work(work_mbid, limit=limit, offset=offset)
+            if not batch:
+                break
+            all_recordings.extend(batch)
+            if len(batch) < limit:
+                break  # Last page
+            offset += limit
+
+        return all_recordings[:max_recordings]
+
     def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:
         """
         Get release group by MBID.

@@ -159,12 +159,35 @@ def resolve_artist_title(
         discogs_results = [r for r in search_results if r.get("discogs_release_id")]
         spotify_results = [r for r in search_results if r.get("spotify_track_id")]
 
+        # Track artist MBID for work-based discovery
+        artist_mbid_for_work: str | None = None
+
         for result in mb_results[:5]:
             mbid = result["recording_mbid"]
             try:
-                fetcher.fetch_recording(mbid)
+                fetched = fetcher.fetch_recording(mbid)
+                # Capture artist MBID from first successful fetch
+                if not artist_mbid_for_work and fetched:
+                    rec_data = fetched.get("recording", {})
+                    if "artist-credit" in rec_data:
+                        for credit in rec_data.get("artist-credit", []):
+                            if isinstance(credit, dict) and "artist" in credit:
+                                artist_mbid_for_work = credit["artist"].get("id")
+                                break
             except Exception as e:
                 log.debug(f"Failed to fetch MB recording {mbid}: {e}")
+
+        # Work-based discovery: find siblings of first recording (deterministic)
+        # This augments non-deterministic search with complete sibling discovery
+        if mb_results and artist_mbid_for_work:
+            seed_mbid = mb_results[0]["recording_mbid"]
+            try:
+                siblings = fetcher.hydrate_recordings_via_work(
+                    seed_mbid, artist_mbid=artist_mbid_for_work, max_hydrate=15
+                )
+                log.debug(f"Work-based discovery found {len(siblings)} sibling recordings")
+            except Exception as e:
+                log.debug(f"Work-based discovery failed: {e}")
 
         for result in discogs_results[:5]:
             discogs_id = result["discogs_release_id"]
