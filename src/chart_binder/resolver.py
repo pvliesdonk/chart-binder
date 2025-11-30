@@ -418,9 +418,23 @@ class Resolver:
         - 2A: Album came first within lead window → CRG:ALBUM_LEAD_WINDOW
         - 2B: Single came first outside window → CRG:SINGLE_TRUE_PREMIERE
         """
-        timeline_facts = evidence_bundle.get("timeline_facts", {})
-        earliest_album_date = timeline_facts.get("earliest_album_date")
-        earliest_single_ep_date = timeline_facts.get("earliest_single_ep_date")
+        # Compute timeline from FILTERED candidates (not pre-computed timeline_facts)
+        # This ensures we don't use dates from compilations that were filtered out
+        earliest_album_date = None
+        earliest_single_ep_date = None
+
+        for c in candidates:
+            first_date = c.get("first_release_date")
+            if not first_date:
+                continue
+
+            primary_type = c.get("primary_type")
+            if primary_type == "Album":
+                if not earliest_album_date or first_date < earliest_album_date:
+                    earliest_album_date = first_date
+            elif primary_type in ["Single", "EP"]:
+                if not earliest_single_ep_date or first_date < earliest_single_ep_date:
+                    earliest_single_ep_date = first_date
 
         if not earliest_album_date and not earliest_single_ep_date:
             return None
