@@ -323,6 +323,71 @@ def test_crg_rule_6_earliest_official(resolver):
     assert decision.decision_trace.crg_selection["first_release_date"] == "1980-01-15"
 
 
+def test_crg_album_same_date_tiebreaker(resolver):
+    """
+    Tie-breaker: Album over Single when same earliest date.
+
+    When Album and Single have same year-precision date (e.g., "1969"),
+    prefer Album since same date implies single is likely within the
+    90-day lead window. This is the "Alors je chante" scenario.
+    """
+    evidence_bundle = {
+        "artist": {
+            "mb_artist_id": "artist-1",
+            "name": "Rika Zaraï",
+            "begin_area_country": "IL",
+        },
+        "recording_candidates": [
+            {
+                "mb_recording_id": "rec-1",
+                "title": "Alors je chante",
+                "rg_candidates": [
+                    {
+                        "mb_rg_id": "rg-album",
+                        "title": "Alors je chante",
+                        "primary_type": "Album",
+                        "first_release_date": "1969",  # Year-only precision
+                        "releases": [
+                            {
+                                "mb_release_id": "rel-album",
+                                "date": "1969",
+                                "country": "FR",
+                                "flags": {"is_official": True},
+                            }
+                        ],
+                    },
+                    {
+                        "mb_rg_id": "rg-single",
+                        "title": "Alors je chante",
+                        "primary_type": "Single",
+                        "first_release_date": "1969",  # Same year-only precision
+                        "releases": [
+                            {
+                                "mb_release_id": "rel-single",
+                                "date": "1969",
+                                "country": "FR",
+                                "flags": {"is_official": True},
+                            }
+                        ],
+                    },
+                ],
+            }
+        ],
+        "timeline_facts": {
+            "earliest_album_date": "1969",
+            "earliest_single_ep_date": "1969",
+        },
+        "provenance": {"sources_used": ["MB"]},
+    }
+
+    decision = resolver.resolve(evidence_bundle)
+
+    # Album should win over Single due to same-date tie-breaker
+    assert decision.state == DecisionState.DECIDED
+    assert decision.release_group_mbid == "rg-album"
+    assert decision.crg_rationale == CRGRationale.ALBUM_SAME_DATE_TIEBREAKER
+
+
 def test_crg_rule_7_indeterminate_no_dates(resolver):
     """
     Rule 7: Indeterminate.

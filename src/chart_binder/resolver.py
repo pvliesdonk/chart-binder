@@ -23,6 +23,7 @@ class CRGRationale(StrEnum):
 
     SOUNDTRACK_PREMIERE = "CRG:SOUNDTRACK_PREMIERE"
     ALBUM_LEAD_WINDOW = "CRG:ALBUM_LEAD_WINDOW"
+    ALBUM_SAME_DATE_TIEBREAKER = "CRG:ALBUM_SAME_DATE_TIEBREAKER"
     SINGLE_TRUE_PREMIERE = "CRG:SINGLE_TRUE_PREMIERE"
     LIVE_ONLY_PREMIERE = "CRG:LIVE_ONLY_PREMIERE"
     INTENT_MATCH = "CRG:INTENT_MATCH"
@@ -656,10 +657,37 @@ class Resolver:
             return self._build_crg_result(selected, CRGRationale.EARLIEST_OFFICIAL)
 
         # Tie-breakers
-        # TODO: Implement tie-breakers:
-        # 1. Presence of artist origin country in RG's releases
-        # 2. Label authority
-        # 3. Country precedence
+        # Tie-breaker 1: Album over Single/EP with same date
+        # Rationale: When dates have low precision (year only), same date implies
+        # the single is likely within the 90-day lead window. Per Lead Single Window
+        # rule, prefer Album as the canonical home for the track.
+        if len(unique_rg_mbids) > 1:
+            # Group by primary type
+            albums = [
+                c for c in earliest_candidates
+                if c["primary_type"] == "Album" and c["rg_mbid"] in unique_rg_mbids
+            ]
+            singles_eps = [
+                c for c in earliest_candidates
+                if c["primary_type"] in ("Single", "EP") and c["rg_mbid"] in unique_rg_mbids
+            ]
+
+            # Deduplicate albums by MBID
+            unique_album_mbids = {c["rg_mbid"] for c in albums}
+
+            # If exactly one unique Album and the rest are Singles/EPs, prefer Album
+            if len(unique_album_mbids) == 1 and singles_eps:
+                album_candidate = albums[0]
+                return self._build_crg_result(
+                    album_candidate,
+                    CRGRationale.ALBUM_SAME_DATE_TIEBREAKER,
+                    tied_single_eps=[c["rg_mbid"] for c in singles_eps],
+                )
+
+        # TODO: Implement additional tie-breakers:
+        # 2. Presence of artist origin country in RG's releases
+        # 3. Label authority
+        # 4. Country precedence
         # If still tied, defer to LLM adjudicator
 
         # If multiple unique RGs with same earliest date, return INDETERMINATE
