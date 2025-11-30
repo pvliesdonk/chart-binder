@@ -300,6 +300,125 @@ class MusicBrainzClient:
 
         return all_recordings[:max_recordings]
 
+    def search_artists(self, name: str, limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Search for artists by name.
+
+        Args:
+            name: Artist name to search
+            limit: Max results
+
+        Returns:
+            List of artist dicts with id, name, disambiguation, etc.
+        """
+        params = {"query": f'artist:"{name}"', "limit": str(limit)}
+        data = self._request("artist", params)
+        return data.get("artists", [])
+
+    def browse_release_groups_by_artist(
+        self, artist_mbid: str, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """
+        Browse release groups by artist (deterministic).
+
+        Args:
+            artist_mbid: Artist MBID
+            limit: Max results per page
+            offset: Pagination offset
+
+        Returns:
+            List of release group dicts
+        """
+        params = {
+            "artist": artist_mbid,
+            "limit": str(min(limit, 100)),
+            "offset": str(offset),
+        }
+        data = self._request("release-group", params)
+        return data.get("release-groups", [])
+
+    def browse_all_release_groups_by_artist(
+        self, artist_mbid: str, max_rgs: int = 500
+    ) -> list[dict[str, Any]]:
+        """
+        Browse ALL release groups by artist with pagination.
+
+        Args:
+            artist_mbid: Artist MBID
+            max_rgs: Safety limit to prevent runaway queries
+
+        Returns:
+            List of all release group dicts
+        """
+        all_rgs: list[dict[str, Any]] = []
+        offset = 0
+        limit = 100
+
+        while len(all_rgs) < max_rgs:
+            batch = self.browse_release_groups_by_artist(artist_mbid, limit=limit, offset=offset)
+            if not batch:
+                break
+            all_rgs.extend(batch)
+            if len(batch) < limit:
+                break  # Last page
+            offset += limit
+
+        return all_rgs[:max_rgs]
+
+    def search_release_groups(
+        self,
+        title: str,
+        artist: str | None = None,
+        primary_type: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        """
+        Search release groups by title and artist.
+
+        Args:
+            title: Release group title to search
+            artist: Artist name to filter
+            primary_type: Filter by type (Album, Single, EP, etc.)
+            limit: Max results
+
+        Returns:
+            List of release group dicts with id, title, first-release-date, primary-type
+        """
+        query_parts = [f'releasegroup:"{title}"']
+        if artist:
+            query_parts.append(f'artist:"{artist}"')
+        if primary_type:
+            query_parts.append(f'primarytype:"{primary_type}"')
+        query = " AND ".join(query_parts)
+
+        params = {"query": query, "limit": str(limit)}
+        data = self._request("release-group", params)
+
+        return data.get("release-groups", [])
+
+    def browse_releases_by_release_group(
+        self, rg_mbid: str, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """
+        Browse releases belonging to a release group.
+
+        Args:
+            rg_mbid: Release group MBID
+            limit: Max results per page
+            offset: Pagination offset
+
+        Returns:
+            List of release dicts
+        """
+        params = {
+            "release-group": rg_mbid,
+            "limit": str(min(limit, 100)),
+            "offset": str(offset),
+            "inc": "recordings+media",
+        }
+        data = self._request("release", params)
+        return data.get("releases", [])
+
     def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:
         """
         Get release group by MBID.

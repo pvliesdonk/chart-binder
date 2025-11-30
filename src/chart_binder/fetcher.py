@@ -599,6 +599,195 @@ class UnifiedFetcher:
 
         return hydrated
 
+    def discover_via_artist_release_groups(
+        self, title: str, artist: str, max_rg: int = 10, max_recordings: int = 20
+    ) -> list[str]:
+        """
+        Discover recordings via artist → release groups → recordings path.
+
+        This is the most reliable discovery method:
+        1. Search for artist → get MBID
+        2. Browse ALL release groups by that artist (deterministic)
+        3. Find RGs matching the title
+        4. Browse recordings in those RGs
+
+        This catches original albums/singles but may miss soundtracks where
+        the artist is a contributor rather than main artist.
+
+        Args:
+            title: Track title to search
+            artist: Artist name
+            max_rg: Max release groups to process
+            max_recordings: Max recordings to hydrate
+
+        Returns:
+            List of discovered recording MBIDs
+        """
+        import logging
+        from difflib import SequenceMatcher
+
+        log = logging.getLogger(__name__)
+
+        # Step 1: Search for artist
+        artist_results = self.mb_client.search_artists(artist, limit=5)
+        if not artist_results:
+            log.debug("No artists found for %s", artist)
+            return []
+
+        # Take top artist result
+        artist_mbid = artist_results[0].get("id")
+        artist_name = artist_results[0].get("name")
+        log.debug("Found artist: %s (%s)", artist_name, artist_mbid)
+
+        # Step 2: Browse ALL release groups by this artist
+        all_rgs = self.mb_client.browse_all_release_groups_by_artist(artist_mbid, max_rgs=200)
+        log.debug("Found %d release groups by %s", len(all_rgs), artist_name)
+
+        # Step 3: Find RGs matching the title (fuzzy match)
+        title_lower = title.lower()
+        matching_rgs = []
+        for rg in all_rgs:
+            rg_title = rg.get("title", "").lower()
+            # Check if title appears in RG title or vice versa
+            if title_lower in rg_title or rg_title in title_lower:
+                matching_rgs.append(rg)
+            # Also check fuzzy match for partial matches
+            elif SequenceMatcher(None, title_lower, rg_title).ratio() > 0.6:
+                matching_rgs.append(rg)
+
+        # Sort by first_release_date
+        def get_date(rg: dict) -> str:
+            return rg.get("first-release-date") or "9999"
+
+        matching_rgs_sorted = sorted(matching_rgs, key=get_date)
+        log.debug(
+            "Found %d matching RGs, earliest: %s (%s)",
+            len(matching_rgs_sorted),
+            matching_rgs_sorted[0].get("title") if matching_rgs_sorted else "N/A",
+            matching_rgs_sorted[0].get("first-release-date") if matching_rgs_sorted else "N/A",
+        )
+
+        # Step 4: Browse recordings from matching RGs
+        return self._browse_recordings_from_rgs(
+            matching_rgs_sorted[:max_rg], title, max_recordings, log
+        )
+
+    def discover_via_release_group_search(
+        self, title: str, artist: str, max_rg: int = 5, max_recordings: int = 20
+    ) -> list[str]:
+        """
+        Discover recordings by searching for release groups by title.
+
+        This catches soundtracks and compilations where the artist is a
+        contributor rather than the main release group artist.
+
+        Args:
+            title: Track title to search
+            artist: Artist name (used to filter recordings)
+            max_rg: Max release groups to process
+            max_recordings: Max recordings to hydrate
+
+        Returns:
+            List of discovered recording MBIDs
+        """
+        import logging
+
+        log = logging.getLogger(__name__)
+
+        # Search for release groups by title (catches soundtracks)
+        rg_results = self.mb_client.search_release_groups(title=title, limit=20)
+        if not rg_results:
+            log.debug("No release groups found for title: %s", title)
+            return []
+
+        # Sort by first_release_date
+        def get_date(rg: dict) -> str:
+            return rg.get("first-release-date") or "9999"
+
+        rg_sorted = sorted(rg_results, key=get_date)
+        log.debug(
+            "Found %d release groups by title, earliest: %s (%s)",
+            len(rg_sorted),
+            rg_sorted[0].get("title"),
+            rg_sorted[0].get("first-release-date"),
+        )
+
+        return self._browse_recordings_from_rgs(
+            rg_sorted[:max_rg], title, max_recordings, log, artist_filter=artist
+        )
+
+    def _browse_recordings_from_rgs(
+        self,
+        rgs: list[dict],
+        title: str,
+        max_recordings: int,
+        log: Any,
+        artist_filter: str | None = None,
+    ) -> list[str]:
+        """
+        Browse and hydrate recordings from release groups.
+
+        Args:
+            rgs: List of release group dicts
+            title: Track title to match
+            max_recordings: Max recordings to hydrate
+            log: Logger
+            artist_filter: Optional artist name to filter by
+        """
+        from difflib import SequenceMatcher
+
+        title_lower = title.lower()
+        discovered_mbids: list[str] = []
+        seen_mbids: set[str] = set()
+
+        for rg in rgs:
+            rg_mbid = rg.get("id")
+            if not rg_mbid:
+                continue
+
+            # Browse releases for this release group
+            try:
+                releases = self.mb_client.browse_releases_by_release_group(rg_mbid, limit=10)
+            except Exception as e:
+                log.debug("Failed to browse releases for RG %s: %s", rg_mbid, e)
+                continue
+
+            # Extract recording MBIDs from releases
+            for release in releases:
+                for medium in release.get("media", []):
+                    for track in medium.get("tracks", []):
+                        rec = track.get("recording", {})
+                        rec_mbid = rec.get("id")
+                        rec_title = rec.get("title", "").lower()
+
+                        # Check if recording title matches
+                        if not (
+                            title_lower in rec_title
+                            or rec_title in title_lower
+                            or SequenceMatcher(None, title_lower, rec_title).ratio() > 0.8
+                        ):
+                            continue
+
+                        if rec_mbid and rec_mbid not in seen_mbids:
+                            seen_mbids.add(rec_mbid)
+                            discovered_mbids.append(rec_mbid)
+
+            if len(discovered_mbids) >= max_recordings:
+                break
+
+        log.debug("Discovered %d matching recordings", len(discovered_mbids))
+
+        # Hydrate the discovered recordings
+        hydrated: list[str] = []
+        for mbid in discovered_mbids[:max_recordings]:
+            try:
+                self.fetch_recording(mbid)
+                hydrated.append(mbid)
+            except Exception as e:
+                log.debug("Failed to hydrate recording %s: %s", mbid, e)
+
+        return hydrated
+
     def _extract_wikidata_qid(self, entity_data: dict[str, Any]) -> str | None:
         """
         Extract Wikidata QID from MusicBrainz entity URL relationships.
@@ -882,7 +1071,8 @@ class UnifiedFetcher:
 
         # Try title + artist search
         if title and artist:
-            mb_results = self.mb_client.search_recordings(artist=artist, title=title, limit=10)
+            # Use larger limit to find original recordings (can be at index 50+)
+            mb_results = self.mb_client.search_recordings(artist=artist, title=title, limit=100)
             for rec in mb_results:
                 results.append(
                     {
