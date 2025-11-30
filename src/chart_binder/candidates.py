@@ -88,9 +88,7 @@ class CandidateBuilder:
         logger.debug(f"Found {len(recordings)} recordings for ISRC {isrc}")
 
         for rec in recordings:
-            release_groups = self._find_release_groups_for_recording(
-                rec["mbid"], rec.get("title")
-            )
+            release_groups = self._find_release_groups_for_recording(rec["mbid"])
 
             # Get full ISRC list from record, ensure queried ISRC is included
             record_isrcs = rec.get("isrcs", [])
@@ -152,9 +150,7 @@ class CandidateBuilder:
 
         candidates = []
         for rec in recordings:
-            release_groups = self._find_release_groups_for_recording(
-                rec["mbid"], rec.get("title")
-            )
+            release_groups = self._find_release_groups_for_recording(rec["mbid"])
 
             for rg in release_groups:
                 candidates.append(
@@ -428,63 +424,20 @@ class CandidateBuilder:
 
         return results
 
-    def _find_release_groups_for_recording(
-        self, recording_mbid: str, recording_title: str | None = None
-    ) -> list[dict[str, Any]]:
+    def _find_release_groups_for_recording(self, recording_mbid: str) -> list[dict[str, Any]]:
         """
         Find release groups that contain this recording.
 
-        Args:
-            recording_mbid: The recording MBID to search for
-            recording_title: Optional recording title for filtering (prevents B-sides)
-
         Returns:
             List of dicts with: mbid, title, type, artist_mbid, artist_name, first_release_date
-
-        Note:
-            If recording_title is provided, filters out release groups where the
-            title doesn't match the recording title. This prevents treating B-sides
-            and bonus tracks as canonical (e.g., "Killer Queen" on "Who Wants to
-            Live Forever" single).
         """
         logger.debug(f"Searching for release groups containing recording: {recording_mbid}")
 
         release_groups = self.db.get_release_groups_for_recording(recording_mbid)
         logger.info(f"Found {len(release_groups)} release group(s) for recording {recording_mbid}")
 
-        # Normalize recording title for filtering if provided
-        recording_title_normalized = None
-        if recording_title:
-            title_result = self.normalizer.normalize_title(recording_title)
-            recording_title_normalized = title_result.core
-
         results = []
         for rg in release_groups:
-            # If we have a recording title, filter out Singles/EPs that don't match
-            # This prevents B-sides from being considered canonical
-            # (e.g., "Killer Queen" on "Who Wants to Live Forever" single)
-            if recording_title_normalized:
-                rg_title_result = self.normalizer.normalize_title(rg["title"])
-                rg_title_normalized = rg_title_result.core
-
-                # Only filter Singles and EPs with mismatched titles
-                # Albums can have different titles (normal album tracks)
-                rg_type = rg.get("type", "").lower()
-                is_single_or_ep = rg_type in ["single", "ep"]
-
-                titles_match = (
-                    rg_title_normalized == recording_title_normalized
-                    or recording_title_normalized in rg_title_normalized
-                    or rg_title_normalized in recording_title_normalized
-                )
-
-                if is_single_or_ep and not titles_match:
-                    logger.debug(
-                        f"Filtering out {rg_type.upper()} '{rg['title']}' - "
-                        f"title mismatch with recording '{recording_title}' (likely B-side)"
-                    )
-                    continue
-
             results.append(
                 {
                     "mbid": rg["mbid"],
@@ -494,12 +447,6 @@ class CandidateBuilder:
                     "artist_name": rg.get("artist_name", ""),
                     "first_release_date": rg.get("first_release_date"),
                 }
-            )
-
-        if recording_title_normalized:
-            logger.info(
-                f"After title filtering: {len(results)}/{len(release_groups)} "
-                f"release groups match recording title"
             )
 
         return results
