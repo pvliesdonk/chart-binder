@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -458,6 +459,86 @@ class ReActAdjudicator:
                 response_json="\n\n".join(full_interaction),
             )
 
+    def _filter_rg_candidates(self, rg_map: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        """
+        Filter release group candidates to reduce LLM noise.
+
+        Applies same filtering as resolver:
+        1. Remove compilations (unless they're the only option)
+        2. Remove late re-releases (>10 years after earliest)
+
+        Args:
+            rg_map: Dictionary mapping RG MBID to RG data
+
+        Returns:
+            Filtered dictionary with obvious non-candidates removed
+        """
+        if not rg_map:
+            return rg_map
+
+        # Step 1: Filter compilations
+        non_compilation = {
+            mbid: rg
+            for mbid, rg in rg_map.items()
+            if "Compilation" not in rg.get("secondary_types", [])
+        }
+
+        # Keep compilations only if no other options exist
+        filtered_map = non_compilation if non_compilation else rg_map
+
+        # Step 2: Filter late re-releases (>10 years after earliest)
+        rgs_with_dates = {
+            mbid: rg for mbid, rg in filtered_map.items() if rg.get("first_release_date")
+        }
+
+        if len(rgs_with_dates) > 1:
+            try:
+                # Find earliest release date
+                earliest_date = None
+                for rg in rgs_with_dates.values():
+                    date_str = rg.get("first_release_date", "")
+                    if date_str:
+                        date_obj = self._parse_date(date_str)
+                        if earliest_date is None or date_obj < earliest_date:
+                            earliest_date = date_obj
+
+                if earliest_date:
+                    # Filter out RGs more than 10 years later
+                    recent_map = {}
+                    for mbid, rg in rgs_with_dates.items():
+                        date_str = rg.get("first_release_date", "")
+                        if date_str:
+                            date_obj = self._parse_date(date_str)
+                            years_gap = (date_obj - earliest_date).days / 365.25
+                            if years_gap <= 10:  # 10 year threshold
+                                recent_map[mbid] = rg
+
+                    # Only apply filter if it doesn't remove everything
+                    if recent_map:
+                        filtered_map = recent_map
+            except Exception as e:
+                log.warning(f"Failed to filter late re-releases: {e}")
+
+        log.info(
+            f"Pre-filtered RG candidates: {len(rg_map)} → {len(filtered_map)} "
+            f"(removed {len(rg_map) - len(filtered_map)} compilations/late re-releases)"
+        )
+
+        return filtered_map
+
+    def _parse_date(self, date_str: str) -> datetime:
+        """Parse ISO date string (YYYY-MM-DD or YYYY-MM or YYYY) to datetime."""
+        parts = date_str.split("-")
+        if len(parts) == 1:
+            # Year only
+            return datetime(int(parts[0]), 1, 1)
+        elif len(parts) == 2:
+            # Year-month
+            return datetime(int(parts[0]), int(parts[1]), 1)
+        else:
+            # Full date
+            return datetime.strptime(date_str, "%Y-%m-%d")
+
     def _build_prompt(
         self,
         evidence_bundle: dict[str, Any],
@@ -496,6 +577,10 @@ class ReActAdjudicator:
                     rg_mbid = rg.get("mb_rg_id", "")
                     if rg_mbid and rg_mbid not in rg_map:
                         rg_map[rg_mbid] = rg
+
+            # Pre-filter candidates to reduce noise for LLM
+            # Apply same filtering as resolver to avoid presenting obvious non-candidates
+            rg_map = self._filter_rg_candidates(rg_map)
 
             origin_country = artist.get("country", "")
             for i, (rg_mbid, rg) in enumerate(rg_map.items(), 1):
