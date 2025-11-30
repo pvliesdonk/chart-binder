@@ -97,7 +97,7 @@ You must respond in valid JSON format with these exact fields:
   "crg_mbid": "the release group MBID you selected",
   "rr_mbid": "the release MBID you selected within the CRG",
   "confidence": 0.0 to 1.0,
-  "rationale": "brief explanation of your reasoning"
+  "rationale": "one-line summary, max 100 chars (e.g., 'Album within 90-day lead window of single')"
 }
 
 If you cannot determine the canonical release with reasonable confidence, set confidence below 0.60 and explain why."""
