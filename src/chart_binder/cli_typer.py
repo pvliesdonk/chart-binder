@@ -1259,14 +1259,169 @@ def charts_scrape(
     ] = None,
     ingest: Annotated[bool, typer.Option(help="Auto-ingest into database")] = False,
     strict: Annotated[bool, typer.Option(help="Fail if entry count below expected")] = False,
+    check_continuity: Annotated[bool, typer.Option(help="Validate overlap with previous run")] = False,
 ) -> None:
-    """Scrape chart data for a specific period."""
-    # TODO: Implement scrape command
-    # This command uses scrapers from chart_binder.scrapers module
-    # See cli.py:charts_scrape for full implementation
-    print_error("charts scrape command not yet implemented in Typer CLI")
-    print_error("Please use the original CLI or implement from cli.py:1337-1522")
-    raise typer.Exit(code=ExitCode.ERROR)
+    """Scrape chart data from web source.
+
+    CHART_TYPE: Chart to scrape (t40, t40jaar, top2000, zwaarste)
+    PERIOD: Period to scrape (YYYY-Www for weekly, YYYY for yearly)
+
+    Examples:
+        canon charts scrape t40 2024-W01
+        canon charts scrape t40jaar 2023 --ingest
+        canon charts scrape top2000 2024 --strict
+        canon charts scrape t40 2024-W02 --check-continuity --ingest
+    """
+    from chart_binder.charts_db import ChartsDB, ChartsETL
+    from chart_binder.http_cache import HttpCache
+    from chart_binder.scrapers import SCRAPER_REGISTRY, calculate_overlap
+
+    config = state.config
+    output_format = state.output_format
+
+    cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
+    db = ChartsDB(config.database.charts_path)
+
+    # Get scraper class and DB ID from registry
+    scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
+
+    # Get previous period's ranks for cross-reference validation if checking continuity
+    db_previous_ranks: dict[tuple[str, str], int] | None = None
+    prev_period: str | None = None
+    if check_continuity:
+        prev_period = db.get_adjacent_period(chart_db_id, period, direction=-1)
+        if prev_period:
+            db_previous_ranks = db.get_entries_with_ranks_by_period(chart_db_id, prev_period)
+
+    with scraper_cls(cache) as scraper:
+        result = scraper.scrape_with_validation(period, db_previous_ranks=db_previous_ranks)
+
+    if not result.entries:
+        print_error(f"No entries found for {chart_type} {period}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    # Check entry count sanity
+    if not result.is_valid:
+        msg = (
+            f"Entry count sanity check failed: got {result.actual_count}, "
+            f"expected ~{result.expected_count} (shortage: {result.shortage})"
+        )
+        if strict:
+            print_error(msg)
+            print_error("Possible edge case detected - check scraper for this period")
+            raise typer.Exit(code=ExitCode.ERROR)
+        else:
+            print_warning(msg)
+
+    # Check continuity with previous run
+    if check_continuity and prev_period:
+        prev_entries = db.get_entries_by_period(chart_db_id, prev_period)
+        if prev_entries:
+            overlap = calculate_overlap(result.entries, prev_entries)
+            result.continuity_overlap = overlap
+            result.continuity_reference = prev_period
+
+            if not result.continuity_valid:
+                msg = (
+                    f"Continuity check failed: only {overlap:.0%} overlap with {prev_period} "
+                    f"(expected ≥50%)"
+                )
+                if strict:
+                    print_error(msg)
+                    print_error("Possible scraping issue - data may be corrupted")
+                    raise typer.Exit(code=ExitCode.ERROR)
+                else:
+                    print_warning(msg)
+            elif output_format == OutputFormat.TEXT:
+                print_success(f"Continuity check: {overlap:.0%} overlap with {prev_period}")
+
+        # Report position mismatches from cross-reference validation
+        if result.position_mismatches:
+            print_warning(
+                f"Position cross-reference: {len(result.position_mismatches)} mismatch(es) "
+                f"with {prev_period}"
+            )
+            for artist, title, claimed, actual in result.position_mismatches[:5]:
+                cprint(
+                    f"   {artist} - {title}: website says #{claimed}, database has #{actual}"
+                )
+            if len(result.position_mismatches) > 5:
+                cprint(f"   ... and {len(result.position_mismatches) - 5} more")
+        elif result.rich_entries and output_format == OutputFormat.TEXT:
+            print_success(f"Position cross-reference: all positions match {prev_period}")
+
+    # Show warnings if any
+    if result.warnings:
+        for warning in result.warnings:
+            print_warning(warning)
+
+    # Convert to list of lists for JSON serialization
+    entries_list = [[rank, artist, title] for rank, artist, title in result.entries]
+
+    output_result = {
+        "chart_type": chart_type,
+        "chart_db_id": chart_db_id,
+        "period": period,
+        "entries_count": result.actual_count,
+        "expected_count": result.expected_count,
+        "is_valid": result.is_valid,
+        "continuity_overlap": result.continuity_overlap,
+        "continuity_reference": result.continuity_reference,
+        "position_mismatches": (
+            [
+                {"artist": a, "title": t, "claimed": c, "actual": act}
+                for a, t, c, act in result.position_mismatches
+            ]
+            if result.position_mismatches
+            else None
+        ),
+        "entries": entries_list,
+    }
+
+    if output_file:
+        output_file.write_text(json.dumps(entries_list, indent=2, ensure_ascii=False))
+        if output_format == OutputFormat.TEXT:
+            print_success(
+                f"Scraped {result.actual_count}/{result.expected_count} entries to {output_file}"
+            )
+        elif output_format == OutputFormat.JSON:
+            cprint(json.dumps({"status": "success", "output_file": str(output_file)}, indent=2))
+    else:
+        if output_format == OutputFormat.JSON:
+            cprint(json.dumps(output_result, indent=2, ensure_ascii=False))
+        else:
+            status = "[green]✔︎[/green]" if result.is_valid else "[yellow]⚠[/yellow]"
+            cprint(
+                f"{status} Scraped {result.actual_count}/{result.expected_count} entries for {chart_type} {period}"
+            )
+            cprint("\nFirst 10 entries:")
+            for rank, artist, title in result.entries[:10]:
+                cprint(f"  {rank:3d}. {artist} - {title}")
+            if len(result.entries) > 10:
+                cprint(f"  ... and {len(result.entries) - 10} more")
+
+    # Auto-ingest if requested
+    if ingest:
+        etl = ChartsETL(db)
+
+        # Ensure chart exists
+        db.upsert_chart(
+            chart_id=chart_db_id,
+            name=f"{chart_type} chart",
+            frequency="weekly" if chart_type == "t40" else "yearly",
+            jurisdiction="NL",
+        )
+
+        # Ingest entries
+        entries_for_ingest = [(rank, artist, title) for rank, artist, title in result.entries]
+        run_id = etl.ingest(chart_db_id, period, entries_for_ingest)
+
+        if output_format == OutputFormat.TEXT:
+            print_success(f"Ingested {result.actual_count} entries (run_id: {run_id[:8]}...)")
+        elif output_format == OutputFormat.JSON:
+            cprint(json.dumps({"ingested": True, "run_id": run_id}, indent=2))
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @charts_app.command("scrape-missing")
@@ -1278,13 +1433,173 @@ def charts_scrape_missing(
     strict: Annotated[bool, typer.Option(help="Fail on sanity check failures")] = False,
     dry_run: Annotated[bool, typer.Option(help="Show what would be scraped")] = False,
 ) -> None:
-    """Scrape missing periods for a chart type."""
-    # TODO: Implement scrape-missing command
-    # This command checks DB for missing periods and scrapes them
-    # See cli.py:charts_scrape_missing for full implementation
-    print_error("charts scrape-missing command not yet implemented in Typer CLI")
-    print_error("Please use the original CLI or implement from cli.py:1525-1710")
-    raise typer.Exit(code=ExitCode.ERROR)
+    """Scrape missing periods for a chart type.
+
+    Checks the database for existing runs and scrapes only missing periods.
+
+    Examples:
+        canon charts scrape-missing t40 --start-year 2020 --ingest
+        canon charts scrape-missing t40jaar --dry-run
+        canon charts scrape-missing top2000 --start-year 1999 --end-year 2024
+    """
+    import datetime
+
+    from chart_binder.charts_db import ChartsDB, ChartsETL
+    from chart_binder.http_cache import HttpCache
+    from chart_binder.scrapers import SCRAPER_REGISTRY
+
+    config = state.config
+    output_format = state.output_format
+
+    # Get scraper class and DB ID from registry
+    scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
+
+    # Determine year range
+    current_year = datetime.datetime.now().year
+    if end_year is None:
+        end_year = current_year
+
+    # Set default start years per chart type
+    default_start_years = {
+        "t40": 1965,
+        "t40jaar": 1965,
+        "top2000": 1999,
+        "zwaarste": 2020,
+    }
+    if start_year is None:
+        start_year = default_start_years.get(chart_type, 2000)
+
+    # Get existing runs from database
+    db = ChartsDB(config.database.charts_path)
+    existing_runs = db.list_runs(chart_db_id)
+    existing_periods = {run["period"] for run in existing_runs}
+
+    # Generate all expected periods
+    expected_periods: list[str] = []
+    if chart_type == "t40":
+        # Weekly chart - generate YYYY-Www for each week
+        for year in range(start_year, end_year + 1):
+            for week in range(1, 53):
+                expected_periods.append(f"{year}-W{week:02d}")
+    else:
+        # Yearly charts
+        for year in range(start_year, end_year + 1):
+            expected_periods.append(str(year))
+
+    # Find missing periods
+    missing_periods = [p for p in expected_periods if p not in existing_periods]
+
+    if not missing_periods:
+        print_success(f"No missing periods for {chart_type} ({start_year}-{end_year})")
+        raise typer.Exit(code=ExitCode.SUCCESS)
+
+    # Report
+    if output_format == OutputFormat.JSON:
+        result = {
+            "chart_type": chart_type,
+            "chart_db_id": chart_db_id,
+            "start_year": start_year,
+            "end_year": end_year,
+            "total_expected": len(expected_periods),
+            "existing": len(existing_periods),
+            "missing": len(missing_periods),
+            "missing_periods": missing_periods if dry_run else missing_periods[:10],
+        }
+        if dry_run:
+            cprint(json.dumps(result, indent=2))
+            raise typer.Exit(code=ExitCode.SUCCESS)
+    else:
+        cprint(f"Chart: {chart_type} ({chart_db_id})")
+        cprint(f"Range: {start_year} - {end_year}")
+        cprint(f"Expected periods: {len(expected_periods)}")
+        cprint(f"Existing: {len(existing_periods)}")
+        cprint(f"Missing: {len(missing_periods)}")
+
+        if dry_run:
+            cprint("\nMissing periods (first 20):")
+            for period in missing_periods[:20]:
+                cprint(f"  {period}")
+            if len(missing_periods) > 20:
+                cprint(f"  ... and {len(missing_periods) - 20} more")
+            raise typer.Exit(code=ExitCode.SUCCESS)
+
+    # Actually scrape missing periods
+    cache = HttpCache(config.http_cache.directory, ttl_seconds=config.http_cache.ttl_seconds)
+    etl = ChartsETL(db) if ingest else None
+
+    # Ensure chart exists if ingesting
+    if ingest:
+        db.upsert_chart(
+            chart_id=chart_db_id,
+            name=f"{chart_type} chart",
+            frequency="weekly" if chart_type == "t40" else "yearly",
+            jurisdiction="NL",
+        )
+
+    scraped = 0
+    failed = 0
+    skipped = 0
+
+    cprint(f"\nScraping {len(missing_periods)} missing periods...")
+
+    with scraper_cls(cache) as scraper:
+        for i, period in enumerate(missing_periods, 1):
+            try:
+                result = scraper.scrape_with_validation(period)
+
+                if not result.entries:
+                    skipped += 1
+                    if output_format == OutputFormat.TEXT:
+                        cprint(f"  [{i}/{len(missing_periods)}] {period}: no data (skipped)")
+                    continue
+
+                if not result.is_valid and strict:
+                    failed += 1
+                    cprint(
+                        f"  [{i}/{len(missing_periods)}] {period}: [red]✘[/red] sanity check failed "
+                        f"({result.actual_count}/{result.expected_count})"
+                    )
+                    continue
+
+                scraped += 1
+                status = "[green]✔︎[/green]" if result.is_valid else "[yellow]⚠[/yellow]"
+                if output_format == OutputFormat.TEXT:
+                    cprint(
+                        f"  [{i}/{len(missing_periods)}] {period}: {status} "
+                        f"{result.actual_count}/{result.expected_count} entries"
+                    )
+
+                # Ingest if requested
+                if ingest and etl:
+                    entries_for_ingest = [
+                        (rank, artist, title) for rank, artist, title in result.entries
+                    ]
+                    etl.ingest(chart_db_id, period, entries_for_ingest)
+
+            except Exception as e:
+                failed += 1
+                if output_format == OutputFormat.TEXT:
+                    print_error(f"  [{i}/{len(missing_periods)}] {period}: error: {e}")
+
+    # Summary
+    if output_format == OutputFormat.JSON:
+        cprint(
+            json.dumps(
+                {
+                    "scraped": scraped,
+                    "failed": failed,
+                    "skipped": skipped,
+                    "ingested": ingest,
+                },
+                indent=2,
+            )
+        )
+    else:
+        cprint(f"\nSummary: {scraped} scraped, {failed} failed, {skipped} skipped")
+        if ingest:
+            cprint(f"Ingested: {scraped} runs")
+
+    raise typer.Exit(code=ExitCode.SUCCESS if failed == 0 else ExitCode.ERROR)
 
 
 @charts_app.command("ingest")
@@ -1294,13 +1609,47 @@ def charts_ingest(
     source_file: Annotated[Path, typer.Argument(help="Source JSON file", exists=True)],
     notes: Annotated[str | None, typer.Option(help="Notes about this chart run")] = None,
 ) -> None:
-    """Ingest scraped chart data into database."""
-    # TODO: Implement ingest command
-    # This command loads scraped JSON data into the charts database
-    # See cli.py:charts_ingest for full implementation
-    print_error("charts ingest command not yet implemented in Typer CLI")
-    print_error("Please use the original CLI or implement from cli.py:1713-1789")
-    raise typer.Exit(code=ExitCode.ERROR)
+    """Ingest scraped chart data into database.
+
+    SOURCE_FILE should be a JSON file with entries: [[rank, artist, title], ...]
+    """
+    from chart_binder.charts_db import ChartsDB, ChartsETL
+
+    config = state.config
+    output_format = state.output_format
+
+    # Load entries from JSON file
+    try:
+        data = json.loads(source_file.read_text())
+        entries = [(entry[0], entry[1], entry[2]) for entry in data]
+    except (json.JSONDecodeError, IndexError, KeyError) as e:
+        print_error(f"Error parsing source file: {e}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    db = ChartsDB(config.database.charts_path)
+    etl = ChartsETL(db)
+
+    # Ensure chart exists
+    db.upsert_chart(chart_id, chart_id, "y")
+
+    run_id = etl.ingest(chart_id, period, entries, notes=notes)
+
+    result = {
+        "chart_id": chart_id,
+        "period": period,
+        "run_id": run_id,
+        "entries_count": len(entries),
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        print_success(f"Ingested {len(entries)} entries")
+        cprint(f"  Chart: {chart_id}")
+        cprint(f"  Period: {period}")
+        cprint(f"  Run ID: {run_id}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @charts_app.command("link")
