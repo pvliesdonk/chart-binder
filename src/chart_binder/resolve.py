@@ -319,7 +319,13 @@ def _resolve_with_fetcher(
 
     if decision.state == DecisionState.INDETERMINATE and adjudicator:
         try:
+            import sys
+
             from chart_binder.llm.adjudicator import AdjudicationOutcome
+
+            # Show progress message (clear line and show LLM submission status)
+            print(f"\r{'':<120}", end="", file=sys.stderr)
+            print(f"  ⏳ Submitting to LLM adjudicator for {artist} - {title}...", file=sys.stderr)
 
             decision_trace_dict: dict[str, Any] | None = None
             if decision.compact_tag:
