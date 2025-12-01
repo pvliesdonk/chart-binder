@@ -1811,8 +1811,8 @@ def ingest(
 @click.option(
     "--batch-size",
     type=int,
-    default=100,
-    help="Commit every N entries for checkpoint/resume (default: 100)",
+    default=1,
+    help="Commit every N entries for checkpoint/resume (default: 1)",
 )
 @click.option(
     "--no-progress",
@@ -1847,7 +1847,7 @@ def link(
     - Use --limit to test with small batches (e.g., --limit 10)
     - Use --start-rank/--end-rank to process specific rank ranges
     - Use --prioritize-by-score to process most important entries first
-    - Batch commits every 100 entries (configurable with --batch-size)
+    - Commits after each entry by default (configurable with --batch-size)
 
     Examples:
         canon charts link nl_top2000 2024

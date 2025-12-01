@@ -1468,7 +1468,7 @@ class ChartsETL:
         end_rank: int | None = None,
         prioritize_by_score: bool = False,
         chart_id: str | None = None,
-        batch_size: int = 100,
+        batch_size: int = 1,
         progress: bool = True,
     ) -> CoverageReport:
         """
@@ -1487,7 +1487,7 @@ class ChartsETL:
             end_rank: Stop processing at this rank (1-based, inclusive)
             prioritize_by_score: If True, process entries by score (requires chart_id)
             chart_id: Chart ID for score calculation (required if prioritize_by_score=True)
-            batch_size: Commit every N entries for checkpoint/resume (default 100)
+            batch_size: Commit every N entries for checkpoint/resume (default 1)
             progress: If True, display progress messages (default True)
 
         Returns:
@@ -1627,7 +1627,8 @@ class ChartsETL:
                 self.db.add_links_batch(links)
                 links = []
 
-                if progress:
+                # Only show batch completion for actual batches (batch_size > 1)
+                if progress and batch_size > 1:
                     # Clear the current line and show batch completion
                     print(f"\r{'':<120}", end="", file=sys.stderr)
                     pct = (processed / total_to_process) * 100
