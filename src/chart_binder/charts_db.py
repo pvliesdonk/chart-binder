@@ -1493,7 +1493,7 @@ class ChartsETL:
         Returns:
             CoverageReport with linking results
         """
-        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+        from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
         entries = self.db.list_entries(run_id)
         total_entries = len(entries)
