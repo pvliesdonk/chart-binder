@@ -242,7 +242,7 @@ def _resolve_with_fetcher(
     if not candidates:
         log.warning(f"No candidates found for: {artist} - {title}")
         return ResolutionResult(
-            state="INDETERMINATE",
+            state="indeterminate",  # Must be lowercase to match enum value
             trace="No candidates found in local database",
         )
 
