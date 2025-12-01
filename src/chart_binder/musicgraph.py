@@ -120,11 +120,111 @@ class MusicGraphDB:
 
             CREATE INDEX IF NOT EXISTS idx_recording_release_recording ON recording_release(recording_mbid);
             CREATE INDEX IF NOT EXISTS idx_recording_release_release ON recording_release(release_mbid);
+
+            -- Schema metadata table for tracking migrations
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
 
         conn.commit()
         conn.close()
+
+        # Apply migrations
+        self._apply_migrations()
+
+    def _apply_migrations(self) -> None:
+        """Apply schema migrations as needed."""
+        conn = self._get_connection()
+        try:
+            # Check if normalized fields exist
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(artist)")
+            artist_columns = {row[1] for row in cursor.fetchall()}
+
+            if "name_normalized" not in artist_columns:
+                logger.info("Applying migration: adding normalized fields to artist and recording tables")
+                conn.executescript(
+                    """
+                    ALTER TABLE artist ADD COLUMN name_normalized TEXT;
+                    CREATE INDEX IF NOT EXISTS idx_artist_name_normalized ON artist(name_normalized);
+
+                    ALTER TABLE recording ADD COLUMN title_normalized TEXT;
+                    CREATE INDEX IF NOT EXISTS idx_recording_title_normalized ON recording(title_normalized);
+                    """
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+                    ("migration_normalized_fields", "applied"),
+                )
+                conn.commit()
+                logger.info("Migration applied successfully")
+        finally:
+            conn.close()
+
+        # Backfill existing records with normalized values (after connection is closed)
+        # Check if backfill is needed
+        conn2 = self._get_connection()
+        try:
+            cursor = conn2.cursor()
+            cursor.execute("SELECT mbid FROM artist WHERE name_normalized IS NULL LIMIT 1")
+            needs_backfill = cursor.fetchone() is not None
+        finally:
+            conn2.close()
+
+        if needs_backfill:
+            logger.info("Backfilling normalized fields for existing records...")
+            self.backfill_normalized_fields()
+
+    def backfill_normalized_fields(self) -> None:
+        """
+        Backfill normalized fields for existing artist and recording records.
+
+        This is used when upgrading an existing database to add normalized fields.
+        """
+        from chart_binder.normalize import Normalizer
+
+        normalizer = Normalizer()
+        conn = self._get_connection()
+        try:
+            # Backfill artist names
+            cursor = conn.cursor()
+            cursor.execute("SELECT mbid, name FROM artist WHERE name_normalized IS NULL")
+            artists = cursor.fetchall()
+
+            if artists:
+                logger.info(f"Backfilling {len(artists)} artist name_normalized fields")
+                for mbid, name in artists:
+                    normalized = normalizer.normalize_artist(name).normalized
+                    conn.execute(
+                        "UPDATE artist SET name_normalized = ? WHERE mbid = ?",
+                        (normalized, mbid),
+                    )
+                conn.commit()
+                logger.info("Artist backfill complete")
+
+            # Backfill recording titles
+            cursor.execute("SELECT mbid, title FROM recording WHERE title_normalized IS NULL")
+            recordings = cursor.fetchall()
+
+            if recordings:
+                logger.info(f"Backfilling {len(recordings)} recording title_normalized fields")
+                for mbid, title in recordings:
+                    normalized = normalizer.normalize_title(title).normalized
+                    conn.execute(
+                        "UPDATE recording SET title_normalized = ? WHERE mbid = ?",
+                        (normalized, mbid),
+                    )
+                conn.commit()
+                logger.info("Recording backfill complete")
+
+            if not artists and not recordings:
+                logger.debug("No records need backfilling")
+
+        finally:
+            conn.close()
 
     def upsert_artist(
         self,
@@ -135,6 +235,7 @@ class MusicGraphDB:
         wikidata_qid: str | None = None,
         diacritics_signature: str | None = None,
         disambiguation: str | None = None,
+        name_normalized: str | None = None,
         fetched_at: float | None = None,
     ) -> None:
         """Upsert artist record."""
@@ -145,8 +246,8 @@ class MusicGraphDB:
         try:
             conn.execute(
                 """
-                INSERT INTO artist (mbid, name, sort_name, begin_area_country, wikidata_qid, diacritics_signature, disambiguation, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO artist (mbid, name, sort_name, begin_area_country, wikidata_qid, diacritics_signature, disambiguation, name_normalized, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mbid) DO UPDATE SET
                     name = excluded.name,
                     sort_name = excluded.sort_name,
@@ -154,6 +255,7 @@ class MusicGraphDB:
                     wikidata_qid = excluded.wikidata_qid,
                     diacritics_signature = excluded.diacritics_signature,
                     disambiguation = excluded.disambiguation,
+                    name_normalized = excluded.name_normalized,
                     fetched_at = excluded.fetched_at
                 """,
                 (
@@ -164,6 +266,7 @@ class MusicGraphDB:
                     wikidata_qid,
                     diacritics_signature,
                     disambiguation,
+                    name_normalized,
                     fetched_at,
                 ),
             )
@@ -180,6 +283,7 @@ class MusicGraphDB:
         isrcs_json: str | None = None,
         flags_json: str | None = None,
         disambiguation: str | None = None,
+        title_normalized: str | None = None,
         fetched_at: float | None = None,
     ) -> None:
         """Upsert recording record."""
@@ -190,8 +294,8 @@ class MusicGraphDB:
         try:
             conn.execute(
                 """
-                INSERT INTO recording (mbid, title, artist_mbid, length_ms, isrcs_json, flags_json, disambiguation, fetched_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO recording (mbid, title, artist_mbid, length_ms, isrcs_json, flags_json, disambiguation, title_normalized, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(mbid) DO UPDATE SET
                     title = excluded.title,
                     artist_mbid = excluded.artist_mbid,
@@ -199,6 +303,7 @@ class MusicGraphDB:
                     isrcs_json = excluded.isrcs_json,
                     flags_json = excluded.flags_json,
                     disambiguation = excluded.disambiguation,
+                    title_normalized = excluded.title_normalized,
                     fetched_at = excluded.fetched_at
                 """,
                 (
@@ -209,6 +314,7 @@ class MusicGraphDB:
                     isrcs_json,
                     flags_json,
                     disambiguation,
+                    title_normalized,
                     fetched_at,
                 ),
             )
@@ -495,12 +601,15 @@ class MusicGraphDB:
         """
         Fuzzy search for recordings by title with optional filters.
 
-        If artist_name contains the canonical separator (•), tries multiple
-        separator variants (&, and) to handle normalization mismatches.
+        Searches against normalized fields (title_normalized, name_normalized)
+        to handle case-insensitivity and artist separator variations.
+
+        If no exact normalized matches are found, falls back to Levenshtein
+        distance matching to handle typos and minor variations.
 
         Args:
-            title: Title to search for (case-insensitive LIKE)
-            artist_name: Optional artist name filter (case-insensitive LIKE)
+            title: Title to search for (will be matched against title_normalized)
+            artist_name: Optional artist name filter (will be matched against name_normalized)
             length_min: Optional minimum length in milliseconds
             length_max: Optional maximum length in milliseconds
             limit: Maximum number of results to return
@@ -513,69 +622,128 @@ class MusicGraphDB:
             f"length={length_min}-{length_max}, limit={limit}"
         )
 
-        # Try with different artist separator variants to handle normalization mismatches
-        artist_variants = []
-        if artist_name is not None:
-            artist_variants.append(artist_name)
-            # If artist contains canonical separator (•), try common MusicBrainz separators
-            if " • " in artist_name:
-                artist_variants.append(artist_name.replace(" • ", " & "))
-                artist_variants.append(artist_name.replace(" • ", " and "))
-
         conn = self._get_connection()
         try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            all_results: dict[str, dict[str, Any]] = {}  # Track by mbid to deduplicate
+            # Tier 1: Try exact normalized match first (fast, SQL-indexed)
+            query = """
+                SELECT r.*, a.name as artist_name
+                FROM recording r
+                LEFT JOIN artist a ON r.artist_mbid = a.mbid
+                WHERE r.title_normalized LIKE ?
+            """
+            params: list[Any] = [f"%{title}%"]
 
-            # Try each artist variant
-            variants_to_try = artist_variants if artist_variants else [None]
-            for variant in variants_to_try:
-                # Build query dynamically based on filters
-                query = """
-                    SELECT r.*, a.name as artist_name
-                    FROM recording r
-                    LEFT JOIN artist a ON r.artist_mbid = a.mbid
-                    WHERE r.title LIKE ?
-                """
-                params: list[Any] = [f"%{title}%"]
+            if artist_name is not None:
+                query += " AND a.name_normalized LIKE ?"
+                params.append(f"%{artist_name}%")
 
-                if variant is not None:
-                    query += " AND a.name LIKE ?"
-                    params.append(f"%{variant}%")
+            if length_min is not None and length_max is not None:
+                query += " AND r.length_ms BETWEEN ? AND ?"
+                params.extend([length_min, length_max])
+            elif length_min is not None:
+                query += " AND r.length_ms >= ?"
+                params.append(length_min)
+            elif length_max is not None:
+                query += " AND r.length_ms <= ?"
+                params.append(length_max)
 
-                if length_min is not None and length_max is not None:
-                    query += " AND r.length_ms BETWEEN ? AND ?"
-                    params.extend([length_min, length_max])
-                elif length_min is not None:
-                    query += " AND r.length_ms >= ?"
-                    params.append(length_min)
-                elif length_max is not None:
-                    query += " AND r.length_ms <= ?"
-                    params.append(length_max)
+            query += " LIMIT ?"
+            params.append(limit)
 
-                query += " LIMIT ?"
-                params.append(limit)
+            cursor.execute(query, params)
+            results = [dict(row) for row in cursor.fetchall()]
 
-                cursor.execute(query, params)
-                for row in cursor.fetchall():
-                    rec = dict(row)
-                    # Deduplicate by mbid
-                    if rec["mbid"] not in all_results:
-                        all_results[rec["mbid"]] = rec
+            # Tier 2: If no results, try Levenshtein distance fallback (slower, but more tolerant)
+            if not results:
+                logger.debug("No exact normalized matches, trying Levenshtein distance fallback")
+                results = self._search_with_levenshtein(
+                    cursor, title, artist_name, length_min, length_max, limit
+                )
 
-                # If we found results with this variant, no need to try others
-                if all_results:
-                    if len(variants_to_try) > 1:
-                        logger.debug(f"Found results with artist variant: {variant}")
-                    break
-
-            results = list(all_results.values())[:limit]
             logger.debug(f"Fuzzy search returned {len(results)} recordings")
             return results
         finally:
             conn.close()
+
+    def _search_with_levenshtein(
+        self,
+        cursor: sqlite3.Cursor,
+        title: str,
+        artist_name: str | None,
+        length_min: int | None,
+        length_max: int | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """
+        Fallback fuzzy search using Levenshtein distance.
+
+        Returns candidates above a similarity threshold (default 80%).
+        """
+        try:
+            from thefuzz import fuzz
+        except ImportError:
+            logger.warning("thefuzz library not available for Levenshtein fallback")
+            return []
+
+        # Fetch all recordings (with length filter if specified)
+        base_query = """
+            SELECT r.*, a.name as artist_name
+            FROM recording r
+            LEFT JOIN artist a ON r.artist_mbid = a.mbid
+            WHERE 1=1
+        """
+        params: list[Any] = []
+
+        if length_min is not None and length_max is not None:
+            base_query += " AND r.length_ms BETWEEN ? AND ?"
+            params.extend([length_min, length_max])
+        elif length_min is not None:
+            base_query += " AND r.length_ms >= ?"
+            params.append(length_min)
+        elif length_max is not None:
+            base_query += " AND r.length_ms <= ?"
+            params.append(length_max)
+
+        cursor.execute(base_query, params)
+        all_recordings = [dict(row) for row in cursor.fetchall()]
+
+        # Calculate similarity scores and filter
+        SIMILARITY_THRESHOLD = 80  # 0-100 scale
+        candidates = []
+
+        for rec in all_recordings:
+            title_similarity = fuzz.ratio(
+                title.lower(), (rec.get("title_normalized") or rec.get("title", "")).lower()
+            )
+
+            # If artist filter is specified, also check artist similarity
+            if artist_name is not None:
+                artist_similarity = fuzz.ratio(
+                    artist_name.lower(),
+                    (rec.get("artist_name") or "").lower(),
+                )
+                # Combined score: both must be reasonable matches
+                combined_score = min(title_similarity, artist_similarity)
+            else:
+                combined_score = title_similarity
+
+            if combined_score >= SIMILARITY_THRESHOLD:
+                candidates.append((combined_score, rec))
+
+        # Sort by similarity score (descending) and take top N
+        candidates.sort(reverse=True, key=lambda x: x[0])
+        results = [rec for score, rec in candidates[:limit]]
+
+        if results:
+            logger.debug(
+                f"Levenshtein fallback found {len(results)} candidates "
+                f"with similarity >= {SIMILARITY_THRESHOLD}%"
+            )
+
+        return results
 
     def search_artists(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """

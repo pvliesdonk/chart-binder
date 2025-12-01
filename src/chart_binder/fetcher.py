@@ -18,6 +18,7 @@ from chart_binder.discogs import DiscogsClient
 from chart_binder.http_cache import HttpCache
 from chart_binder.musicbrainz import MusicBrainzClient, extract_discogs_ids
 from chart_binder.musicgraph import MusicGraphDB
+from chart_binder.normalize import Normalizer
 from chart_binder.spotify import SpotifyClient
 from chart_binder.wikidata import WikidataClient
 
@@ -171,6 +172,9 @@ class UnifiedFetcher:
             cache=self._caches["wikidata"],
         )
 
+        # Normalizer for storing normalized artist/title fields
+        self.normalizer = Normalizer()
+
     def fetch_recording(self, mbid: str) -> dict[str, Any]:
         """
         Fetch recording by MusicBrainz ID and hydrate into database.
@@ -245,26 +249,34 @@ class UnifiedFetcher:
                             # Wikidata lookup can fail, skip silently
                             pass
 
+                    artist_name = artist_data.get("name", "")
+                    artist_norm_result = self.normalizer.normalize_artist(artist_name)
+
                     self.db.upsert_artist(
                         mbid=artist_data["id"],
-                        name=artist_data.get("name", ""),
+                        name=artist_name,
                         sort_name=artist_data.get("sort-name"),
                         begin_area_country=begin_area_country,
                         wikidata_qid=wikidata_qid,
                         disambiguation=artist_data.get("disambiguation"),
+                        name_normalized=artist_norm_result.normalized,
                     )
 
         # Extract ISRCs
         isrcs = [isrc["isrc"] for isrc in data.get("isrc-list", [])]
 
         # Hydrate recording
+        title = data.get("title", "")
+        title_norm_result = self.normalizer.normalize_title(title)
+
         self.db.upsert_recording(
             mbid=data["id"],
-            title=data.get("title", ""),
+            title=title,
             artist_mbid=artist_mbid,
             length_ms=data.get("length"),
             isrcs_json=json.dumps(isrcs) if isrcs else None,
             disambiguation=data.get("disambiguation"),
+            title_normalized=title_norm_result.normalized,
         )
 
         # Hydrate releases and release groups
@@ -340,10 +352,12 @@ class UnifiedFetcher:
         synthetic_artist_id = f"discogs-artist-{artist_normalized}"
 
         # Hydrate artist (Discogs-only)
+        artist_norm_result = self.normalizer.normalize_artist(artist_name)
         self.db.upsert_artist(
             mbid=synthetic_artist_id,
             name=artist_name,
             sort_name=artist_name,
+            name_normalized=artist_norm_result.normalized,
         )
 
         # Hydrate master (release group equivalent)
@@ -378,10 +392,13 @@ class UnifiedFetcher:
         # Use release ID as recording ID since we don't have track-level data
         synthetic_recording_id = f"discogs-recording-{release.id}"
 
+        title = release.title
+        title_norm_result = self.normalizer.normalize_title(title)
         self.db.upsert_recording(
             mbid=synthetic_recording_id,
-            title=release.title,
+            title=title,
             artist_mbid=synthetic_artist_id,
+            title_normalized=title_norm_result.normalized,
         )
 
         # Link recording to release
@@ -428,10 +445,12 @@ class UnifiedFetcher:
         synthetic_artist_id = f"spotify-artist-{artist_normalized}"
 
         # Hydrate artist (Spotify-only)
+        artist_norm_result = self.normalizer.normalize_artist(artist_name)
         self.db.upsert_artist(
             mbid=synthetic_artist_id,
             name=artist_name,
             sort_name=artist_name,
+            name_normalized=artist_norm_result.normalized,
         )
 
         # Hydrate album (release group equivalent)
@@ -453,12 +472,15 @@ class UnifiedFetcher:
             )
 
         # Hydrate recording (track)
+        title = track.name
+        title_norm_result = self.normalizer.normalize_title(title)
         self.db.upsert_recording(
             mbid=synthetic_track_id,
-            title=track.name,
+            title=title,
             artist_mbid=synthetic_artist_id,
             length_ms=track.duration_ms,
             isrcs_json=json.dumps([track.isrc]) if track.isrc else None,
+            title_normalized=title_norm_result.normalized,
         )
 
         # Link recording to release
