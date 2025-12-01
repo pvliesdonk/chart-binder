@@ -1771,6 +1771,16 @@ class ChartsETL:
                 return link_result
 
             # INDETERMINATE - return with lower confidence
+            # Log warning if this looks like it should have been decided
+            if result.llm_adjudicated or (result.confidence and result.confidence > 0.85):
+                logging.warning(
+                    f"State check failed for {artist_norm} - {title_norm}: "
+                    f"state='{result.state}' (expected 'decided'), "
+                    f"llm_adjudicated={result.llm_adjudicated}, confidence={result.confidence}"
+                )
+            else:
+                logging.debug(f"Treating as indeterminate: {artist_norm} - {title_norm}")
+
             return {
                 "work_key": work_key,
                 "confidence": 0.5,

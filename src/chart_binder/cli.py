@@ -507,6 +507,12 @@ def resolve(
             click.echo("\nDecision Trace:")
             click.echo(result.trace)
 
+    # Validate state before exit
+    if result.state not in ["decided", "indeterminate"]:
+        logger.warning(
+            f"Unexpected state value: '{result.state}' (expected 'decided' or 'indeterminate')"
+        )
+
     sys.exit(ExitCode.SUCCESS if result.state == "decided" else ExitCode.NO_RESULTS)
 
 
