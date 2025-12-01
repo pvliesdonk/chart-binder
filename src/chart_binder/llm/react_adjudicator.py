@@ -277,7 +277,35 @@ class ReActAdjudicator:
             # Check if this is a final answer
             if "Final Answer:" in response_text:
                 log.info(f"ReAct loop completed in {iteration + 1} iterations")
-                return self._parse_final_answer(response_text, evidence_bundle, full_interaction)
+                result = self._parse_final_answer(response_text, evidence_bundle, full_interaction)
+
+                # If parsing failed, give the LLM feedback and retry
+                if result.outcome == AdjudicationOutcome.ERROR and iteration < self.MAX_ITERATIONS - 1:
+                    log.warning(
+                        f"Failed to parse final answer on iteration {iteration + 1}, "
+                        "providing feedback and retrying..."
+                    )
+
+                    # Give the LLM feedback about what went wrong
+                    feedback = """
+Observation: Your Final Answer could not be parsed. Please provide the answer in the exact JSON format:
+
+```json
+{
+  "crg_mbid": "selected release group MBID",
+  "rr_mbid": "selected release MBID within CRG",
+  "confidence": 0.0-1.0,
+  "rationale": "concise one-line explanation"
+}
+```
+
+Make sure to include the complete JSON object with all required fields.
+"""
+                    conversation += f"\n\n{response_text}\n{feedback}"
+                    full_interaction.append(feedback)
+                    continue  # Continue the loop to get a retry from the LLM
+
+                return result
 
             # Parse for tool calls
             tool_call = self._parse_tool_call(response_text)
