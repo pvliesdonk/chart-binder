@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import sys
 from enum import StrEnum
 from pathlib import Path
@@ -97,6 +98,32 @@ def _get_rationale_value(rationale: Any) -> str | None:
     if rationale is None:
         return None
     return rationale.value if hasattr(rationale, "value") else str(rationale)
+
+
+def _get_or_calc_fingerprint(
+    audio_file: Path,
+    tagset: Any,  # TagSet
+    logger: logging.Logger,
+) -> tuple[str | None, int | None]:
+    """Get fingerprint from tags (trust-on-read) or calculate it.
+
+    Returns (fingerprint, duration_sec) tuple.
+    """
+    from chart_binder.fingerprint import FingerprintError, calculate_fingerprint
+
+    # Trust-on-read: check if fingerprint is already in tags
+    if tagset.compact.fingerprint and tagset.compact.fingerprint_duration:
+        logger.debug(f"Using cached fingerprint from tags for {audio_file}")
+        return tagset.compact.fingerprint, tagset.compact.fingerprint_duration
+
+    # Calculate fingerprint via fpcalc
+    try:
+        fp_result = calculate_fingerprint(audio_file)
+        logger.debug(f"Calculated fingerprint for {audio_file}: {fp_result.duration_sec}s")
+        return fp_result.fingerprint, fp_result.duration_sec
+    except FingerprintError as e:
+        logger.warning(f"Fingerprint calculation failed for {audio_file}: {e}")
+        return None, None
 
 
 def _convert_evidence_bundle(
@@ -1259,7 +1286,9 @@ def charts_scrape(
     ] = None,
     ingest: Annotated[bool, typer.Option(help="Auto-ingest into database")] = False,
     strict: Annotated[bool, typer.Option(help="Fail if entry count below expected")] = False,
-    check_continuity: Annotated[bool, typer.Option(help="Validate overlap with previous run")] = False,
+    check_continuity: Annotated[
+        bool, typer.Option(help="Validate overlap with previous run")
+    ] = False,
 ) -> None:
     """Scrape chart data from web source.
 
@@ -1342,9 +1371,7 @@ def charts_scrape(
                 f"with {prev_period}"
             )
             for artist, title, claimed, actual in result.position_mismatches[:5]:
-                cprint(
-                    f"   {artist} - {title}: website says #{claimed}, database has #{actual}"
-                )
+                cprint(f"   {artist} - {title}: website says #{claimed}, database has #{actual}")
             if len(result.position_mismatches) > 5:
                 cprint(f"   ... and {len(result.position_mismatches) - 5} more")
         elif result.rich_entries and output_format == OutputFormat.TEXT:
@@ -1624,7 +1651,7 @@ def charts_ingest(
         entries = [(entry[0], entry[1], entry[2]) for entry in data]
     except (json.JSONDecodeError, IndexError, KeyError) as e:
         print_error(f"Error parsing source file: {e}")
-        raise typer.Exit(code=ExitCode.ERROR)
+        raise typer.Exit(code=ExitCode.ERROR) from None
 
     db = ChartsDB(config.database.charts_path)
     etl = ChartsETL(db)
