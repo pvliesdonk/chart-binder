@@ -83,16 +83,13 @@ def resolve_artist_title(
     Returns:
         ResolutionResult with canonical IDs and decision trace
     """
-    from chart_binder.candidates import CandidateBuilder, CandidateSet
+    from chart_binder.candidates import CandidateBuilder
     from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
     from chart_binder.musicgraph import MusicGraphDB
     from chart_binder.normalize import Normalizer
     from chart_binder.resolver import (
         ConfigSnapshot,
-        CRGRationale,
-        DecisionState,
         Resolver,
-        RRRationale,
     )
 
     # Initialize components
@@ -257,9 +254,7 @@ def _resolve_with_fetcher(
     evidence_bundle_obj = candidate_builder.build_evidence_bundle(candidate_set)
 
     # Convert to dict format
-    evidence_bundle = _convert_evidence_bundle(
-        evidence_bundle_obj, artist, title, musicgraph_db
-    )
+    evidence_bundle = _convert_evidence_bundle(evidence_bundle_obj, artist, title, musicgraph_db)
 
     # Resolve
     decision = resolver.resolve(evidence_bundle)
@@ -296,7 +291,9 @@ def _resolve_with_fetcher(
         if adjudicator:
             log.info(f"Decision INDETERMINATE for {artist} - {title}, invoking LLM adjudication...")
         else:
-            log.warning(f"Decision INDETERMINATE for {artist} - {title}, but no adjudicator available")
+            log.warning(
+                f"Decision INDETERMINATE for {artist} - {title}, but no adjudicator available"
+            )
 
     if decision.state == DecisionState.INDETERMINATE and adjudicator:
         try:
@@ -315,7 +312,7 @@ def _resolve_with_fetcher(
                 adjudication_result.outcome != AdjudicationOutcome.ERROR
                 and adjudication_result.confidence >= auto_accept_threshold
             ):
-                result.state = "DECIDED"
+                result.state = "decided"
                 result.crg_mbid = adjudication_result.crg_mbid
                 result.rr_mbid = adjudication_result.rr_mbid
                 result.crg_rationale = str(CRGRationale.LLM_ADJUDICATION)

@@ -145,7 +145,9 @@ class MusicGraphDB:
             artist_columns = {row[1] for row in cursor.fetchall()}
 
             if "name_normalized" not in artist_columns:
-                logger.info("Applying migration: adding normalized fields to artist and recording tables")
+                logger.info(
+                    "Applying migration: adding normalized fields to artist and recording tables"
+                )
                 conn.executescript(
                     """
                     ALTER TABLE artist ADD COLUMN name_normalized TEXT;

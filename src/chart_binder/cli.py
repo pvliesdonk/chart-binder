@@ -507,7 +507,7 @@ def resolve(
             click.echo("\nDecision Trace:")
             click.echo(result.trace)
 
-    sys.exit(ExitCode.SUCCESS if result.state == "DECIDED" else ExitCode.NO_RESULTS)
+    sys.exit(ExitCode.SUCCESS if result.state == "decided" else ExitCode.NO_RESULTS)
 
 
 @canon.command()

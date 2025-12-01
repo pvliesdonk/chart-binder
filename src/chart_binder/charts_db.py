@@ -1632,7 +1632,8 @@ class ChartsETL:
                     print(f"\r{'':<120}", end="", file=sys.stderr)
                     pct = (processed / total_to_process) * 100
                     print(
-                        f"  ✓ Batch complete: {processed}/{total_to_process} ({pct:.1f}%)", file=sys.stderr
+                        f"  ✓ Batch complete: {processed}/{total_to_process} ({pct:.1f}%)",
+                        file=sys.stderr,
                     )
 
         # Final commit for remaining links

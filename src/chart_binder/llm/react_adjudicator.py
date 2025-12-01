@@ -280,7 +280,10 @@ class ReActAdjudicator:
                 result = self._parse_final_answer(response_text, evidence_bundle, full_interaction)
 
                 # If parsing failed, give the LLM feedback and retry
-                if result.outcome == AdjudicationOutcome.ERROR and iteration < self.MAX_ITERATIONS - 1:
+                if (
+                    result.outcome == AdjudicationOutcome.ERROR
+                    and iteration < self.MAX_ITERATIONS - 1
+                ):
                     log.warning(
                         f"Failed to parse final answer on iteration {iteration + 1}, "
                         "providing feedback and retrying..."
