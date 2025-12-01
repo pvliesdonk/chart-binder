@@ -6,6 +6,7 @@ Supports multiple independent rate limits for different API sources.
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ class TokenBucket:
     - Requests consume tokens from the bucket
     - If no tokens are available, requests block until tokens refill
     - Maximum tokens in bucket is capped at capacity
+
+    Supports both sync and async usage.
     """
 
     capacity: float
@@ -28,10 +31,12 @@ class TokenBucket:
     _tokens: float = field(init=False)
     _last_refill: float = field(init=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _async_lock: asyncio.Lock | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._tokens = self.capacity
         self._last_refill = time.monotonic()
+        self._async_lock = None  # Lazy init for async contexts
 
     def _refill(self) -> None:
         """Refill tokens based on elapsed time."""
@@ -42,7 +47,7 @@ class TokenBucket:
         self._last_refill = now
 
     def acquire(self, tokens: float = 1.0, blocking: bool = True) -> bool:
-        """Acquire tokens from the bucket.
+        """Acquire tokens from the bucket (sync version).
 
         Args:
             tokens: Number of tokens to acquire
@@ -71,6 +76,41 @@ class TokenBucket:
                 wait_time = deficit / self.refill_rate
             # Wait outside lock to allow other callers to proceed
             time.sleep(wait_time)
+
+    async def aacquire(self, tokens: float = 1.0, blocking: bool = True) -> bool:
+        """Acquire tokens from the bucket (async version).
+
+        Args:
+            tokens: Number of tokens to acquire
+            blocking: If True, wait and retry until tokens are acquired
+
+        Returns:
+            True if tokens were acquired, False if non-blocking and tokens unavailable.
+            When blocking=True, this method always returns True (loops until success).
+        """
+        # Lazy init async lock
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+
+        if not blocking:
+            async with self._async_lock:
+                self._refill()
+                if self._tokens >= tokens:
+                    self._tokens -= tokens
+                    return True
+                return False
+
+        # blocking=True: loop until tokens are acquired
+        while True:
+            async with self._async_lock:
+                self._refill()
+                if self._tokens >= tokens:
+                    self._tokens -= tokens
+                    return True
+                deficit = tokens - self._tokens
+                wait_time = deficit / self.refill_rate
+            # Wait outside lock to allow other callers to proceed
+            await asyncio.sleep(wait_time)
 
     def try_acquire(self, tokens: float = 1.0) -> bool:
         """Try to acquire tokens without blocking.
@@ -161,7 +201,7 @@ class RateLimiterRegistry:
             )
 
     def acquire(self, source: str, tokens: float = 1.0, blocking: bool = True) -> bool:
-        """Acquire tokens from source's rate limiter.
+        """Acquire tokens from source's rate limiter (sync version).
 
         Args:
             source: API source name
@@ -173,6 +213,20 @@ class RateLimiterRegistry:
         """
         limiter = self.get_limiter(source)
         return limiter.acquire(tokens, blocking)
+
+    async def aacquire(self, source: str, tokens: float = 1.0, blocking: bool = True) -> bool:
+        """Acquire tokens from source's rate limiter (async version).
+
+        Args:
+            source: API source name
+            tokens: Number of tokens to acquire
+            blocking: Whether to block until tokens available
+
+        Returns:
+            True if tokens were acquired
+        """
+        limiter = self.get_limiter(source)
+        return await limiter.aacquire(tokens, blocking)
 
     def status(self) -> dict[str, dict[str, Any]]:
         """Get status of all rate limiters.
@@ -206,7 +260,7 @@ def get_rate_limiter_registry() -> RateLimiterRegistry:
 
 
 def rate_limit(source: str, tokens: float = 1.0) -> None:
-    """Apply rate limiting for a source.
+    """Apply rate limiting for a source (sync version).
 
     Convenience function that blocks until tokens are available.
 
@@ -216,6 +270,19 @@ def rate_limit(source: str, tokens: float = 1.0) -> None:
     """
     registry = get_rate_limiter_registry()
     registry.acquire(source, tokens, blocking=True)
+
+
+async def arate_limit(source: str, tokens: float = 1.0) -> None:
+    """Apply rate limiting for a source (async version).
+
+    Convenience function that blocks until tokens are available.
+
+    Args:
+        source: API source name
+        tokens: Number of tokens to consume
+    """
+    registry = get_rate_limiter_registry()
+    await registry.aacquire(source, tokens, blocking=True)
 
 
 ## Tests

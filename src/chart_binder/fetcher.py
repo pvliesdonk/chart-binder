@@ -1058,15 +1058,211 @@ class UnifiedFetcher:
 
         return results
 
-    def close(self) -> None:
-        """Close all clients."""
-        self.mb_client.close()
+    async def asearch_recordings(
+        self,
+        isrc: str | None = None,
+        title: str | None = None,
+        artist: str | None = None,
+        fingerprint: str | None = None,
+        duration_sec: int | None = None,
+        barcode: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Async version of search_recordings with parallel API calls.
+
+        Runs independent searches in parallel using asyncio.gather() for
+        significant performance improvements on I/O-bound operations.
+
+        Args:
+            isrc: ISRC code
+            title: Recording title
+            artist: Artist name
+            fingerprint: AcoustID fingerprint
+            duration_sec: Track duration in seconds (for fingerprint)
+            barcode: UPC/EAN barcode
+
+        Returns:
+            List of recording matches with confidence scores
+        """
+        import asyncio
+
+        results: list[dict[str, Any]] = []
+
+        # Gather all search tasks that can run in parallel
+        search_tasks = []
+
+        # ISRC searches (MB is async, Spotify not yet for POC)
+        if isrc:
+            search_tasks.append(self._asearch_mb_isrc(isrc))
+            # TODO: Add async Spotify search when client is converted
+
+        # Title + artist searches (run MB in parallel)
+        if title and artist:
+            search_tasks.append(self._asearch_mb_text(artist, title))
+            # TODO: Add async Discogs/Spotify when converted
+
+        # Execute all searches in parallel
+        if search_tasks:
+            search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+            for result_batch in search_results:
+                if isinstance(result_batch, Exception):
+                    log.warning(f"Search task failed: {result_batch}")
+                    continue
+                if result_batch:
+                    results.extend(result_batch)
+
+        # Non-async fallbacks for POC (TODO: convert these to async)
+        # Fingerprint (AcoustID - not yet async)
+        if fingerprint and duration_sec and self.acoustid_client:
+            try:
+                acoustid_results = self.acoustid_client.lookup(fingerprint, duration_sec)
+                for result in acoustid_results:
+                    results.append(
+                        {
+                            "recording_mbid": result.recording_mbid,
+                            "source": "acoustid",
+                            "confidence": result.confidence,
+                        }
+                    )
+            except Exception as e:
+                log.warning(f"AcoustID search failed: {e}")
+
+        # Barcode (Discogs - not yet async)
+        if barcode and self.discogs_client:
+            try:
+                discogs_releases = self.discogs_client.search_by_barcode(barcode, limit=5)
+                for release in discogs_releases:
+                    result_data = {
+                        "discogs_release_id": str(release.id),
+                        "title": release.title,
+                        "artist_name": release.artist,
+                        "source": "discogs_barcode",
+                        "confidence": CONFIDENCE_BARCODE_DISCOGS,
+                        "barcode": barcode,
+                    }
+                    if release.master_id:
+                        result_data["discogs_master_id"] = str(release.master_id)
+                    results.append(result_data)
+            except Exception as e:
+                log.warning(f"Discogs barcode search failed: {e}")
+
+        # Apply enhanced cross-source intelligence validations
+        self._apply_date_validation(results)
+        self._apply_label_validation(results)
+
+        # Apply cross-source confidence boosts
+        from collections import defaultdict
+
+        def normalize_key(result: dict[str, Any]) -> str:
+            """Create normalized key for grouping similar results."""
+            title_str = result.get("title", "").lower().strip()
+            artist_str = result.get("artist_name", "").lower().strip()
+            return f"{artist_str}|{title_str}"
+
+        # Group results by normalized key
+        groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for result in results:
+            key = normalize_key(result)
+            if key and key != "|":
+                groups[key].append(result)
+
+        # Count unique sources per group and apply boosts
+        for _key, group_results in groups.items():
+            sources = {r.get("source", "").split("_")[0] for r in group_results}
+            source_count = len(sources)
+
+            if source_count >= 3:
+                for result in group_results:
+                    result["confidence"] = min(
+                        0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_THREE_SOURCES
+                    )
+                    result["multi_source"] = True
+                    result["source_count"] = source_count
+            elif source_count >= 2:
+                for result in group_results:
+                    result["confidence"] = min(
+                        0.99, result.get("confidence", 0.0) + CONFIDENCE_BOOST_MULTI_SOURCE
+                    )
+                    result["multi_source"] = True
+                    result["source_count"] = source_count
+
+        # Sort by confidence
+        results.sort(key=lambda r: r.get("confidence", 0.0), reverse=True)
+
+        return results
+
+    async def _asearch_mb_isrc(self, isrc: str) -> list[dict[str, Any]]:
+        """Helper: async ISRC search on MusicBrainz."""
+        results = []
+        try:
+            mb_results = await self.mb_client.search_recordings(isrc=isrc)
+            for rec in mb_results:
+                results.append(
+                    {
+                        "recording_mbid": rec.mbid,
+                        "title": rec.title,
+                        "artist_name": rec.artist_name,
+                        "source": "musicbrainz_isrc",
+                        "confidence": CONFIDENCE_ISRC_MUSICBRAINZ,
+                    }
+                )
+        except Exception as e:
+            log.warning(f"MB ISRC search failed: {e}")
+        return results
+
+    async def _asearch_mb_text(self, artist: str, title: str) -> list[dict[str, Any]]:
+        """Helper: async text search on MusicBrainz."""
+        results = []
+        try:
+            mb_results = await self.mb_client.search_recordings(
+                artist=artist, title=title, limit=100
+            )
+            for rec in mb_results:
+                results.append(
+                    {
+                        "recording_mbid": rec.mbid,
+                        "title": rec.title,
+                        "artist_name": rec.artist_name,
+                        "source": "musicbrainz_search",
+                        "confidence": CONFIDENCE_TEXT_SEARCH,
+                    }
+                )
+        except Exception as e:
+            log.warning(f"MB text search failed: {e}")
+        return results
+
+    async def close_async(self) -> None:
+        """Close all clients (async version)."""
+        await self.mb_client.close()
         if self.acoustid_client:
             self.acoustid_client.close()
         self.discogs_client.close()
         if self.spotify_client:
             self.spotify_client.close()
         self.wikidata_client.close()
+
+    def close(self) -> None:
+        """Close all clients (sync version - for backwards compatibility)."""
+        import asyncio
+
+        # Run async close in sync context
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Can't use get_event_loop().run_until_complete() in running loop
+                # Create task to close later
+                asyncio.create_task(self.close_async())
+            else:
+                loop.run_until_complete(self.close_async())
+        except RuntimeError:
+            # No event loop, create new one
+            asyncio.run(self.close_async())
+
+    async def __aenter__(self) -> UnifiedFetcher:
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        await self.close_async()
 
     def __enter__(self) -> UnifiedFetcher:
         return self

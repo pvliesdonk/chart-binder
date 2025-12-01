@@ -7,6 +7,7 @@ with rate limiting (1 req/sec default) and URL relationships parsing.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -129,27 +130,29 @@ class MusicBrainzClient:
         self.cache = cache
         self.rate_limit_per_sec = rate_limit_per_sec
         self._last_request_time = 0.0
-        self._client = httpx.Client(
+        self._client = httpx.AsyncClient(
             timeout=30.0,
             headers={"User-Agent": self.USER_AGENT},
         )
+        self._rate_limit_lock = asyncio.Lock()
 
-    def _rate_limit(self) -> None:
+    async def _rate_limit(self) -> None:
         """Enforce rate limiting (1 req/sec by default per MusicBrainz ToS)."""
         if self.rate_limit_per_sec <= 0:
             return
 
-        min_interval = 1.0 / self.rate_limit_per_sec
-        elapsed = time.time() - self._last_request_time
+        async with self._rate_limit_lock:
+            min_interval = 1.0 / self.rate_limit_per_sec
+            elapsed = time.time() - self._last_request_time
 
-        if elapsed < min_interval:
-            time.sleep(min_interval - elapsed)
+            if elapsed < min_interval:
+                await asyncio.sleep(min_interval - elapsed)
 
-        self._last_request_time = time.time()
+            self._last_request_time = time.time()
 
-    def _request(self, endpoint: str, params: dict[str, str]) -> dict[str, Any]:
+    async def _request(self, endpoint: str, params: dict[str, str]) -> dict[str, Any]:
         """Make rate-limited request to MusicBrainz API."""
-        self._rate_limit()
+        await self._rate_limit()
 
         # Ensure JSON format
         params["fmt"] = "json"
@@ -164,7 +167,7 @@ class MusicBrainzClient:
                 return cached.json()
 
         # Make live request
-        response = self._client.get(url, params=params)
+        response = await self._client.get(url, params=params)
         response.raise_for_status()
 
         # Cache response
@@ -178,7 +181,7 @@ class MusicBrainzClient:
         sorted_items = sorted(params.items())
         return "&".join(f"{k}={v}" for k, v in sorted_items)
 
-    def get_recording(
+    async def get_recording(
         self,
         mbid: str,
         include_isrcs: bool = True,
@@ -203,7 +206,7 @@ class MusicBrainzClient:
             inc.append("release-groups")
 
         params = {"inc": "+".join(inc)}
-        data = self._request(f"recording/{mbid}", params)
+        data = await self._request(f"recording/{mbid}", params)
 
         # Extract artist info
         artist_mbid = None
@@ -227,7 +230,7 @@ class MusicBrainzClient:
             disambiguation=data.get("disambiguation"),
         )
 
-    def get_recording_with_releases(self, mbid: str) -> dict[str, Any]:
+    async def get_recording_with_releases(self, mbid: str) -> dict[str, Any]:
         """
         Get recording with all releases and release groups.
 
@@ -235,9 +238,9 @@ class MusicBrainzClient:
         Includes URL relationships to extract Discogs IDs.
         """
         params = {"inc": "artists+isrcs+releases+release-groups+url-rels"}
-        return self._request(f"recording/{mbid}", params)
+        return await self._request(f"recording/{mbid}", params)
 
-    def get_recording_with_work(self, mbid: str) -> dict[str, Any]:
+    async def get_recording_with_work(self, mbid: str) -> dict[str, Any]:
         """
         Get recording with work relationships.
 
@@ -245,9 +248,9 @@ class MusicBrainzClient:
         the recording to its abstract composition (work).
         """
         params = {"inc": "artists+work-rels"}
-        return self._request(f"recording/{mbid}", params)
+        return await self._request(f"recording/{mbid}", params)
 
-    def browse_recordings_by_work(
+    async def browse_recordings_by_work(
         self, work_mbid: str, limit: int = 100, offset: int = 0
     ) -> list[dict[str, Any]]:
         """
@@ -269,10 +272,10 @@ class MusicBrainzClient:
             "limit": str(min(limit, 100)),
             "offset": str(offset),
         }
-        data = self._request("recording", params)
+        data = await self._request("recording", params)
         return data.get("recordings", [])
 
-    def browse_all_recordings_by_work(
+    async def browse_all_recordings_by_work(
         self, work_mbid: str, max_recordings: int = 500
     ) -> list[dict[str, Any]]:
         """
@@ -290,7 +293,7 @@ class MusicBrainzClient:
         limit = 100
 
         while len(all_recordings) < max_recordings:
-            batch = self.browse_recordings_by_work(work_mbid, limit=limit, offset=offset)
+            batch = await self.browse_recordings_by_work(work_mbid, limit=limit, offset=offset)
             if not batch:
                 break
             all_recordings.extend(batch)
@@ -300,7 +303,7 @@ class MusicBrainzClient:
 
         return all_recordings[:max_recordings]
 
-    def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:
+    async def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:
         """
         Get release group by MBID.
 
@@ -311,7 +314,7 @@ class MusicBrainzClient:
             MusicBrainzReleaseGroup object
         """
         params = {"inc": "artists"}
-        data = self._request(f"release-group/{mbid}", params)
+        data = await self._request(f"release-group/{mbid}", params)
 
         # Extract artist info
         artist_mbid = None
@@ -333,7 +336,7 @@ class MusicBrainzClient:
             disambiguation=data.get("disambiguation"),
         )
 
-    def get_release(self, mbid: str) -> MusicBrainzRelease:
+    async def get_release(self, mbid: str) -> MusicBrainzRelease:
         """
         Get release by MBID.
 
@@ -344,7 +347,7 @@ class MusicBrainzClient:
             MusicBrainzRelease object
         """
         params = {"inc": "artists+labels+release-groups"}
-        data = self._request(f"release/{mbid}", params)
+        data = await self._request(f"release/{mbid}", params)
 
         # Extract artist info
         artist_mbid = None
@@ -380,7 +383,7 @@ class MusicBrainzClient:
             disambiguation=data.get("disambiguation"),
         )
 
-    def get_artist(self, mbid: str) -> MusicBrainzArtist:
+    async def get_artist(self, mbid: str) -> MusicBrainzArtist:
         """
         Get artist by MBID.
 
@@ -391,7 +394,7 @@ class MusicBrainzClient:
             MusicBrainzArtist object
         """
         params = {"inc": "area-rels"}
-        data = self._request(f"artist/{mbid}", params)
+        data = await self._request(f"artist/{mbid}", params)
 
         # Extract begin area country
         begin_area_country = None
@@ -412,7 +415,7 @@ class MusicBrainzClient:
             disambiguation=data.get("disambiguation"),
         )
 
-    def search_recordings(
+    async def search_recordings(
         self,
         query: str | None = None,
         isrc: str | None = None,
@@ -445,7 +448,7 @@ class MusicBrainzClient:
             query = " AND ".join(query_parts) if query_parts else "*"
 
         params = {"query": query, "limit": str(limit)}
-        data = self._request("recording", params)
+        data = await self._request("recording", params)
 
         results = []
         for rec in data.get("recordings", []):
@@ -475,15 +478,15 @@ class MusicBrainzClient:
 
         return results
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the HTTP client."""
-        self._client.close()
+        await self._client.aclose()
 
-    def __enter__(self) -> MusicBrainzClient:
+    async def __aenter__(self) -> MusicBrainzClient:
         return self
 
-    def __exit__(self, *args: Any) -> None:
-        self.close()
+    async def __aexit__(self, *args: Any) -> None:
+        await self.close()
 
 
 ## Tests
