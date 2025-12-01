@@ -1,6 +1,14 @@
 # Bridge Over Troubled Water - Fuzzy Search Issue
 
-## Problem
+## ✅ FIXED (2025-12-01)
+
+**Solution implemented:** Added normalized artist/title fields to database schema with tiered fuzzy search (normalized LIKE + Levenshtein fallback).
+
+See commit: feat: add normalized fields and tiered fuzzy search
+
+---
+
+## Problem (Original)
 
 Famous song "Bridge Over Troubled Water" by Simon & Garfunkel returns 0 candidates despite:
 - ✅ API search finding 63 results
