@@ -4,6 +4,7 @@ Provides utilities to ensure logs do not contain personally identifiable informa
 - File path hashing/relativization
 - Sensitive field redaction
 - Safe log message formatting
+- Rich console integration for beautiful output
 """
 
 from __future__ import annotations
@@ -16,6 +17,9 @@ from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+
+from rich.console import Console
+from rich.logging import RichHandler
 
 # Fields that should be redacted in logs
 REDACT_FIELDS = frozenset(
@@ -245,6 +249,121 @@ class SafeLogFormatter(logging.Formatter):
                 # String cannot be parsed as a valid path; treat as non-path value
                 pass
         return value
+
+
+class RichSafeLogHandler(RichHandler):
+    """Rich log handler with PII-safe message formatting.
+
+    Combines Rich's beautiful console output with SafeLogFormatter's
+    PII protection. Messages are sanitized before being rendered by Rich.
+    """
+
+    def __init__(
+        self,
+        console: Console | None = None,
+        *,
+        sanitize_messages: bool = True,
+        hash_paths: bool = False,
+        show_time: bool = True,
+        show_path: bool = False,
+        **kwargs: Any,
+    ):
+        """Initialize Rich safe log handler.
+
+        Args:
+            console: Optional Rich console instance
+            sanitize_messages: Whether to sanitize messages for PII
+            hash_paths: Whether to hash file paths
+            show_time: Whether to show timestamps
+            show_path: Whether to show source file path
+            **kwargs: Additional arguments passed to RichHandler
+        """
+        super().__init__(
+            console=console,
+            show_time=show_time,
+            show_path=show_path,
+            **kwargs,
+        )
+        self.sanitize_messages = sanitize_messages
+        self.hash_paths = hash_paths
+        self._library_root = _get_library_root()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Emit a record after sanitizing it."""
+        # Create a copy to avoid mutating the original
+        record = logging.makeLogRecord(record.__dict__)
+
+        # Sanitize the message
+        if self.sanitize_messages:
+            record.msg = sanitize_message(str(record.msg))
+
+        # Handle file paths in args
+        if record.args:
+            record.args = self._sanitize_args(record.args)
+
+        # Let RichHandler render it beautifully
+        super().emit(record)
+
+    def _sanitize_args(self, args: tuple[Any, ...] | Mapping[str, Any]) -> tuple[Any, ...]:
+        """Sanitize formatting arguments."""
+        if isinstance(args, Mapping):
+            return tuple(self._sanitize_value(v) for v in args.values())
+        return tuple(self._sanitize_value(arg) for arg in args)
+
+    def _sanitize_value(self, value: Any) -> Any:
+        """Sanitize a single value."""
+        if isinstance(value, Path):
+            return safe_path(value, self._library_root, use_hash=self.hash_paths)
+        if isinstance(value, str) and "/" in value and not value.startswith("http"):
+            try:
+                path = Path(value)
+                if path.suffix:
+                    return safe_path(path, self._library_root, use_hash=self.hash_paths)
+            except (OSError, ValueError):
+                pass
+        return value
+
+
+def configure_rich_logging(
+    level: int = logging.INFO,
+    console: Console | None = None,
+    hash_paths: bool = False,
+    show_time: bool = True,
+    show_path: bool = False,
+) -> Console:
+    """Configure logging with Rich output and PII-safe formatting.
+
+    Args:
+        level: Logging level
+        console: Optional Rich console instance (creates new if None)
+        hash_paths: Whether to hash file paths
+        show_time: Whether to show timestamps in logs
+        show_path: Whether to show source file path in logs
+
+    Returns:
+        The Rich console instance (for use in application)
+    """
+    if console is None:
+        console = Console()
+
+    handler = RichSafeLogHandler(
+        console=console,
+        sanitize_messages=True,
+        hash_paths=hash_paths,
+        show_time=show_time,
+        show_path=show_path,
+        rich_tracebacks=True,
+        tracebacks_show_locals=False,  # Don't show locals (may contain PII)
+    )
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+
+    return console
 
 
 def configure_safe_logging(
