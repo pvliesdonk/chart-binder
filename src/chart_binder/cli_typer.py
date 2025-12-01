@@ -1261,7 +1261,12 @@ def charts_scrape(
     strict: Annotated[bool, typer.Option(help="Fail if entry count below expected")] = False,
 ) -> None:
     """Scrape chart data for a specific period."""
-    pass
+    # TODO: Implement scrape command
+    # This command uses scrapers from chart_binder.scrapers module
+    # See cli.py:charts_scrape for full implementation
+    print_error("charts scrape command not yet implemented in Typer CLI")
+    print_error("Please use the original CLI or implement from cli.py:1337-1522")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 @charts_app.command("scrape-missing")
@@ -1274,7 +1279,12 @@ def charts_scrape_missing(
     dry_run: Annotated[bool, typer.Option(help="Show what would be scraped")] = False,
 ) -> None:
     """Scrape missing periods for a chart type."""
-    pass
+    # TODO: Implement scrape-missing command
+    # This command checks DB for missing periods and scrapes them
+    # See cli.py:charts_scrape_missing for full implementation
+    print_error("charts scrape-missing command not yet implemented in Typer CLI")
+    print_error("Please use the original CLI or implement from cli.py:1525-1710")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 @charts_app.command("ingest")
@@ -1285,7 +1295,12 @@ def charts_ingest(
     notes: Annotated[str | None, typer.Option(help="Notes about this chart run")] = None,
 ) -> None:
     """Ingest scraped chart data into database."""
-    pass
+    # TODO: Implement ingest command
+    # This command loads scraped JSON data into the charts database
+    # See cli.py:charts_ingest for full implementation
+    print_error("charts ingest command not yet implemented in Typer CLI")
+    print_error("Please use the original CLI or implement from cli.py:1713-1789")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 @charts_app.command("link")
@@ -1462,7 +1477,8 @@ def charts_missing(
     period: Annotated[str, typer.Argument(help="Period")],
 ) -> None:
     """Show entries that failed to link."""
-    pass
+    # Delegate to coverage missing
+    coverage_missing(chart_id=chart_id, period=period)
 
 
 @charts_app.command("export")
@@ -1471,7 +1487,25 @@ def charts_export(
     positions: Annotated[bool, typer.Option(help="Include position details")] = False,
 ) -> None:
     """Export chart history for a work."""
-    pass
+    from chart_binder.charts_db import ChartsDB
+    from chart_binder.charts_export import ChartsExporter
+
+    config = state.config
+    output_format = state.output_format
+
+    db = ChartsDB(config.database.charts_path)
+    exporter = ChartsExporter(db)
+
+    blob = exporter.export_for_work(work_key, include_positions=positions)
+    json_str = blob.to_json(include_positions=positions)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"work_key": work_key, "charts_blob": json_str}, indent=2))
+    else:
+        cprint(f"CHARTS blob for {work_key}:")
+        cprint(json_str)
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 # ====================================================================
@@ -1488,7 +1522,12 @@ def review_list(
     limit: Annotated[int, typer.Option(help="Maximum items to show")] = 20,
 ) -> None:
     """List items needing review."""
-    pass
+    # TODO: Implement review list command
+    # This command lists entries needing human review from the review queue
+    # See cli.py:review_list for implementation (if exists)
+    print_error("review list command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 @review_app.command("show")
@@ -1496,7 +1535,11 @@ def review_show(
     review_id: Annotated[str, typer.Argument(help="Review ID")],
 ) -> None:
     """Show details for a review item."""
-    pass
+    # TODO: Implement review show command
+    # This command displays details for a specific review queue entry
+    print_error("review show command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 @review_app.command("accept")
@@ -1507,7 +1550,11 @@ def review_accept(
     notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
 ) -> None:
     """Accept a specific CRG for a review item."""
-    pass
+    # TODO: Implement review accept command
+    # This command accepts a review decision and updates the database
+    print_error("review accept command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 @review_app.command("reject")
@@ -1516,7 +1563,11 @@ def review_reject(
     notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
 ) -> None:
     """Reject/skip a review item."""
-    pass
+    # TODO: Implement review reject command
+    # This command rejects/skips a review item
+    print_error("review reject command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
 
 
 # ====================================================================
