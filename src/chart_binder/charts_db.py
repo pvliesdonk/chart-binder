@@ -1745,6 +1745,13 @@ class ChartsETL:
                 fetcher=self.fetcher,  # Pass fetcher to avoid creating new instance per song
             )
 
+            # Debug: Log what we got back
+            logging.info(
+                f"resolve_artist_title returned: state={result.state}, "
+                f"llm_adjudicated={result.llm_adjudicated}, "
+                f"confidence={result.confidence}, llm_confidence={result.llm_confidence}"
+            )
+
             if result.state == "decided":
                 link_result: dict[str, Any] = {
                     "work_key": work_key,
