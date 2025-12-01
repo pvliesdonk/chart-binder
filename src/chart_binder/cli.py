@@ -284,6 +284,14 @@ def canon(
         hash_paths=cfg.logging.hash_paths,
     )
 
+    # Suppress external library logging unless very verbose (-vvv)
+    if verbose < 3:
+        # Suppress noisy external libraries
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("requests").setLevel(logging.WARNING)
+
     logger.debug(
         f"Logging configured: level={logging.getLevelName(log_level)}, hash_paths={cfg.logging.hash_paths}"
     )
