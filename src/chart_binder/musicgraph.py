@@ -495,6 +495,9 @@ class MusicGraphDB:
         """
         Fuzzy search for recordings by title with optional filters.
 
+        If artist_name contains the canonical separator (•), tries multiple
+        separator variants (&, and) to handle normalization mismatches.
+
         Args:
             title: Title to search for (case-insensitive LIKE)
             artist_name: Optional artist name filter (case-insensitive LIKE)
@@ -509,39 +512,66 @@ class MusicGraphDB:
             f"Fuzzy search: title={title}, artist={artist_name}, "
             f"length={length_min}-{length_max}, limit={limit}"
         )
+
+        # Try with different artist separator variants to handle normalization mismatches
+        artist_variants = []
+        if artist_name is not None:
+            artist_variants.append(artist_name)
+            # If artist contains canonical separator (•), try common MusicBrainz separators
+            if " • " in artist_name:
+                artist_variants.append(artist_name.replace(" • ", " & "))
+                artist_variants.append(artist_name.replace(" • ", " and "))
+
         conn = self._get_connection()
         try:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            # Build query dynamically based on filters
-            query = """
-                SELECT r.*, a.name as artist_name
-                FROM recording r
-                LEFT JOIN artist a ON r.artist_mbid = a.mbid
-                WHERE r.title LIKE ?
-            """
-            params: list[Any] = [f"%{title}%"]
+            all_results: dict[str, dict[str, Any]] = {}  # Track by mbid to deduplicate
 
-            if artist_name is not None:
-                query += " AND a.name LIKE ?"
-                params.append(f"%{artist_name}%")
+            # Try each artist variant
+            variants_to_try = artist_variants if artist_variants else [None]
+            for variant in variants_to_try:
+                # Build query dynamically based on filters
+                query = """
+                    SELECT r.*, a.name as artist_name
+                    FROM recording r
+                    LEFT JOIN artist a ON r.artist_mbid = a.mbid
+                    WHERE r.title LIKE ?
+                """
+                params: list[Any] = [f"%{title}%"]
 
-            if length_min is not None and length_max is not None:
-                query += " AND r.length_ms BETWEEN ? AND ?"
-                params.extend([length_min, length_max])
-            elif length_min is not None:
-                query += " AND r.length_ms >= ?"
-                params.append(length_min)
-            elif length_max is not None:
-                query += " AND r.length_ms <= ?"
-                params.append(length_max)
+                if variant is not None:
+                    query += " AND a.name LIKE ?"
+                    params.append(f"%{variant}%")
 
-            query += " LIMIT ?"
-            params.append(limit)
+                if length_min is not None and length_max is not None:
+                    query += " AND r.length_ms BETWEEN ? AND ?"
+                    params.extend([length_min, length_max])
+                elif length_min is not None:
+                    query += " AND r.length_ms >= ?"
+                    params.append(length_min)
+                elif length_max is not None:
+                    query += " AND r.length_ms <= ?"
+                    params.append(length_max)
 
-            cursor.execute(query, params)
-            results = [dict(row) for row in cursor.fetchall()]
+                query += " LIMIT ?"
+                params.append(limit)
+
+                cursor.execute(query, params)
+                for row in cursor.fetchall():
+                    rec = dict(row)
+                    # Deduplicate by mbid
+                    if rec["mbid"] not in all_results:
+                        all_results[rec["mbid"]] = rec
+
+                # If we found results with this variant, no need to try others
+                if all_results:
+                    if len(variants_to_try) > 1:
+                        logger.debug(f"Found results with artist variant: {variant}")
+                    break
+
+            results = list(all_results.values())[:limit]
             logger.debug(f"Fuzzy search returned {len(results)} recordings")
             return results
         finally:
