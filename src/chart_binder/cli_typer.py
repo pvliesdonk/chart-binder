@@ -332,8 +332,55 @@ def scan(
     Reads tags, calculates AcoustID fingerprints, and shows what
     chart-binder can see about each file.
     """
-    # [Implementation from original scan command]
-    pass
+    from chart_binder.tagging import verify
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Running scan command on {len(paths)} path(s)")
+
+    output_format = state.output_format
+    results = []
+    audio_files = _collect_audio_files(paths)
+    logger.debug(f"Collected {len(audio_files)} audio files")
+
+    for audio_file in audio_files:
+        try:
+            tagset = verify(audio_file)
+            result = {
+                "file": str(audio_file),
+                "title": tagset.title,
+                "artist": tagset.artist,
+                "album": tagset.album,
+                "original_year": tagset.original_year,
+                "track_number": tagset.track_number,
+                "disc_number": tagset.disc_number,
+                "mb_recording_id": tagset.ids.mb_recording_id,
+                "mb_release_group_id": tagset.ids.mb_release_group_id,
+                "mb_release_id": tagset.ids.mb_release_id,
+                "charts_blob": tagset.compact.charts_blob,
+                "decision_trace": tagset.compact.decision_trace,
+            }
+            results.append(result)
+
+            if output_format == OutputFormat.TEXT:
+                cprint(f"\n[green]✔︎[/green] {audio_file}")
+                cprint(f"  Title: {tagset.title or '(none)'}")
+                cprint(f"  Artist: {tagset.artist or '(none)'}")
+                cprint(f"  Album: {tagset.album or '(none)'}")
+                cprint(f"  Year: {tagset.original_year or '(none)'}")
+                if tagset.ids.mb_release_group_id:
+                    cprint(f"  MB RG: {tagset.ids.mb_release_group_id}")
+                if tagset.compact.decision_trace:
+                    cprint(f"  Trace: {tagset.compact.decision_trace}")
+
+        except Exception as e:
+            if output_format == OutputFormat.TEXT:
+                print_error(f"{audio_file}: {e}")
+            results.append({"file": str(audio_file), "error": str(e)})
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(results, indent=2))
+
+    raise typer.Exit(code=ExitCode.SUCCESS if results else ExitCode.NO_RESULTS)
 
 
 @app.command()
@@ -421,8 +468,471 @@ def decide(
         canon decide song.mp3 --explain
         canon decide /music/ --no-persist --quiet
     """
-    # [Implementation from original decide command]
-    pass
+    from chart_binder.candidates import CandidateBuilder, CandidateSet
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.decisions_db import DecisionState as DBDecisionState
+    from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
+    from chart_binder.musicgraph import MusicGraphDB
+    from chart_binder.normalize import Normalizer
+    from chart_binder.resolver import (
+        ConfigSnapshot,
+        CRGRationale,
+        DecisionState,
+        Resolver,
+        RRRationale,
+    )
+    from chart_binder.tagging import verify
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Running decide command on {len(paths)} path(s), explain={explain}")
+
+    output_format = state.output_format
+    config = state.config
+    results: list[dict[str, Any]] = []
+
+    # Initialize decisions database
+    decisions_db: DecisionsDB | None = None
+    if not no_persist:
+        try:
+            decisions_db = DecisionsDB(config.database.decisions_path)
+            logger.debug(f"Initialized decisions DB at {config.database.decisions_path}")
+        except Exception as e:
+            logger.warning(f"Could not initialize decisions DB: {e}")
+
+    # Create resolver with config
+    resolver_config = ConfigSnapshot(
+        lead_window_days=90,
+        reissue_long_gap_years=10,
+    )
+    resolver = Resolver(resolver_config)
+
+    # Initialize UnifiedFetcher for multi-source lookups
+    cache_dir = config.http_cache.directory
+    musicgraph_path = config.database.music_graph_path
+    fetcher_config = FetcherConfig(
+        cache_dir=cache_dir,
+        db_path=musicgraph_path,
+        mode=FetchMode.NORMAL,
+        acoustid_api_key=config.live_sources.acoustid_api_key,
+        discogs_token=config.live_sources.discogs_token,
+        spotify_client_id=config.live_sources.spotify_client_id,
+        spotify_client_secret=config.live_sources.spotify_client_secret,
+    )
+
+    # Initialize CandidateBuilder for evidence bundle construction
+    musicgraph_db = MusicGraphDB(musicgraph_path)
+    normalizer = Normalizer()
+    candidate_builder = CandidateBuilder(musicgraph_db, normalizer)
+
+    # Initialize LLM adjudicator if enabled in config
+    adjudicator = None
+    auto_accept_threshold = 0.85
+    if config.llm.enabled:
+        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+
+        # Initialize SearxNG web search if enabled
+        web_search = None
+        if config.llm.searxng.enabled:
+            from chart_binder.llm.searxng import SearxNGSearchTool
+
+            web_search = SearxNGSearchTool(
+                base_url=config.llm.searxng.url,
+                timeout=config.llm.searxng.timeout_s,
+            )
+            if web_search.is_available():
+                logger.info(f"SearxNG web search enabled at {config.llm.searxng.url}")
+            else:
+                logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
+                web_search = None
+
+        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        auto_accept_threshold = config.llm.auto_accept_threshold
+        logger.info(
+            f"LLM adjudication enabled using ReAct pattern (auto-accept threshold: {auto_accept_threshold})"
+        )
+
+    audio_files = _collect_audio_files(paths)
+    logger.debug(f"Collected {len(audio_files)} audio files")
+
+    # Track statistics for quiet mode
+    stats = {"decided": 0, "indeterminate": 0, "llm_adjudicated": 0, "errors": 0}
+    total_files = len(audio_files)
+
+    if quiet and output_format == OutputFormat.TEXT:
+        cprint(f"Processing {total_files} files...")
+
+    with UnifiedFetcher(fetcher_config) as fetcher:
+        for idx, audio_file in enumerate(audio_files, 1):
+            try:
+                tagset = verify(audio_file)
+
+                # Get or calculate fingerprint for stable identity
+                fingerprint, duration_sec = _get_or_calc_fingerprint(audio_file, tagset, logger)
+
+                # Source 1: Existing MB IDs from tags (as evidence, not gospel)
+                if tagset.ids.mb_recording_id:
+                    logger.debug(
+                        f"Fetching existing MB recording from tags: {tagset.ids.mb_recording_id}"
+                    )
+                    try:
+                        fetcher.fetch_recording(tagset.ids.mb_recording_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to fetch tagged recording: {e}")
+
+                # Source 2: Search by fingerprint (most reliable for audio identity)
+                if fingerprint and duration_sec:
+                    logger.debug(f"Searching by fingerprint ({duration_sec}s)")
+                    search_results = fetcher.search_recordings(
+                        fingerprint=fingerprint,
+                        duration_sec=duration_sec,
+                    )
+                    logger.debug(f"Fingerprint search returned {len(search_results)} results")
+                    for result in search_results:
+                        if result.get("recording_mbid"):
+                            try:
+                                fetcher.fetch_recording(result["recording_mbid"])
+                            except Exception as e:
+                                logger.debug(f"Failed to fetch fingerprint result: {e}")
+
+                # Source 3: Search by title + artist (MB, Discogs, and Spotify)
+                if tagset.artist and tagset.title:
+                    logger.debug(f"Searching for: {tagset.artist} - {tagset.title}")
+                    search_results = fetcher.search_recordings(
+                        title=tagset.title,
+                        artist=tagset.artist,
+                    )
+                    logger.debug(f"Title/artist search returned {len(search_results)} results")
+
+                    # Hydrate top 5 from each source type
+                    mb_results = [r for r in search_results if r.get("recording_mbid")]
+                    discogs_results = [r for r in search_results if r.get("discogs_release_id")]
+                    spotify_results = [r for r in search_results if r.get("spotify_track_id")]
+
+                    mb_count = 0
+                    for result in mb_results[:5]:
+                        mbid = result["recording_mbid"]
+                        logger.debug(f"Hydrating MB recording {mbid}")
+                        try:
+                            fetcher.fetch_recording(mbid)
+                            mb_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch MB recording {mbid}: {e}")
+
+                    discogs_count = 0
+                    for result in discogs_results[:5]:
+                        discogs_id = result["discogs_release_id"]
+                        logger.debug(f"Hydrating Discogs release {discogs_id}")
+                        try:
+                            fetcher.fetch_discogs_release(discogs_id)
+                            discogs_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
+
+                    spotify_count = 0
+                    for result in spotify_results[:5]:
+                        spotify_id = result["spotify_track_id"]
+                        logger.debug(f"Hydrating Spotify track {spotify_id}")
+                        try:
+                            fetcher.fetch_spotify_track(spotify_id)
+                            spotify_count += 1
+                        except Exception as e:
+                            logger.debug(f"Failed to fetch Spotify track {spotify_id}: {e}")
+
+                    logger.debug(
+                        f"Hydrated {mb_count} MB recordings, {discogs_count} Discogs releases, "
+                        f"and {spotify_count} Spotify tracks"
+                    )
+
+                # Source 4: Search by barcode (Discogs)
+                if tagset.barcode:
+                    logger.debug(f"Searching Discogs by barcode: {tagset.barcode}")
+                    barcode_results = fetcher.search_recordings(
+                        barcode=tagset.barcode,
+                        title=tagset.title,
+                        artist=tagset.artist,
+                    )
+                    logger.debug(f"Barcode search returned {len(barcode_results)} results")
+                    for result in barcode_results[:5]:
+                        if result.get("discogs_release_id"):
+                            discogs_id = result["discogs_release_id"]
+                            logger.debug(f"Hydrating Discogs barcode result {discogs_id}")
+                            try:
+                                fetcher.fetch_discogs_release(discogs_id)
+                            except Exception as e:
+                                logger.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
+
+                # Discover all candidates from local DB (populated by fetches above)
+                length_ms = duration_sec * 1000 if duration_sec else None
+                candidates = candidate_builder.discover_by_title_artist_length(
+                    tagset.title or "", tagset.artist or "", length_ms
+                )
+
+                # Build evidence bundle from candidates
+                candidate_set = CandidateSet(
+                    file_path=audio_file,
+                    candidates=candidates,
+                    normalized_title=tagset.title or "",
+                    normalized_artist=tagset.artist or "",
+                    length_ms=duration_sec * 1000 if duration_sec else None,
+                )
+
+                evidence_bundle_obj = candidate_builder.build_evidence_bundle(candidate_set)
+
+                # Convert EvidenceBundle to dict format expected by resolver
+                evidence_bundle = _convert_evidence_bundle(
+                    evidence_bundle_obj, audio_file, tagset, musicgraph_db
+                )
+
+                decision = resolver.resolve(evidence_bundle)
+
+                # If decision is INDETERMINATE and LLM adjudication is enabled, try to adjudicate
+                llm_adjudicated = False
+                llm_confidence = None
+                llm_rationale = None
+                if decision.state == DecisionState.INDETERMINATE and adjudicator:
+                    logger.debug("Decision is INDETERMINATE, attempting LLM adjudication...")
+                    try:
+                        # Build decision trace dict from compact string
+                        decision_trace_dict: dict[str, Any] | None = None
+                        if decision.compact_tag:
+                            decision_trace_dict = {"trace_compact": decision.compact_tag}
+
+                        # Call LLM adjudicator
+                        from chart_binder.llm.adjudicator import AdjudicationOutcome
+
+                        adjudication_result = adjudicator.adjudicate(
+                            evidence_bundle, decision_trace_dict
+                        )
+
+                        llm_confidence = adjudication_result.confidence
+                        llm_rationale = adjudication_result.rationale
+
+                        # If high confidence, auto-accept and update decision
+                        if (
+                            adjudication_result.outcome != AdjudicationOutcome.ERROR
+                            and adjudication_result.confidence >= auto_accept_threshold
+                        ):
+                            decision.state = DecisionState.DECIDED
+                            decision.release_group_mbid = adjudication_result.crg_mbid
+                            decision.release_mbid = adjudication_result.rr_mbid
+                            decision.crg_rationale = CRGRationale.LLM_ADJUDICATION
+                            decision.rr_rationale = RRRationale.LLM_ADJUDICATION
+                            # Update decision trace to reflect LLM adjudication
+                            decision.decision_trace.crg_selection = {
+                                "rule": str(CRGRationale.LLM_ADJUDICATION),
+                                "confidence": adjudication_result.confidence,
+                                "rationale": adjudication_result.rationale,
+                            }
+                            decision.decision_trace.rr_selection = {
+                                "rule": str(RRRationale.LLM_ADJUDICATION),
+                            }
+                            llm_adjudicated = True
+                            logger.info(
+                                f"LLM adjudicated: CRG={adjudication_result.crg_mbid}, "
+                                f"confidence={adjudication_result.confidence:.2f}"
+                            )
+                        else:
+                            logger.debug(
+                                f"LLM confidence {adjudication_result.confidence:.2f} "
+                                f"below threshold {auto_accept_threshold}, keeping INDETERMINATE"
+                            )
+                    except Exception as e:
+                        logger.warning(f"LLM adjudication failed: {e}")
+
+                # Extract metadata from decision trace
+                artist_name = evidence_bundle.get("artist", {}).get("name", "Unknown")
+                artist_credits = None
+                recording_title = None
+                release_group_title = None
+                selected_release_title = None
+                discogs_master_id = None
+                discogs_release_id = None
+
+                # Get recording title and artist credits from CRG selection
+                if decision.decision_trace.crg_selection:
+                    crg_data = decision.decision_trace.crg_selection.get("release_group", {})
+                    release_group_title = crg_data.get("title")
+                    discogs_master_id = crg_data.get("discogs_master_id")
+                    artist_credits = crg_data.get("artist_credit")
+
+                    # Get recording title from the selected recording
+                    recording_data = decision.decision_trace.crg_selection.get("recording", {})
+                    recording_title = recording_data.get("title")
+
+                # Extract selected release title and Discogs ID from RR selection
+                if decision.decision_trace.rr_selection:
+                    release_data = decision.decision_trace.rr_selection.get("release", {})
+                    selected_release_title = release_data.get("title")
+                    discogs_release_id = release_data.get("discogs_release_id")
+
+                # Persist decision to database if fingerprint available
+                if decisions_db and fingerprint and duration_sec:
+                    file_id = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+
+                    # Determine library root and relative path
+                    library_root = str(audio_file.parent)
+                    relative_path = audio_file.name
+
+                    # Upsert file artifact
+                    decisions_db.upsert_file_artifact(
+                        file_id=file_id,
+                        library_root=library_root,
+                        relative_path=relative_path,
+                        duration_ms=duration_sec * 1000 if duration_sec else None,
+                        fp_id=fingerprint[:32] if fingerprint else None,
+                    )
+
+                    # Map resolver state to DB state
+                    db_state = (
+                        DBDecisionState.DECIDED
+                        if decision.state == DecisionState.DECIDED
+                        else DBDecisionState.INDETERMINATE
+                    )
+
+                    # Build work_key from artist and title
+                    work_key = f"{tagset.artist or 'unknown'}_{tagset.title or 'unknown'}".lower()
+
+                    # Upsert decision
+                    decisions_db.upsert_decision(
+                        file_id=file_id,
+                        work_key=work_key,
+                        mb_rg_id=decision.release_group_mbid or "",
+                        mb_release_id=decision.release_mbid or "",
+                        mb_recording_id=tagset.ids.mb_recording_id,
+                        ruleset_version=decision.decision_trace.ruleset_version,
+                        config_snapshot={
+                            "lead_window_days": resolver_config.lead_window_days,
+                            "reissue_long_gap_years": resolver_config.reissue_long_gap_years,
+                        },
+                        evidence_hash=decision.decision_trace.evidence_hash,
+                        trace_compact=decision.compact_tag,
+                        state=db_state,
+                    )
+                    logger.debug(f"Persisted decision for {audio_file} (file_id={file_id[:16]}...)")
+
+                result = {
+                    "file": str(audio_file),
+                    "state": decision.state.value,
+                    "artist": artist_name,
+                    "artist_credits": artist_credits,
+                    "recording_title": recording_title,
+                    "release_group_title": release_group_title,
+                    "selected_release_title": selected_release_title,
+                    "crg_mbid": decision.release_group_mbid,
+                    "rr_mbid": decision.release_mbid,
+                    "discogs_master_id": discogs_master_id,
+                    "discogs_release_id": discogs_release_id,
+                    "crg_rationale": _get_rationale_value(decision.crg_rationale),
+                    "rr_rationale": _get_rationale_value(decision.rr_rationale),
+                    "compact_tag": decision.compact_tag,
+                    "llm_adjudicated": llm_adjudicated,
+                }
+
+                # Add LLM info if adjudication was attempted
+                if llm_confidence is not None:
+                    result["llm_confidence"] = llm_confidence
+                if llm_rationale is not None:
+                    result["llm_rationale"] = llm_rationale
+
+                if explain:
+                    trace_dict: dict[str, Any] = {
+                        "evidence_hash": decision.decision_trace.evidence_hash,
+                        "considered_candidates": decision.decision_trace.considered_candidates,
+                        "crg_selection": decision.decision_trace.crg_selection,
+                        "rr_selection": decision.decision_trace.rr_selection,
+                        "missing_facts": decision.decision_trace.missing_facts,
+                    }
+                    result["trace"] = json.dumps(trace_dict)
+
+                results.append(result)
+
+                # Update statistics
+                if decision.state.value == "decided":
+                    stats["decided"] += 1
+                    if llm_adjudicated:
+                        stats["llm_adjudicated"] += 1
+                else:
+                    stats["indeterminate"] += 1
+
+                # Show progress in quiet mode
+                if quiet and output_format == OutputFormat.TEXT:
+                    if idx % 10 == 0 or idx == total_files:
+                        pct = (idx / total_files) * 100
+                        llm_stat = f" 🤖{stats['llm_adjudicated']}" if adjudicator else ""
+                        print(
+                            f"  Progress: {idx}/{total_files} ({pct:.1f}%) "
+                            f"[✔︎{stats['decided']}{llm_stat} ∆{stats['indeterminate']} ✘{stats['errors']}]",
+                            file=sys.stderr,
+                        )
+
+                # Show detailed output if not quiet
+                if not quiet and output_format == OutputFormat.TEXT:
+                    state_icon = "✔︎" if decision.state.value == "decided" else "∆"
+                    if llm_adjudicated:
+                        state_icon = "🤖"
+                    cprint(f"\n{state_icon} {audio_file}")
+                    cprint(f"  Artist: {artist_name}")
+                    if recording_title:
+                        cprint(f"  Recording: {recording_title}")
+                    cprint(f"  State: {decision.state.value}")
+                    if llm_adjudicated:
+                        cprint(f"  LLM Adjudicated: confidence={llm_confidence:.2f}")
+                        if llm_rationale:
+                            cprint(f"  LLM Rationale: {llm_rationale[:100]}")
+                    if decision.release_group_mbid:
+                        cprint(f"  CRG: {decision.release_group_mbid}")
+                        if release_group_title:
+                            cprint(f"       Title: {release_group_title}")
+                        if artist_credits:
+                            cprint(f"       Artist Credit: {artist_credits}")
+                        if discogs_master_id:
+                            cprint(f"       Discogs Master: {discogs_master_id}")
+                        cprint(f"       ({decision.crg_rationale})")
+                    if decision.release_mbid:
+                        cprint(f"  RR:  {decision.release_mbid}")
+                        if selected_release_title:
+                            cprint(f"       Title: {selected_release_title}")
+                        if discogs_release_id:
+                            cprint(f"       Discogs Release: {discogs_release_id}")
+                        cprint(f"       ({decision.rr_rationale})")
+                    cprint(f"  Trace: {decision.compact_tag}")
+                    if explain:
+                        cprint("\n" + decision.decision_trace.to_human_readable())
+
+                    if decision.decision_trace.missing_facts:
+                        cprint("\nMissing Facts:")
+                        for fact in decision.decision_trace.missing_facts:
+                            cprint(f"  - {fact}")
+
+            except Exception as e:
+                stats["errors"] += 1
+                if not quiet and output_format == OutputFormat.TEXT:
+                    print_error(f"{audio_file}: {e}")
+                results.append({"file": str(audio_file), "error": str(e)})
+
+                # Show progress in quiet mode even for errors
+                if quiet and output_format == OutputFormat.TEXT:
+                    if idx % 10 == 0 or idx == total_files:
+                        pct = (idx / total_files) * 100
+                        print(
+                            f"  Progress: {idx}/{total_files} ({pct:.1f}%) "
+                            f"[✔︎{stats['decided']} ∆{stats['indeterminate']} ✘{stats['errors']}]",
+                            file=sys.stderr,
+                        )
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(results, indent=2))
+    elif quiet and output_format == OutputFormat.TEXT:
+        # Print final summary in quiet mode
+        cprint(f"\n✓ Completed {total_files} files:")
+        cprint(f"  Decided:       {stats['decided']}")
+        if stats["llm_adjudicated"] > 0:
+            cprint(f"    (via LLM):   {stats['llm_adjudicated']}")
+        cprint(f"  Indeterminate: {stats['indeterminate']}")
+        if stats["errors"] > 0:
+            cprint(f"  Errors:        {stats['errors']}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS if results else ExitCode.NO_RESULTS)
 
 
 @app.command()
@@ -442,12 +952,104 @@ def write(
         canon write /music/ --dry-run
         canon write song.mp3 --apply
     """
-    if not dry_run and not apply:
-        print_error("Must specify either --dry-run or --apply")
-        sys.exit(ExitCode.ERROR)
+    from chart_binder.fingerprint import FingerprintError, calculate_fingerprint
+    from chart_binder.tagging import (
+        CanonicalIDs,
+        CompactFields,
+        TagSet,
+        verify,
+        write_tags,
+    )
 
-    # [Implementation from original write command]
-    pass
+    logger = logging.getLogger(__name__)
+    output_format = state.output_format
+    results = []
+
+    if not dry_run and not apply:
+        print_error("Use --dry-run to preview or --apply to write changes.")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    audio_files = _collect_audio_files(paths)
+
+    for audio_file in audio_files:
+        try:
+            # Read existing tags
+            existing_tagset = verify(audio_file)
+
+            # Get or calculate fingerprint for stable identity
+            fingerprint: str | None = None
+            duration_sec: int | None = None
+
+            # Trust-on-read: check if fingerprint is already in tags
+            if existing_tagset.compact.fingerprint and existing_tagset.compact.fingerprint_duration:
+                fingerprint = existing_tagset.compact.fingerprint
+                duration_sec = existing_tagset.compact.fingerprint_duration
+                logger.debug(f"Using cached fingerprint from tags for {audio_file}")
+            else:
+                # Calculate fingerprint via fpcalc
+                try:
+                    fp_result = calculate_fingerprint(audio_file)
+                    fingerprint = fp_result.fingerprint
+                    duration_sec = fp_result.duration_sec
+                    logger.debug(f"Calculated fingerprint for {audio_file}")
+                except FingerprintError as e:
+                    logger.warning(f"Fingerprint calculation failed for {audio_file}: {e}")
+
+            # Build tagset with fingerprint
+            tagset = TagSet(
+                ids=CanonicalIDs(),
+                compact=CompactFields(
+                    ruleset_version="canon-1.0",
+                    fingerprint=fingerprint,
+                    fingerprint_duration=duration_sec,
+                ),
+            )
+
+            report = write_tags(
+                audio_file,
+                tagset,
+                authoritative=False,  # Augment-only mode
+                dry_run=dry_run,
+            )
+
+            result = {
+                "file": str(audio_file),
+                "dry_run": report.dry_run,
+                "fields_written": report.fields_written,
+                "fields_skipped": report.fields_skipped,
+                "originals_stashed": report.originals_stashed,
+                "errors": report.errors,
+            }
+            results.append(result)
+
+            if output_format == OutputFormat.TEXT:
+                mode = "(dry run)" if dry_run else ""
+                if report.errors:
+                    cprint(f"\n[red]✘[/red] {audio_file} {mode}")
+                    for error in report.errors:
+                        print_error(error)
+                else:
+                    cprint(f"\n[green]✔︎[/green] {audio_file} {mode}")
+                    if report.fields_written:
+                        cprint(f"  Written: {', '.join(report.fields_written)}")
+                    if report.originals_stashed:
+                        cprint(f"  Stashed: {', '.join(report.originals_stashed)}")
+
+        except Exception as e:
+            if output_format == OutputFormat.TEXT:
+                print_error(f"{audio_file}: {e}")
+            results.append({"file": str(audio_file), "error": str(e)})
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(results, indent=2))
+
+    # Summary
+    if output_format == OutputFormat.TEXT:
+        total = len(results)
+        errors = sum(1 for r in results if r.get("errors") or r.get("error"))
+        cprint(f"\nProcessed {total} files, {errors} errors")
+
+    raise typer.Exit(code=ExitCode.SUCCESS if results else ExitCode.NO_RESULTS)
 
 
 # ====================================================================
@@ -458,7 +1060,54 @@ def write(
 @cache_app.command("status")
 def cache_status() -> None:
     """Show HTTP cache statistics."""
-    pass
+    import time
+
+    config = state.config
+    output_format = state.output_format
+
+    cache_dir = config.http_cache.directory
+    cache_db = cache_dir / "cache_index.sqlite"
+
+    result = {
+        "cache_directory": str(cache_dir),
+        "cache_enabled": config.http_cache.enabled,
+        "ttl_seconds": config.http_cache.ttl_seconds,
+        "entries": 0,
+        "total_size_bytes": 0,
+        "expired_entries": 0,
+    }
+
+    if cache_db.exists():
+        with sqlite3.connect(cache_db) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT COUNT(*) FROM cache_entries")
+            result["entries"] = cursor.fetchone()[0]
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM cache_entries WHERE expires_at <= ?", (time.time(),)
+            )
+            result["expired_entries"] = cursor.fetchone()[0]
+
+        # Calculate total size of cached files
+        total_size = sum(f.stat().st_size for f in cache_dir.glob("*.cache") if f.is_file())
+        result["total_size_bytes"] = total_size
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint("Cache Status")
+        cprint("=" * 40)
+        cprint(f"  Directory: {result['cache_directory']}")
+        cprint(f"  Enabled: {result['cache_enabled']}")
+        cprint(f"  TTL: {result['ttl_seconds']} seconds")
+        cprint(f"  Entries: {result['entries']}")
+        cprint(f"  Expired: {result['expired_entries']}")
+        total_bytes = result["total_size_bytes"]
+        size_mb = int(total_bytes) / (1024 * 1024)
+        cprint(f"  Size: {size_mb:.2f} MB")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @cache_app.command("purge")
@@ -467,7 +1116,39 @@ def cache_purge(
     force: Annotated[bool, typer.Option(help="Skip confirmation prompt")] = False,
 ) -> None:
     """Purge HTTP cache entries."""
-    pass
+    from chart_binder.http_cache import HttpCache
+
+    config = state.config
+    output_format = state.output_format
+
+    cache_dir = config.http_cache.directory
+
+    if not cache_dir.exists():
+        cprint("Cache directory does not exist.")
+        raise typer.Exit(code=ExitCode.SUCCESS)
+
+    cache = HttpCache(cache_dir, ttl_seconds=config.http_cache.ttl_seconds)
+
+    removed = 0
+    if expired_only:
+        removed = cache.purge_expired()
+        result = {"action": "purge_expired", "removed_entries": removed}
+    else:
+        if not force:
+            if not typer.confirm("Are you sure you want to clear all caches?"):
+                raise typer.Exit(code=ExitCode.SUCCESS)
+        cache.clear()
+        result = {"action": "purge_all", "removed_entries": "all"}
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        if expired_only:
+            print_success(f"Purged {removed} expired entries")
+        else:
+            print_success("All caches cleared")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 # ====================================================================
@@ -481,7 +1162,51 @@ def coverage_chart(
     period: Annotated[str, typer.Argument(help="Chart period")],
 ) -> None:
     """Show coverage report for a chart period."""
-    pass
+    from chart_binder.charts_db import ChartsDB
+
+    config = state.config
+    output_format = state.output_format
+
+    db = ChartsDB(config.database.charts_path)
+
+    run = db.get_run_by_period(chart_id, period)
+    if not run:
+        print_error(f"No chart run found for {chart_id} {period}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    report = db.get_coverage_report(run["run_id"])
+
+    result = {
+        "chart_id": chart_id,
+        "period": period,
+        "run_id": run["run_id"],
+        "total_entries": report.total_entries,
+        "linked_entries": report.linked_entries,
+        "unlinked_entries": report.unlinked_entries,
+        "coverage_pct": round(report.coverage_pct, 2),
+        "by_method": report.by_method,
+        "by_confidence": report.by_confidence,
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint(f"Coverage Report: {chart_id} {period}")
+        cprint("=" * 40)
+        cprint(f"  Total entries: {report.total_entries}")
+        cprint(f"  Linked: {report.linked_entries}")
+        cprint(f"  Unlinked: {report.unlinked_entries}")
+        cprint(f"  Coverage: {report.coverage_pct:.1f}%")
+        if report.by_method:
+            cprint("  By method:")
+            for method, count in report.by_method.items():
+                cprint(f"    {method}: {count}")
+        if report.by_confidence:
+            cprint("  By confidence:")
+            for bucket, count in report.by_confidence.items():
+                cprint(f"    {bucket}: {count}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @coverage_app.command("missing")
@@ -491,7 +1216,32 @@ def coverage_missing(
     threshold: Annotated[float, typer.Option(help="Minimum confidence threshold")] = 0.60,
 ) -> None:
     """Show missing or low-confidence entries in a chart."""
-    pass
+    from chart_binder.charts_db import ChartsDB, ChartsETL
+
+    config = state.config
+    output_format = state.output_format
+
+    db = ChartsDB(config.database.charts_path)
+    etl = ChartsETL(db)
+
+    run = db.get_run_by_period(chart_id, period)
+    if not run:
+        print_error(f"No chart run found for {chart_id} {period}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    missing = etl.get_missing_entries(run["run_id"], threshold=threshold)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(missing, indent=2))
+    else:
+        cprint(f"Missing Entries: {chart_id} {period}")
+        cprint("=" * 40)
+        for entry in missing:
+            cprint(f"  #{entry['rank']}: {entry['artist_raw']} - {entry['title_raw']}")
+            if entry.get("confidence"):
+                cprint(f"        (confidence: {entry['confidence']:.2f})")
+
+    raise typer.Exit(code=ExitCode.SUCCESS if missing else ExitCode.NO_RESULTS)
 
 
 # ====================================================================
