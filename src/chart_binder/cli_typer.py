@@ -20,6 +20,8 @@ from chart_binder.console import (
 )
 from chart_binder.console import (
     print_error,
+    print_success,
+    print_warning,
     set_console,
 )
 from chart_binder.safe_logging import configure_rich_logging
@@ -231,26 +233,81 @@ def main(
         bool | None, typer.Option("--searxng-enabled/--searxng-disabled")
     ] = None,
 ) -> None:
-    """Chart-Binder: charts-aware audio tagger with canonical release selection."""
-    # Configure logging first
-    log_level = logging.WARNING
-    if verbose == 1:
-        log_level = logging.INFO
-    elif verbose >= 2:
-        log_level = logging.DEBUG
+    """Chart-Binder: Charts-aware audio tagger with canonical release selection."""
+    logger = logging.getLogger(__name__)
+
+    # Load config (TOML + env vars)
+    cfg = Config.load(config_path)
+    if config_path:
+        logger.info(f"Loaded config from {config_path}")
+
+    # Apply CLI overrides (highest precedence: CLI > Env > Config File > Defaults)
+    if offline or frozen:
+        cfg.offline_mode = True
+
+    # Database overrides
+    if db_music_graph:
+        cfg.database.music_graph_path = db_music_graph
+    if db_charts:
+        cfg.database.charts_path = db_charts
+    if db_decisions:
+        cfg.database.decisions_path = db_decisions
+
+    # Cache overrides
+    if cache_dir:
+        cfg.http_cache.directory = cache_dir
+    if cache_ttl is not None:
+        cfg.http_cache.ttl_seconds = cache_ttl
+    if no_cache:
+        cfg.http_cache.enabled = False
+
+    # LLM overrides
+    if llm_enabled is not None:
+        cfg.llm.enabled = llm_enabled
+    if llm_provider:
+        cfg.llm.provider = llm_provider  # type: ignore[assignment]
+    if llm_model:
+        cfg.llm.model_id = llm_model
+    if llm_temperature is not None:
+        cfg.llm.temperature = llm_temperature
+
+    # SearxNG overrides
+    if searxng_url:
+        cfg.llm.searxng.url = searxng_url
+    if searxng_enabled is not None:
+        cfg.llm.searxng.enabled = searxng_enabled
+
+    # Configure logging with CLI > Config precedence
+    if verbose > 0:
+        # CLI flag takes precedence
+        if verbose >= 2:
+            log_level = logging.DEBUG
+        else:
+            log_level = logging.INFO
+    else:
+        # Use config file setting
+        level_str = cfg.logging.level.upper()
+        log_level = getattr(logging, level_str, logging.WARNING)
 
     # Initialize Rich console and configure logging
-    console = configure_rich_logging(level=log_level)
+    console = configure_rich_logging(
+        level=log_level,
+        hash_paths=cfg.logging.hash_paths,
+        show_time=True,
+        show_path=False,
+    )
     set_console(console)
 
-    # Load or create configuration
-    if config_path:
-        cfg = Config.from_toml(config_path)
-    else:
-        cfg = Config()
+    # Suppress external library logging unless very verbose (-vvv)
+    if verbose < 3:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("requests").setLevel(logging.WARNING)
 
-    # Apply CLI overrides to config
-    # [Same logic as original for applying overrides]
+    logger.debug(
+        f"Logging configured: level={logging.getLevelName(log_level)}, hash_paths={cfg.logging.hash_paths}"
+    )
 
     # Store in global state
     state.config = cfg
@@ -503,13 +560,150 @@ def charts_link(
 
     Uses UnifiedFetcher for multi-source search with LLM adjudication support.
 
+    Performance options:
+    - Use --missing-only to skip entries that already have good links
+    - Use --all-periods to process all periods of a chart
+    - Use --limit to test with small batches (e.g., --limit 10)
+    - Use --start-rank/--end-rank to process specific rank ranges
+    - Use --prioritize-by-score to process most important entries first
+    - Commits after each entry by default (configurable with --batch-size)
+
     Examples:
         canon charts link nl_top2000 2024
         canon charts link nl_top2000 2024 --missing-only
         canon charts link nl_top2000 --all-periods --missing-only
+        canon charts link nl_top2000 2024 --limit 10 --prioritize-by-score
+        canon charts link nl_top2000 2024 --start-rank 1 --end-rank 100
     """
-    # [Implementation from original link command - this is complex]
-    pass
+    import os
+
+    from chart_binder.charts_db import ChartsDB, ChartsETL
+    from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
+
+    config = state.config
+    output_format = state.output_format
+
+    # Validate arguments
+    if all_periods and period:
+        print_error("Cannot specify both PERIOD and --all-periods")
+        raise typer.Exit(code=ExitCode.ERROR)
+    if not all_periods and not period:
+        print_error("Must specify either PERIOD or --all-periods")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    db = ChartsDB(config.database.charts_path)
+
+    # Get periods to process
+    if all_periods:
+        runs = db.list_runs(chart_id)
+        if not runs:
+            print_error(f"No chart runs found for {chart_id}")
+            raise typer.Exit(code=ExitCode.NO_RESULTS)
+        periods_to_process = [run["period"] for run in runs]
+        cprint(f"Processing {len(periods_to_process)} periods for {chart_id}")
+    else:
+        periods_to_process = [period]  # type: ignore[list-item]
+
+    # Create UnifiedFetcher if using multi_source strategy
+    fetcher = None
+    if strategy == "multi_source":
+        fetcher_config = FetcherConfig(
+            cache_dir=config.http_cache.directory,
+            db_path=config.database.music_graph_path,
+            mode=FetchMode.NORMAL,
+            spotify_client_id=os.getenv("SPOTIFY_CLIENT_ID"),
+            spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET"),
+        )
+        fetcher = UnifiedFetcher(fetcher_config)
+
+    # Initialize LLM adjudicator if enabled for low-confidence matches
+    adjudicator = None
+    if config.llm.enabled and strategy == "multi_source":
+        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+
+        # Initialize SearxNG web search if enabled
+        web_search = None
+        if config.llm.searxng.enabled:
+            from chart_binder.llm.searxng import SearxNGSearchTool
+
+            web_search = SearxNGSearchTool(
+                base_url=config.llm.searxng.url,
+                timeout=config.llm.searxng.timeout_s,
+            )
+
+        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        cprint("[blue]LLM adjudication enabled for low-confidence matches[/blue]")
+
+    # Pass config to ChartsETL so it uses the shared resolver pipeline (7-rule algorithm)
+    etl = ChartsETL(db, fetcher=fetcher, adjudicator=adjudicator, config=config)
+
+    # Process each period
+    all_results = []
+    for idx, current_period in enumerate(periods_to_process, 1):
+        if all_periods:
+            cprint(f"\n[{idx}/{len(periods_to_process)}] Processing period: {current_period}")
+
+        run = db.get_run_by_period(chart_id, current_period)
+        if not run:
+            print_warning(f"No chart run found for {chart_id} {current_period}")
+            continue
+
+        report = etl.link(
+            run["run_id"],
+            strategy=strategy,
+            missing_only=missing_only,
+            min_confidence=min_confidence,
+            limit=limit,
+            start_rank=start_rank,
+            end_rank=end_rank,
+            prioritize_by_score=prioritize_by_score,
+            chart_id=chart_id,
+            batch_size=batch_size,
+            progress=not no_progress,
+        )
+
+        result = {
+            "chart_id": chart_id,
+            "period": current_period,
+            "run_id": run["run_id"],
+            "total_entries": report.total_entries,
+            "linked_entries": report.linked_entries,
+            "coverage_pct": round(report.coverage_pct, 2),
+            "by_method": report.by_method,
+        }
+        all_results.append(result)
+
+        if not all_periods or output_format == OutputFormat.JSON:
+            # Show individual results
+            if output_format == OutputFormat.TEXT:
+                print_success(f"Linked {report.linked_entries}/{report.total_entries} entries")
+                cprint(f"  Coverage: {report.coverage_pct:.1f}%")
+                if report.by_method:
+                    cprint("  By method:")
+                    for method, count in report.by_method.items():
+                        cprint(f"    {method}: {count}")
+
+    # Close fetcher if we created one
+    if fetcher:
+        fetcher.close()
+
+    # Output final results
+    if output_format == OutputFormat.JSON:
+        if all_periods:
+            cprint(json.dumps({"chart_id": chart_id, "periods": all_results}, indent=2))
+        else:
+            cprint(json.dumps(all_results[0], indent=2))
+    elif all_periods:
+        # Summary for all periods
+        total_linked = sum(r["linked_entries"] for r in all_results)
+        total_entries = sum(r["total_entries"] for r in all_results)
+        avg_coverage = (total_linked / total_entries * 100) if total_entries > 0 else 0
+        cprint("\n[green]✔︎ All periods complete:[/green]")
+        cprint(f"  Periods processed: {len(all_results)}")
+        cprint(f"  Total linked: {total_linked}/{total_entries}")
+        cprint(f"  Overall coverage: {avg_coverage:.1f}%")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @charts_app.command("missing")
