@@ -1493,7 +1493,7 @@ class ChartsETL:
         Returns:
             CoverageReport with linking results
         """
-        import sys
+        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
         entries = self.db.list_entries(run_id)
         total_entries = len(entries)
@@ -1546,10 +1546,22 @@ class ChartsETL:
         links = []
         processed = 0
         total_to_process = len(entries)
-        spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
+        # Set up Rich Progress if enabled
+        progress_bar = None
+        task_id = None
         if progress:
-            print(f"Processing {total_to_process} entries (out of {total_entries} total)")
+            progress_bar = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                transient=False,
+            )
+            progress_bar.start()
+            task_id = progress_bar.add_task(
+                f"Processing {total_to_process} entries...", total=total_to_process
+            )
 
         for entry in entries:
             # Normalize entry fields for linking
@@ -1565,47 +1577,37 @@ class ChartsETL:
                 entry["artist_normalized"] = ""
                 entry["title_normalized"] = ""
 
-            # Show current entry being processed with spinner
-            if progress:
-                rank = entry.get("rank", "?")
-                pct = ((processed + 1) / total_to_process) * 100
-                spinner = spinner_chars[processed % len(spinner_chars)]
-                status = (
-                    f"  {spinner} [{processed + 1}/{total_to_process}] ({pct:.1f}%) "
-                    f"Working on rank {rank}: {artist_raw} - {title_raw}"
+            # Update progress with current entry
+            rank = entry.get("rank", "?")
+            if progress_bar and task_id is not None:
+                progress_bar.update(
+                    task_id,
+                    description=f"Rank {rank}: {artist_raw} - {title_raw}",
                 )
-                print(f"\r{status:<120}", end="", file=sys.stderr, flush=True)
 
             link_result = self._compute_link(entry, strategy)
 
-            # Show match result
-            if progress:
-                rank = entry.get("rank", "?")
-                pct = ((processed + 1) / total_to_process) * 100
+            # Update progress with match result
+            if progress_bar and task_id is not None:
                 work_key = link_result.get("work_key")
                 confidence = link_result.get("confidence", 0.0)
                 source = link_result.get("source", "unknown")
 
                 if work_key:
-                    # Show different icons based on source
                     if source == "llm_adjudicated":
-                        match_icon = "🤖"
-                        match_info = f"LLM ({confidence:.0%})"
+                        match_info = f"🤖 LLM ({confidence:.0%})"
                     elif source == "resolver_indeterminate":
-                        match_icon = "⚠"
-                        match_info = f"indeterminate ({confidence:.0%})"
+                        match_info = f"⚠ indeterminate ({confidence:.0%})"
                     else:
-                        match_icon = "✓"
-                        match_info = f"{source} ({confidence:.0%})"
+                        match_info = f"✓ {source} ({confidence:.0%})"
                 else:
-                    match_icon = "✗"
-                    match_info = "no match"
+                    match_info = "✗ no match"
 
-                status = (
-                    f"  {match_icon} [{processed + 1}/{total_to_process}] ({pct:.1f}%) "
-                    f"Rank {rank}: {artist_raw} - {title_raw} → {match_info}"
+                progress_bar.update(
+                    task_id,
+                    description=f"Rank {rank}: {artist_raw} - {title_raw} → {match_info}",
+                    advance=1,
                 )
-                print(f"\r{status:<120}", file=sys.stderr, flush=True)
 
             link = ChartLink(
                 run_id=run_id,
@@ -1627,24 +1629,13 @@ class ChartsETL:
                 self.db.add_links_batch(links)
                 links = []
 
-                # Only show batch completion for actual batches (batch_size > 1)
-                if progress and batch_size > 1:
-                    # Clear the current line and show batch completion
-                    print(f"\r{'':<120}", end="", file=sys.stderr)
-                    pct = (processed / total_to_process) * 100
-                    print(
-                        f"  ✓ Batch complete: {processed}/{total_to_process} ({pct:.1f}%)",
-                        file=sys.stderr,
-                    )
-
         # Final commit for remaining links
         if links:
             self.db.add_links_batch(links)
 
-        if progress:
-            # Clear the progress line
-            print(f"\r{'':<120}", end="", file=sys.stderr)
-            print(f"✓ Completed: {processed} entries linked", file=sys.stderr)
+        # Stop progress bar if it was started
+        if progress_bar:
+            progress_bar.stop()
 
         return self.db.get_coverage_report(run_id)
 
