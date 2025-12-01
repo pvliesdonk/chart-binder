@@ -187,54 +187,76 @@ def _resolve_with_fetcher(
     from chart_binder.resolver import CRGRationale, DecisionState, RRRationale
 
     # Search by fingerprint if available
-    if fingerprint and duration_sec:
-        log.debug(f"Searching by fingerprint ({duration_sec}s)")
-        search_results = fetcher.search_recordings(
-            fingerprint=fingerprint,
-            duration_sec=int(duration_sec),
-        )
-        for result in search_results:
-            if result.get("recording_mbid"):
-                try:
-                    fetcher.fetch_recording(result["recording_mbid"])
-                except Exception as e:
-                    log.debug(f"Failed to fetch fingerprint result: {e}")
-
-    # Search by title + artist
-    log.debug(f"Searching for: {artist} - {title}")
-    search_results = fetcher.search_recordings(title=title, artist=artist)
-    log.debug(f"Title/artist search returned {len(search_results)} results")
-
-    # Hydrate recordings from each source type
-    # Use larger limits to find original recordings (can be deep in search results)
-    mb_results = [r for r in search_results if r.get("recording_mbid")]
-    discogs_results = [r for r in search_results if r.get("discogs_release_id")]
-    spotify_results = [r for r in search_results if r.get("spotify_track_id")]
-
-    # Hydrate top 50 MB recordings to improve chances of finding originals
-    for result in mb_results[:50]:
-        mbid = result["recording_mbid"]
-        try:
-            fetcher.fetch_recording(mbid)
-        except Exception as e:
-            log.debug(f"Failed to fetch MB recording {mbid}: {e}")
-
-    for result in discogs_results[:5]:
-        discogs_id = result["discogs_release_id"]
-        try:
-            fetcher.fetch_discogs_release(discogs_id)
-        except Exception as e:
-            log.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
-
-    for result in spotify_results[:5]:
-        spotify_id = result["spotify_track_id"]
-        try:
-            fetcher.fetch_spotify_track(spotify_id)
-        except Exception as e:
-            log.debug(f"Failed to fetch Spotify track {spotify_id}: {e}")
-
-    # Discover candidates from local DB
+    # Check local DB for existing candidates first (avoids redundant API calls)
     candidates = candidate_builder.discover_by_title_artist_length(title, artist, None)
+
+    # Count unique release groups to determine if we have adequate coverage
+    unique_rgs = len(set(c.release_group_mbid for c in candidates if c.release_group_mbid))
+
+    # Only search if we don't have adequate candidates (threshold: 3 release groups)
+    # Popular tracks with canonical recordings are likely already in DB
+    MIN_RELEASE_GROUPS = 3
+    should_search = unique_rgs < MIN_RELEASE_GROUPS
+
+    if should_search:
+        log.info(
+            f"Only {unique_rgs} release group(s) found in DB for {artist} - {title}, "
+            f"searching external sources..."
+        )
+
+        if fingerprint and duration_sec:
+            log.debug(f"Searching by fingerprint ({duration_sec}s)")
+            search_results = fetcher.search_recordings(
+                fingerprint=fingerprint,
+                duration_sec=int(duration_sec),
+            )
+            for result in search_results:
+                if result.get("recording_mbid"):
+                    try:
+                        fetcher.fetch_recording(result["recording_mbid"])
+                    except Exception as e:
+                        log.debug(f"Failed to fetch fingerprint result: {e}")
+
+        # Search by title + artist
+        log.debug(f"Searching for: {artist} - {title}")
+        search_results = fetcher.search_recordings(title=title, artist=artist)
+        log.debug(f"Title/artist search returned {len(search_results)} results")
+
+        # Hydrate recordings from each source type
+        # Use larger limits to find original recordings (can be deep in search results)
+        mb_results = [r for r in search_results if r.get("recording_mbid")]
+        discogs_results = [r for r in search_results if r.get("discogs_release_id")]
+        spotify_results = [r for r in search_results if r.get("spotify_track_id")]
+
+        # Hydrate top 50 MB recordings to improve chances of finding originals
+        for result in mb_results[:50]:
+            mbid = result["recording_mbid"]
+            try:
+                fetcher.fetch_recording(mbid)
+            except Exception as e:
+                log.debug(f"Failed to fetch MB recording {mbid}: {e}")
+
+        for result in discogs_results[:5]:
+            discogs_id = result["discogs_release_id"]
+            try:
+                fetcher.fetch_discogs_release(discogs_id)
+            except Exception as e:
+                log.debug(f"Failed to fetch Discogs release {discogs_id}: {e}")
+
+        for result in spotify_results[:5]:
+            spotify_id = result["spotify_track_id"]
+            try:
+                fetcher.fetch_spotify_track(spotify_id)
+            except Exception as e:
+                log.debug(f"Failed to fetch Spotify track {spotify_id}: {e}")
+
+        # Re-discover candidates after hydration
+        candidates = candidate_builder.discover_by_title_artist_length(title, artist, None)
+    else:
+        log.info(
+            f"Using {unique_rgs} release group(s) from database for {artist} - {title} "
+            f"(skipping search)"
+        )
 
     if not candidates:
         log.warning(f"No candidates found for: {artist} - {title}")

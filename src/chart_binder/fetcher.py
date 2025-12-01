@@ -8,6 +8,7 @@ with fallback chains, cache-aware fetching, and entity hydration into musicgraph
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -48,6 +49,8 @@ DATE_MATCH_BOOST = 0.05  # Boost when dates match closely (same year)
 
 # Label/format validation
 LABEL_MATCH_BOOST = 0.03  # Boost when labels match across sources
+
+log = logging.getLogger(__name__)
 
 
 class FetchMode(Enum):
@@ -191,14 +194,17 @@ class UnifiedFetcher:
         Raises:
             ValueError: If recording not found in database when in OFFLINE mode
         """
+        # Check if recording already exists in database (avoids redundant API calls)
+        existing = self.db.get_recording(mbid)
+        if existing:
+            log.debug(f"Recording {mbid} already in database, skipping fetch")
+            return {"recording": existing}
+
         if self.config.mode == FetchMode.OFFLINE:
-            # Return from database only, no network access
-            recording_data = self.db.get_recording(mbid)
-            if not recording_data:
-                raise ValueError(
-                    f"Recording {mbid} not found in database (OFFLINE mode - no network access)"
-                )
-            return {"recording": recording_data}
+            # Not in database and in OFFLINE mode
+            raise ValueError(
+                f"Recording {mbid} not found in database (OFFLINE mode - no network access)"
+            )
 
         # Fetch recording with all releases and release groups
         data = self.mb_client.get_recording_with_releases(mbid)
