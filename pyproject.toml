@@ -48,6 +48,8 @@ dependencies = [
     "langchain-ollama>=0.2.0",
     "langchain-openai>=0.2.0",
     "thefuzz>=0.22.0",
+    "psycopg2-binary>=2.9.11",
+    "mbdata>=30.0.1",
 ]
 
 
