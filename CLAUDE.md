@@ -18,8 +18,8 @@ This document provides guidance for AI agents working on the chart-binder projec
 ### 2. Documentation as Source of Truth
 
 - **The `docs/` directory is canonical**: All implementation must follow specs
-- **Read specs before implementing**: Always check `docs/spec.md` and relevant appendix files
-- **Follow the roadmap**: Epic structure is defined in `docs/roadmap.md`
+- **Read specs before implementing**: Always check `docs/spec/overview.md` and relevant appendix files
+- **Follow the roadmap**: Epic structure is defined in `docs/spec/roadmap.md`
 - **Test against QA packs**: Appendix QA packs provide test cases with expected outputs
 
 ### 3. Development Workflow
@@ -117,8 +117,9 @@ make all
 ```
 chart-binder/
 ├── docs/                    # Canonical specifications
-│   ├── spec.md             # Master specification
-│   ├── roadmap.md          # Epic-based roadmap
+│   ├── spec/               # Developer/architecture docs
+│   │   ├── overview.md     # Master specification
+│   │   └── roadmap.md      # Epic-based roadmap
 │   └── appendix/           # Detailed specs and QA packs
 ├── src/chart_binder/       # Source code
 │   ├── config.py           # Configuration management
@@ -210,7 +211,7 @@ docs: update normalization ruleset
 
 ### Development Cycle
 
-1. **Read specs**: Check `docs/spec.md` and relevant appendix
+1. **Read specs**: Check `docs/spec/overview.md` and relevant appendix
 2. **Create branch**: Follow naming convention
 3. **Implement**: Write code following standards
 4. **Test**: Ensure all tests pass (`make test`)
@@ -314,7 +315,7 @@ git push
 
 ### Adding a New Normalization Rule
 
-1. Check if rule is in `docs/appendix/normalization_ruleset_v1.md`
+1. Check if rule is in `docs/appendix/normalization.md`
 2. Update `Normalizer` class in `src/chart_binder/normalize.py`
 3. Add inline test demonstrating the rule
 4. Verify QA pack tests still pass
@@ -322,7 +323,7 @@ git push
 
 ### Extending Database Schema
 
-1. Check spec in `docs/spec.md`
+1. Check spec in `docs/spec/overview.md`
 2. Add fields to schema in appropriate DB class
 3. Update upsert methods
 4. Add test for new functionality
@@ -375,12 +376,11 @@ git push
 
 ## Resources
 
-- **Specification**: `docs/spec.md`
-- **Roadmap**: `docs/roadmap.md`
-- **Normalization Rules**: `docs/appendix/normalization_ruleset_v1.md`
-- **QA Pack**: `docs/appendix/normalization_qa_pack_v1.md`
-- **MusicGraph Schema**: `docs/appendix/musicgraph_schema.md`
-- **Chart Schema**: `docs/appendix/chart_schema.md`
+- **Specification**: `docs/spec/overview.md`
+- **Roadmap**: `docs/spec/roadmap.md`
+- **Normalization Rules**: `docs/appendix/normalization.md`
+- **QA Pack**: `docs/appendix/normalization-qa.md`
+- **Database Schema**: `docs/database-schema.md`
 
 ## Quick Reference
 

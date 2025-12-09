@@ -239,8 +239,8 @@ print(f"Rationale: {decision.crg_rationale}")
 - [Configuration Guide](docs/configuration.md) - All configuration options
 - [API Reference](docs/api-reference.md) - Python API documentation
 - [Beets Plugin](docs/beets-plugin.md) - Using with beets
-- [Specification](docs/spec.md) - Technical specification
-- [Roadmap](docs/roadmap.md) - Development roadmap
+- [Specification](docs/spec/overview.md) - Technical specification
+- [Roadmap](docs/spec/roadmap.md) - Development roadmap
 
 ## Architecture
 
@@ -252,7 +252,7 @@ Chart-Binder uses a multi-stage pipeline:
 4. **RR Selection**: Pick representative release within group
 5. **Tag Writing**: Embed decision trace and IDs into audio files
 
-See [docs/spec.md](docs/spec.md) for detailed architecture documentation.
+See [docs/spec/overview.md](docs/spec/overview.md) for detailed architecture documentation.
 
 ## Contributing
 

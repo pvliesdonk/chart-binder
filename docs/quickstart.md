@@ -261,7 +261,7 @@ Now that you have the basics:
 
 1. **Read the [CLI Reference](cli-reference.md)** for complete command documentation
 2. **Configure [LLM adjudication](configuration.md#llm-configuration)** for handling ambiguous cases
-3. **Learn about [normalization rules](appendix/normalization_ruleset_v1.md)** to understand how text is processed
+3. **Learn about [normalization rules](appendix/normalization.md)** to understand how text is processed
 4. **Explore the [Python API](api-reference.md)** for programmatic access
 5. **Set up the [beets plugin](beets-plugin.md)** if you use beets
 
@@ -297,4 +297,4 @@ If you're hitting API rate limits:
 
 - Run `canon --help` for command help
 - Check [GitHub Issues](https://github.com/pvliesdonk/chart-binder/issues) for known issues
-- Read the [technical specification](spec.md) for detailed documentation
+- Read the [technical specification](spec/overview.md) for detailed documentation
