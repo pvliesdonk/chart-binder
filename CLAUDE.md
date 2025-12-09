@@ -240,76 +240,43 @@ docs: update normalization ruleset
 - [Spec deviations if any]
 ```
 
-### Pull Request Description Workflow
+### Merge Strategy
 
-**IMPORTANT**: To make PR descriptions easy to access and copy, follow this workflow:
+**Goal**: Minimize commits and keep history clean.
 
-**When creating a PR:**
+**For simple changes (1-2 commits):**
 
-1. **Create PR description file** at the root of the repo:
-   - Filename: `EPIC{N}_PR.md` (e.g., `EPIC4_PR.md`)
-   - Content: Full PR description in markdown format
-   - Commit and push this file with your branch
+- Merge directly to main without a PR
+- Use `git merge <branch> --no-gpg-sign` then push
 
-2. **Provide GitHub links** to the user:
-   - PR creation link: `https://github.com/{owner}/{repo}/compare/main...{branch}?expand=1`
-   - Direct raw link for copying: `https://raw.githubusercontent.com/{owner}/{repo}/{branch}/EPIC{N}_PR.md`
-   - Alternative: View file at `https://github.com/{owner}/{repo}/blob/{branch}/EPIC{N}_PR.md` and click "Raw" button
+**For complex changes (3+ commits or needs review):**
 
-3. **Benefits**:
-   - No need to copy/paste from Claude Code interface
-   - Description viewable directly on GitHub
-   - Easy to access via "Raw" button
-   - Version controlled with the branch
+1. Try to create PR via `gh pr create` with inline body
+2. If that fails, create a PR description file (`EPIC{N}_PR.md`)
+3. Remove the PR file before merging to keep repo clean
 
-**Before merging the PR:**
-
-1. **Remove the PR description file**:
-   ```bash
-   git rm EPIC{N}_PR.md
-   git commit -m "docs: remove PR description file before merge"
-   git push
-   ```
-
-2. **Why remove it before merge**:
-   - PR description is preserved in the GitHub PR itself
-   - Keeps repo clean (file doesn't end up in main)
-   - Avoids stale documentation files
-   - No longer needed once PR is created
-
-3. **When to remove**:
-   - Can be removed right after PR creation (once description is transferred to GitHub)
-   - Or as part of addressing review comments
-   - Must be removed before merge to keep main clean
-
-**Example workflow:**
+**Direct merge example:**
 
 ```bash
-# 1. Creating PR
-echo "PR content..." > EPIC4_PR.md
-git add EPIC4_PR.md
-git commit -m "docs: add Epic 4 PR description"
-git push
-# Now create the PR on GitHub using the file
-
-# 2. Before merge (choose one approach):
-
-# Option A: Remove immediately after PR creation
-git rm EPIC4_PR.md
-git commit -m "docs: remove PR description file"
-git push
-
-# Option B: Remove when addressing review comments
-git rm EPIC4_PR.md
-# Make your fixes
-git add src/...
-git commit -m "fix: address PR review comments"
-git push
-
-# Either way, ensure it's removed before merge
+git checkout main && git pull
+git merge claude/feature-branch --no-gpg-sign
+git push origin main
+git branch -d claude/feature-branch  # cleanup local
 ```
 
-**Note**: This pattern solves the copy-paste difficulty in web-based Claude Code interface while keeping the repo clean long-term.
+**PR creation example:**
+
+```bash
+gh pr create --title "feat: add feature X" --body "$(cat <<'EOF'
+## Summary
+- Brief description
+
+## Changes
+- Change 1
+- Change 2
+EOF
+)"
+```
 
 ## Common Tasks
 
