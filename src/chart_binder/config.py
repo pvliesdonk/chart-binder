@@ -8,6 +8,26 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 
+class BackendMode(StrEnum):
+    """MusicBrainz backend mode."""
+
+    API = "api"
+    DB = "db"
+
+
+class BackendConfig(BaseModel):
+    """MusicBrainz backend configuration.
+
+    Supports two modes:
+    - api: Uses MusicBrainz REST API (default, rate-limited)
+    - db: Direct PostgreSQL access (faster for batch operations)
+    """
+
+    mode: BackendMode = Field(default=BackendMode.API)
+    db_url: str | None = Field(default=None)
+    db_echo: bool = Field(default=False)
+
+
 class HttpCacheConfig(BaseModel):
     """HTTP cache configuration."""
 
@@ -118,6 +138,7 @@ class Config(BaseModel):
     Loads from TOML file with optional environment variable overrides.
     """
 
+    backend: BackendConfig = Field(default_factory=BackendConfig)
     http_cache: HttpCacheConfig = Field(default_factory=HttpCacheConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     live_sources: LiveSourcesConfig = Field(default_factory=LiveSourcesConfig)
@@ -155,6 +176,19 @@ class Config(BaseModel):
 
         if offline := os.getenv(f"{env_prefix}OFFLINE_MODE"):
             config_dict["offline_mode"] = offline.lower() in ("true", "1", "yes")
+
+        # Backend config
+        backend = config_dict.setdefault("backend", {})
+        if not isinstance(backend, dict):
+            backend = {}
+            config_dict["backend"] = backend
+
+        if backend_mode := os.getenv(f"{env_prefix}BACKEND_MODE"):
+            backend["mode"] = backend_mode
+        if backend_db_url := os.getenv(f"{env_prefix}BACKEND_DB_URL"):
+            backend["db_url"] = backend_db_url
+        if backend_db_echo := os.getenv(f"{env_prefix}BACKEND_DB_ECHO"):
+            backend["db_echo"] = backend_db_echo.lower() in ("true", "1", "yes")
 
         http_cache = config_dict.setdefault("http_cache", {})
         if not isinstance(http_cache, dict):
@@ -452,3 +486,51 @@ def test_config_live_sources_cache_ttl_env_overrides(
     assert config.live_sources.cache_ttl_spotify == 14400
     assert config.live_sources.cache_ttl_wikidata == 1209600
     assert config.live_sources.cache_ttl_acoustid == 43200
+
+
+def test_config_backend_defaults():
+    """Test backend configuration defaults."""
+    config = Config()
+    assert config.backend.mode == BackendMode.API
+    assert config.backend.db_url is None
+    assert config.backend.db_echo is False
+
+
+def test_config_backend_mode_enum():
+    """Test BackendMode enum values."""
+    assert BackendMode.API == "api"
+    assert BackendMode.DB == "db"
+
+
+def test_config_backend_env_overrides(
+    monkeypatch,  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+):
+    """Test backend configuration from environment variables."""
+    monkeypatch.setenv("CHART_BINDER_BACKEND_MODE", "db")  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv(
+        "CHART_BINDER_BACKEND_DB_URL", "postgresql://user:pass@localhost/musicbrainz"
+    )  # pyright: ignore[reportUnknownMemberType]
+    monkeypatch.setenv("CHART_BINDER_BACKEND_DB_ECHO", "true")  # pyright: ignore[reportUnknownMemberType]
+
+    config = Config.load()
+    assert config.backend.mode == BackendMode.DB
+    assert config.backend.db_url == "postgresql://user:pass@localhost/musicbrainz"
+    assert config.backend.db_echo is True
+
+
+def test_config_backend_db_echo_false_values(
+    monkeypatch,  # pyright: ignore[reportMissingParameterType,reportUnknownParameterType]
+):
+    """Test db_echo env var with various false values."""
+    # Test that only specific values are truthy
+    monkeypatch.setenv("CHART_BINDER_BACKEND_DB_ECHO", "false")  # pyright: ignore[reportUnknownMemberType]
+    config = Config.load()
+    assert config.backend.db_echo is False
+
+    monkeypatch.setenv("CHART_BINDER_BACKEND_DB_ECHO", "0")  # pyright: ignore[reportUnknownMemberType]
+    config = Config.load()
+    assert config.backend.db_echo is False
+
+    monkeypatch.setenv("CHART_BINDER_BACKEND_DB_ECHO", "no")  # pyright: ignore[reportUnknownMemberType]
+    config = Config.load()
+    assert config.backend.db_echo is False

@@ -177,8 +177,8 @@ reportUnreachable = false
 # reportUnknownArgumentType = false
 
 [tool.codespell]
-# Add here as needed:
-# ignore-words-list = "foo,bar"
+# acn = SQL alias for artist_credit_name table in MusicBrainz schema
+ignore-words-list = "acn"
 # skip = "foo.py,bar.py"
 
 [tool.pytest.ini_options]
