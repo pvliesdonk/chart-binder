@@ -36,6 +36,7 @@ class TestCandidateDiscoveryE2E:
             sort_name="Beatles, The",
             begin_area_country="GB",
             wikidata_qid="Q1299",
+            name_normalized="beatles",
         )
 
         # Recording: Yesterday
@@ -46,6 +47,7 @@ class TestCandidateDiscoveryE2E:
             length_ms=125000,
             isrcs_json='["GBAYE0601315"]',
             flags_json='{"is_live": false, "is_remix": false}',
+            title_normalized="yesterday",
         )
 
         # Release Group 1: Help! (Album) - Original appearance
@@ -863,10 +865,10 @@ class TestIntegrationScenarios:
 
         # No release groups - should be indeterminate
         normalizer = Normalizer()
-        builder = CandidateBuilder(db, normalizer)
+        _ = CandidateBuilder(db, normalizer)  # Ensure builder instantiation works
 
-        # Build minimal evidence bundle
-        candidate_set = CandidateSet(candidates=[])
+        # Build minimal evidence bundle (not used but validates CandidateSet with empty list)
+        _ = CandidateSet(candidates=[])
         evidence_bundle_dict = {
             "artist": {"name": "Test Artist"},
             "recording_candidates": [],

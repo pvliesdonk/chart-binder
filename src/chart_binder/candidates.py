@@ -546,15 +546,16 @@ def test_candidate_builder_title_artist_length_discovery(tmp_path):
     """Test title+artist+length fuzzy discovery."""
     from chart_binder.normalize import Normalizer
 
-    # Setup DB with test data
+    # Setup DB with test data - include normalized fields for fuzzy search
     db = MusicGraphDB(tmp_path / "test.sqlite")
-    db.upsert_artist("artist-1", "The Beatles")
+    db.upsert_artist("artist-1", "The Beatles", name_normalized="beatles")
     db.upsert_recording(
         "rec-1",
         "Yesterday",
         artist_mbid="artist-1",
         length_ms=125000,
         isrcs_json='["GBAYE0601315"]',
+        title_normalized="yesterday",
     )
     db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
     db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
@@ -836,7 +837,7 @@ def test_discover_by_title_artist_length_unicode(tmp_path):
         candidates = builder.discover_by_title_artist_length("Café del Mar", "Björk", 245000)
         assert isinstance(candidates, list)
     except Exception as e:
-        assert False, f"Unicode search should not raise exception: {e}"
+        raise AssertionError(f"Unicode search should not raise exception: {e}") from e
 
 
 def test_discover_by_title_artist_length_very_short_title(tmp_path):
@@ -844,13 +845,19 @@ def test_discover_by_title_artist_length_very_short_title(tmp_path):
     from chart_binder.normalize import Normalizer
 
     db = MusicGraphDB(tmp_path / "test.sqlite")
-    db.upsert_artist("artist-1", "Prince")
-    db.upsert_artist("artist-2", "The Who")
+    db.upsert_artist("artist-1", "Prince", name_normalized="prince")
+    db.upsert_artist("artist-2", "The Who", name_normalized="who")
 
-    # Very short titles
-    db.upsert_recording("rec-1", "I", artist_mbid="artist-1", length_ms=180000)
-    db.upsert_recording("rec-2", "U", artist_mbid="artist-1", length_ms=200000)
-    db.upsert_recording("rec-3", "5:15", artist_mbid="artist-2", length_ms=315000)
+    # Very short titles - include normalized fields for fuzzy search
+    db.upsert_recording(
+        "rec-1", "I", artist_mbid="artist-1", length_ms=180000, title_normalized="i"
+    )
+    db.upsert_recording(
+        "rec-2", "U", artist_mbid="artist-1", length_ms=200000, title_normalized="u"
+    )
+    db.upsert_recording(
+        "rec-3", "5:15", artist_mbid="artist-2", length_ms=315000, title_normalized="5:15"
+    )
 
     db.upsert_release_group("rg-1", "Single I", artist_mbid="artist-1")
     db.upsert_release_group("rg-2", "Single U", artist_mbid="artist-1")
@@ -968,17 +975,33 @@ def test_discover_with_normalizer_edge_cases(tmp_path):
     from chart_binder.normalize import Normalizer
 
     db = MusicGraphDB(tmp_path / "test.sqlite")
-    db.upsert_artist("artist-1", "Daft Punk")
-    db.upsert_artist("artist-2", "Madonna")
+    db.upsert_artist("artist-1", "Daft Punk", name_normalized="daft punk")
+    db.upsert_artist("artist-2", "Madonna", name_normalized="madonna")
 
-    # Various edge cases in titles
+    # Various edge cases in titles - normalized titles contain the core after processing
     db.upsert_recording(
-        "rec-1", "Get Lucky (feat. Pharrell Williams)", artist_mbid="artist-1", length_ms=368000
+        "rec-1",
+        "Get Lucky (feat. Pharrell Williams)",
+        artist_mbid="artist-1",
+        length_ms=368000,
+        title_normalized="get lucky",
     )
-    db.upsert_recording("rec-2", "Get Lucky (Radio Edit)", artist_mbid="artist-1", length_ms=250000)
-    db.upsert_recording("rec-3", "Vogue (Live)", artist_mbid="artist-2", length_ms=320000)
     db.upsert_recording(
-        "rec-4", "Vogue (David Morales Remix)", artist_mbid="artist-2", length_ms=480000
+        "rec-2",
+        "Get Lucky (Radio Edit)",
+        artist_mbid="artist-1",
+        length_ms=250000,
+        title_normalized="get lucky",
+    )
+    db.upsert_recording(
+        "rec-3", "Vogue (Live)", artist_mbid="artist-2", length_ms=320000, title_normalized="vogue"
+    )
+    db.upsert_recording(
+        "rec-4",
+        "Vogue (David Morales Remix)",
+        artist_mbid="artist-2",
+        length_ms=480000,
+        title_normalized="vogue",
     )
 
     db.upsert_release_group("rg-1", "Random Access Memories", artist_mbid="artist-1")

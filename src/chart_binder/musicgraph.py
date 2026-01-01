@@ -1099,13 +1099,25 @@ def test_get_release_groups_for_recording(tmp_path):
 def test_search_recordings_fuzzy(tmp_path):
     db = MusicGraphDB(tmp_path / "test.sqlite")
 
-    db.upsert_artist("artist-1", "The Beatles")
-    db.upsert_artist("artist-2", "The Rolling Stones")
+    db.upsert_artist("artist-1", "The Beatles", name_normalized="beatles")
+    db.upsert_artist("artist-2", "The Rolling Stones", name_normalized="rolling stones")
 
-    db.upsert_recording("rec-1", "Yesterday", artist_mbid="artist-1", length_ms=125000)
-    db.upsert_recording("rec-2", "Hey Jude", artist_mbid="artist-1", length_ms=431000)
-    db.upsert_recording("rec-3", "Let It Be", artist_mbid="artist-1", length_ms=243000)
-    db.upsert_recording("rec-4", "Paint It Black", artist_mbid="artist-2", length_ms=222000)
+    db.upsert_recording(
+        "rec-1", "Yesterday", artist_mbid="artist-1", length_ms=125000, title_normalized="yesterday"
+    )
+    db.upsert_recording(
+        "rec-2", "Hey Jude", artist_mbid="artist-1", length_ms=431000, title_normalized="hey jude"
+    )
+    db.upsert_recording(
+        "rec-3", "Let It Be", artist_mbid="artist-1", length_ms=243000, title_normalized="let it be"
+    )
+    db.upsert_recording(
+        "rec-4",
+        "Paint It Black",
+        artist_mbid="artist-2",
+        length_ms=222000,
+        title_normalized="paint it black",
+    )
 
     # Search by title only
     results = db.search_recordings_fuzzy("hey")
@@ -1322,12 +1334,18 @@ def test_search_recordings_fuzzy_special_characters(tmp_path):
     """Test fuzzy search with SQL special characters (%, _, etc.)."""
     db = MusicGraphDB(tmp_path / "test.sqlite")
 
-    db.upsert_artist("artist-1", "100% Pure")
-    db.upsert_artist("artist-2", "Under_Score")
+    db.upsert_artist("artist-1", "100% Pure", name_normalized="100% pure")
+    db.upsert_artist("artist-2", "Under_Score", name_normalized="under_score")
 
-    db.upsert_recording("rec-1", "50% Love", artist_mbid="artist-1", length_ms=180000)
-    db.upsert_recording("rec-2", "100% Pure", artist_mbid="artist-1", length_ms=200000)
-    db.upsert_recording("rec-3", "My_Song", artist_mbid="artist-2", length_ms=220000)
+    db.upsert_recording(
+        "rec-1", "50% Love", artist_mbid="artist-1", length_ms=180000, title_normalized="50% love"
+    )
+    db.upsert_recording(
+        "rec-2", "100% Pure", artist_mbid="artist-1", length_ms=200000, title_normalized="100% pure"
+    )
+    db.upsert_recording(
+        "rec-3", "My_Song", artist_mbid="artist-2", length_ms=220000, title_normalized="my_song"
+    )
 
     # Test % character in title search
     results = db.search_recordings_fuzzy("100%")
@@ -1409,7 +1427,7 @@ def test_concurrent_database_access(tmp_path):
     import threading
 
     db = MusicGraphDB(tmp_path / "test.sqlite")
-    db.upsert_artist("artist-1", "Test Artist")
+    db.upsert_artist("artist-1", "Test Artist", name_normalized="test artist")
 
     errors = []
     results = []
@@ -1418,7 +1436,11 @@ def test_concurrent_database_access(tmp_path):
         try:
             for i in range(start_idx, start_idx + count):
                 db.upsert_recording(
-                    f"rec-{i}", f"Song {i}", artist_mbid="artist-1", length_ms=100000 + i
+                    f"rec-{i}",
+                    f"Song {i}",
+                    artist_mbid="artist-1",
+                    length_ms=100000 + i,
+                    title_normalized=f"song {i}",
                 )
         except Exception as e:
             errors.append(e)

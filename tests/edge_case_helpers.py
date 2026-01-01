@@ -228,7 +228,6 @@ def validate_entry(entry: dict, rules: list[dict] | None = None) -> list[str]:
     warnings: list[str] = []
 
     for rule in rules:
-        rule_id = rule.get("id", "unknown")
         rule_type = rule.get("rule", "")
         action = rule.get("action", "warn")
 

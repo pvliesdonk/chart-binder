@@ -345,7 +345,7 @@ def check_entry_for_issues(scraper_id: str, entry: dict) -> list[str]:
         if issues:
             print("Issues found:", issues)
     """
-    from chart_binder.tests.edge_case_helpers import validate_entry
+    from edge_case_helpers import validate_entry
 
     rules = load_edge_cases().get("validation_rules", {}).get("rules", [])
     return validate_entry(entry, rules)
