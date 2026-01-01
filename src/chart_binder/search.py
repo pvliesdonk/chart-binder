@@ -44,6 +44,8 @@ from typing import Any
 
 from rapidfuzz import fuzz
 
+from chart_binder.acoustid import AcoustIDClient
+from chart_binder.candidates import BucketedCandidateSet
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.normalize import Normalizer
 
@@ -243,13 +245,29 @@ class MultiStageSearcher:
                 )
                 return deduplicated_results
 
-        # Stages 3-4 (ARTIST_BROWSE, ACOUSTID) implemented in Part 2
-        # Placeholder logging for future stages
-        if self.config.enable_artist_browse and len(all_results) < self.config.min_fuzzy_results:
-            logger.debug("Stage 3 (ARTIST_BROWSE) will be implemented in Part 2")
+        # Stage 3: ARTIST_BROWSE (exhaustive artist catalog search)
+        deduplicated_results = self._deduplicate(all_results)
+        if (
+            self.config.enable_artist_browse
+            and len(deduplicated_results) < self.config.min_fuzzy_results
+        ):
+            artist_results = self._search_artist_browse(title_core, artist_core, title, artist)
+            all_results.extend(artist_results)
+            logger.info(f"Stage 3 (ARTIST_BROWSE): found {len(artist_results)} results")
 
-        if self.config.enable_acoustid and fingerprint:
-            logger.debug("Stage 4 (ACOUSTID) will be implemented in Part 2")
+            deduplicated_results = self._deduplicate(all_results)
+            if len(deduplicated_results) >= self.config.min_fuzzy_results:
+                logger.info(
+                    f"Sufficient results after artist browse "
+                    f"({len(deduplicated_results)} >= {self.config.min_fuzzy_results})"
+                )
+                return deduplicated_results
+
+        # Stage 4: ACOUSTID (fingerprint-based lookup)
+        if self.config.enable_acoustid and fingerprint and fingerprint_duration:
+            acoustid_results = self._search_acoustid(fingerprint, fingerprint_duration)
+            all_results.extend(acoustid_results)
+            logger.info(f"Stage 4 (ACOUSTID): found {len(acoustid_results)} results")
 
         return self._deduplicate(all_results)
 
@@ -358,6 +376,156 @@ class MultiStageSearcher:
 
         return results
 
+    def _search_artist_browse(
+        self,
+        title_core: str,
+        artist_core: str,
+        title_raw: str,
+        artist_raw: str,
+    ) -> list[SearchResult]:
+        """
+        Stage 3: Artist exhaustive browse.
+
+        Searches for the artist by name, then browses all their release groups,
+        and filters recordings by fuzzy title matching.
+
+        This is useful when the recording isn't in our DB but we have the
+        artist and can find the track by scanning their catalog.
+
+        Args:
+            title_core: Normalized title (core form)
+            artist_core: Normalized artist (core form)
+            title_raw: Original title for display
+            artist_raw: Original artist for display
+
+        Returns:
+            List of SearchResult objects from artist browse
+        """
+        logger.debug(f"Artist browse search: artist='{artist_core}'")
+
+        results: list[SearchResult] = []
+
+        # Step 1: Search for artist by name
+        artists = self.db.search_artists(artist_core, limit=5)
+        if not artists:
+            # Try with raw name if normalized didn't match
+            artists = self.db.search_artists(artist_raw, limit=5)
+
+        if not artists:
+            logger.debug("No artists found for browse search")
+            return results
+
+        # Step 2: Filter artists by similarity and collect valid MBIDs
+        valid_artists: dict[str, float] = {}  # mbid -> similarity
+        for artist in artists:
+            artist_mbid = artist.get("mbid")
+            if not artist_mbid:
+                continue
+
+            artist_name = artist.get("name", "")
+            artist_similarity = fuzz.token_set_ratio(artist_core, artist_name.lower())
+            if artist_similarity >= self.config.min_artist_similarity:
+                valid_artists[artist_mbid] = artist_similarity
+
+        if not valid_artists:
+            logger.debug("No artists passed similarity threshold")
+            return results
+
+        # Step 3: Batch fetch all release groups for valid artists
+        artist_mbids = list(valid_artists.keys())
+        release_groups = self.db.get_release_groups_for_artists(artist_mbids)
+
+        if not release_groups:
+            logger.debug("No release groups found for artists")
+            return results
+
+        # Step 4: Batch fetch all recordings for these release groups
+        rg_mbids = [rg.get("mbid") for rg in release_groups if rg.get("mbid")]
+        if not rg_mbids:
+            return results
+
+        recordings = self.db.get_recordings_for_release_groups(rg_mbids)
+
+        # Step 5: Filter recordings by title similarity
+        for rec in recordings:
+            rec_title = rec.get("title_normalized") or rec.get("title", "")
+            title_similarity = fuzz.token_set_ratio(title_core, rec_title.lower())
+
+            if title_similarity >= self.config.min_title_similarity:
+                # Get artist similarity for this recording's artist
+                rec_artist_mbid = rec.get("artist_mbid", "")
+                artist_similarity = valid_artists.get(rec_artist_mbid, 0.0)
+
+                result = self._recording_to_search_result(rec, SearchStage.ARTIST_BROWSE)
+                result.title_similarity = title_similarity
+                result.artist_similarity = artist_similarity
+                results.append(result)
+
+                if len(results) >= self.config.max_results_per_stage:
+                    return results
+
+        return results
+
+    def _search_acoustid(
+        self,
+        fingerprint: str,
+        fingerprint_duration: int,
+    ) -> list[SearchResult]:
+        """
+        Stage 4: AcoustID fingerprint-based lookup.
+
+        Uses the audio fingerprint to find matching recordings.
+        Highest confidence when available but requires the audio file.
+
+        Args:
+            fingerprint: Chromaprint audio fingerprint
+            fingerprint_duration: Duration in seconds for AcoustID lookup
+
+        Returns:
+            List of SearchResult objects from AcoustID lookup
+        """
+        logger.debug("AcoustID search with fingerprint")
+
+        results: list[SearchResult] = []
+
+        try:
+            with AcoustIDClient() as client:
+                acoustid_results = client.lookup(
+                    fingerprint=fingerprint,
+                    duration_sec=fingerprint_duration,
+                )
+        except ValueError as e:
+            # No API key configured
+            logger.warning(f"AcoustID not available: {e}")
+            return results
+        except Exception as e:
+            logger.warning(f"AcoustID lookup failed: {e}")
+            return results
+
+        # Convert AcoustID results to SearchResults
+        # We need to look up the recording in our DB to get full metadata
+        for aid_result in acoustid_results:
+            recording = self.db.get_recording(aid_result.recording_mbid)
+            if recording:
+                result = self._recording_to_search_result(recording, SearchStage.ACOUSTID)
+                # Use AcoustID confidence as similarity proxy
+                result.title_similarity = aid_result.confidence * 100.0
+                result.artist_similarity = aid_result.confidence * 100.0
+                results.append(result)
+            else:
+                # Recording not in our DB - create a minimal result
+                result = SearchResult(
+                    recording_mbid=aid_result.recording_mbid,
+                    title="",  # Unknown - not in our DB
+                    length_ms=aid_result.duration_ms,
+                    stage=SearchStage.ACOUSTID,
+                    title_similarity=aid_result.confidence * 100.0,
+                    artist_similarity=aid_result.confidence * 100.0,
+                )
+                results.append(result)
+
+        return results
+
     def _recording_to_search_result(
         self, recording: dict[str, Any], stage: SearchStage
     ) -> SearchResult:
@@ -428,6 +596,38 @@ class MultiStageSearcher:
         for result in results:
             summary[result.stage] += 1
         return summary
+
+    def get_bucketed_candidates(self, results: list[SearchResult]) -> BucketedCandidateSet:
+        """
+        Expand search results to bucketed release groups.
+
+        Takes recording search results and expands them to their containing
+        release groups, then organizes by bucket type (Album, EP, Single, etc.).
+
+        Args:
+            results: List of SearchResult objects from search
+
+        Returns:
+            BucketedCandidateSet with release groups organized by type
+        """
+        # Collect all recording MBIDs
+        recording_mbids = [r.recording_mbid for r in results]
+        if not recording_mbids:
+            return BucketedCandidateSet()
+
+        # Batch fetch all release groups for these recordings
+        all_release_groups = self.db.get_release_groups_for_recordings(recording_mbids)
+
+        # Deduplicate by MBID
+        seen_rg_mbids: set[str] = set()
+        unique_release_groups: list[dict[str, Any]] = []
+        for rg in all_release_groups:
+            rg_mbid = rg.get("mbid")
+            if rg_mbid and rg_mbid not in seen_rg_mbids:
+                seen_rg_mbids.add(rg_mbid)
+                unique_release_groups.append(rg)
+
+        return BucketedCandidateSet.from_release_groups(unique_release_groups)
 
 
 ## Tests
@@ -733,3 +933,196 @@ def test_multi_stage_searcher_disabled_stages(tmp_path):
     # All results should be from fuzzy stage
     for result in results:
         assert result.stage == SearchStage.FUZZY
+
+
+def test_multi_stage_searcher_artist_browse(tmp_path):
+    """Test Stage 3 artist browse search."""
+    from chart_binder.musicgraph import MusicGraphDB
+    from chart_binder.normalize import Normalizer
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    normalizer = Normalizer()
+
+    # Setup artist with release groups and recordings
+    db.upsert_artist("artist-1", "The Beatles", name_normalized="beatles")
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+    db.upsert_recording(
+        "rec-1",
+        "Yesterday",
+        artist_mbid="artist-1",
+        title_normalized="yesterday",
+    )
+    db.upsert_recording_release("rec-1", "rel-1")
+
+    # Configure to require many results from strict/fuzzy to force artist browse
+    config = SearchConfig(
+        min_strict_results=100,
+        min_fuzzy_results=100,
+        enable_artist_browse=True,
+    )
+    searcher = MultiStageSearcher(db, normalizer, config)
+
+    results = searcher.search(title="Yesterday", artist="Beatles")
+
+    # Should find results - may come from multiple stages
+    assert len(results) >= 1
+
+
+def test_multi_stage_searcher_artist_browse_no_artist(tmp_path):
+    """Test artist browse gracefully handles no matching artist."""
+    from chart_binder.musicgraph import MusicGraphDB
+    from chart_binder.normalize import Normalizer
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    normalizer = Normalizer()
+
+    config = SearchConfig(
+        min_strict_results=100,
+        min_fuzzy_results=100,
+        enable_artist_browse=True,
+    )
+    searcher = MultiStageSearcher(db, normalizer, config)
+
+    # Search for non-existent artist
+    results = searcher.search(title="Unknown Song", artist="Unknown Artist")
+
+    # Should return empty without error
+    assert len(results) == 0
+
+
+def test_multi_stage_searcher_get_bucketed_candidates(tmp_path):
+    """Test getting bucketed candidates from search results."""
+    from chart_binder.musicgraph import MusicGraphDB
+    from chart_binder.normalize import Normalizer
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    normalizer = Normalizer()
+
+    # Setup test data with multiple release groups
+    db.upsert_artist("artist-1", "The Beatles", name_normalized="beatles")
+
+    # Album release group
+    db.upsert_release_group(
+        "rg-album",
+        "Help!",
+        artist_mbid="artist-1",
+        type="Album",
+        first_release_date="1965-08-06",
+    )
+    db.upsert_release("rel-album", "Help!", release_group_mbid="rg-album")
+
+    # Single release group
+    db.upsert_release_group(
+        "rg-single",
+        "Yesterday / Act Naturally",
+        artist_mbid="artist-1",
+        type="Single",
+        first_release_date="1965-09-13",
+    )
+    db.upsert_release("rel-single", "Yesterday / Act Naturally", release_group_mbid="rg-single")
+
+    # Recording on both
+    db.upsert_recording(
+        "rec-1",
+        "Yesterday",
+        artist_mbid="artist-1",
+        title_normalized="yesterday",
+    )
+    db.upsert_recording_release("rec-1", "rel-album")
+    db.upsert_recording_release("rec-1", "rel-single")
+
+    searcher = MultiStageSearcher(db, normalizer)
+    results = searcher.search(title="Yesterday", artist="Beatles")
+
+    # Get bucketed candidates
+    bucketed = searcher.get_bucketed_candidates(results)
+
+    # Should have both album and single in buckets
+    assert not bucketed.is_empty
+    # The recording is on both an album and single
+    assert len(bucketed.studio_albums) + len(bucketed.singles) >= 1
+
+
+def test_multi_stage_searcher_acoustid_disabled_without_fingerprint(tmp_path):
+    """Test AcoustID is skipped when no fingerprint provided."""
+    from chart_binder.musicgraph import MusicGraphDB
+    from chart_binder.normalize import Normalizer
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+    normalizer = Normalizer()
+
+    # Setup minimal data
+    db.upsert_artist("artist-1", "Artist", name_normalized="artist")
+    db.upsert_recording("rec-1", "Song", artist_mbid="artist-1", title_normalized="song")
+    db.upsert_release_group("rg-1", "Album", artist_mbid="artist-1")
+    db.upsert_release("rel-1", "Album", release_group_mbid="rg-1")
+    db.upsert_recording_release("rec-1", "rel-1")
+
+    config = SearchConfig(enable_acoustid=True)
+    searcher = MultiStageSearcher(db, normalizer, config)
+
+    # Search without fingerprint - should not crash
+    results = searcher.search(title="Song", artist="Artist")
+
+    # AcoustID not triggered without fingerprint
+    acoustid_results = [r for r in results if r.stage == SearchStage.ACOUSTID]
+    assert len(acoustid_results) == 0
+
+
+def test_get_release_groups_for_artist(tmp_path):
+    """Test MusicGraphDB.get_release_groups_for_artist method."""
+    from chart_binder.musicgraph import MusicGraphDB
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+
+    # Setup artist with multiple release groups
+    db.upsert_artist("artist-1", "The Beatles")
+    db.upsert_release_group(
+        "rg-1", "Help!", artist_mbid="artist-1", type="Album", first_release_date="1965-08-06"
+    )
+    db.upsert_release_group(
+        "rg-2",
+        "Rubber Soul",
+        artist_mbid="artist-1",
+        type="Album",
+        first_release_date="1965-12-03",
+    )
+    db.upsert_release_group(
+        "rg-3",
+        "Yesterday (Single)",
+        artist_mbid="artist-1",
+        type="Single",
+        first_release_date="1965-09-13",
+    )
+
+    release_groups = db.get_release_groups_for_artist("artist-1")
+
+    assert len(release_groups) == 3
+    # Should be sorted by date ascending
+    assert release_groups[0]["mbid"] == "rg-1"  # August
+    assert release_groups[1]["mbid"] == "rg-3"  # September
+    assert release_groups[2]["mbid"] == "rg-2"  # December
+
+
+def test_get_recordings_for_release_group(tmp_path):
+    """Test MusicGraphDB.get_recordings_for_release_group method."""
+    from chart_binder.musicgraph import MusicGraphDB
+
+    db = MusicGraphDB(tmp_path / "test.sqlite")
+
+    # Setup release group with recordings
+    db.upsert_artist("artist-1", "The Beatles")
+    db.upsert_release_group("rg-1", "Help!", artist_mbid="artist-1", type="Album")
+    db.upsert_release("rel-1", "Help!", release_group_mbid="rg-1")
+
+    db.upsert_recording("rec-1", "Help!", artist_mbid="artist-1")
+    db.upsert_recording("rec-2", "Yesterday", artist_mbid="artist-1")
+    db.upsert_recording_release("rec-1", "rel-1")
+    db.upsert_recording_release("rec-2", "rel-1")
+
+    recordings = db.get_recordings_for_release_group("rg-1")
+
+    assert len(recordings) == 2
+    mbids = {r["mbid"] for r in recordings}
+    assert mbids == {"rec-1", "rec-2"}
