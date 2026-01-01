@@ -176,16 +176,16 @@ class BucketedCandidateSet:
         Note: This is a simple heuristic. Complex cases (e.g., soundtrack that
         predates album) should be deferred to LLM adjudication.
         """
-        if self.studio_albums:
-            return self.studio_albums[0]
-        if self.eps:
-            return self.eps[0]
-        if self.soundtracks:
-            return self.soundtracks[0]
-        if self.singles:
-            return self.singles[0]
-        if self.other:
-            return self.other[0]
+        priority_order = [
+            self.studio_albums,
+            self.eps,
+            self.soundtracks,
+            self.singles,
+            self.other,
+        ]
+        for bucket in priority_order:
+            if bucket:
+                return bucket[0]
         return None
 
     def needs_adjudication(self) -> bool:
@@ -220,19 +220,15 @@ class BucketedCandidateSet:
         if self.studio_albums:
             album_date = self.studio_albums[0].first_release_date
             if album_date:
-                # Check if soundtrack predates album
-                if self.soundtracks and self.soundtracks[0].first_release_date:
-                    if self.soundtracks[0].first_release_date < album_date:
-                        return True
-                # Check if single/EP predates album significantly
-                if self.singles and self.singles[0].first_release_date:
-                    if self.singles[0].first_release_date < album_date:
-                        return True
-                if self.eps and self.eps[0].first_release_date:
-                    if self.eps[0].first_release_date < album_date:
-                        return True
+                # Check if any lower-priority release predates the album
+                for bucket in (self.soundtracks, self.singles, self.eps):
+                    if bucket and bucket[0].first_release_date:
+                        if bucket[0].first_release_date < album_date:
+                            return True
+                # Album is present and is the earliest - no adjudication needed
+                return False
 
-        # Multiple buckets with no clear winner
+        # No album, but multiple buckets - needs adjudication
         return non_empty_buckets > 1
 
     @classmethod
@@ -254,11 +250,7 @@ class BucketedCandidateSet:
             BucketedCandidateSet with release groups classified into buckets.
         """
         buckets: dict[ReleaseGroupBucket, list[BucketedReleaseGroup]] = {
-            ReleaseGroupBucket.STUDIO_ALBUM: [],
-            ReleaseGroupBucket.EP: [],
-            ReleaseGroupBucket.SOUNDTRACK: [],
-            ReleaseGroupBucket.SINGLE: [],
-            ReleaseGroupBucket.OTHER: [],
+            bucket: [] for bucket in ReleaseGroupBucket
         }
 
         for rg in release_groups:
@@ -1433,12 +1425,17 @@ def test_classify_bucket_other_types():
     assert BucketedCandidateSet._classify_bucket("", []) == ReleaseGroupBucket.OTHER
 
 
-def test_classify_bucket_live_album():
-    """Test that live albums are classified as OTHER."""
-    # Live secondary type on Album → OTHER (not a studio album)
+def test_classify_bucket_live_album_is_studio_album():
+    """Test that live albums remain classified as STUDIO_ALBUM.
+
+    Per current classification logic, the "Live" secondary type on an "Album"
+    does NOT change its classification from STUDIO_ALBUM. Only "Compilation"
+    secondary type demotes an Album to OTHER. This is intentional - a live
+    album is still an album, just recorded live.
+    """
     assert (
         BucketedCandidateSet._classify_bucket("Album", ["Live"])
-        == ReleaseGroupBucket.STUDIO_ALBUM  # Note: Live doesn't make it OTHER, only Compilation does
+        == ReleaseGroupBucket.STUDIO_ALBUM
     )
 
 
@@ -1748,7 +1745,12 @@ def test_bucketed_candidate_set_needs_adjudication_ep_predates_album():
 
 
 def test_bucketed_candidate_set_needs_adjudication_album_is_first():
-    """Test no adjudication when album is the earliest release."""
+    """Test no adjudication when album is the earliest release.
+
+    When a studio album is present and predates all other releases, we can
+    confidently select it without LLM adjudication. This reduces costs and
+    speeds up processing for the common case.
+    """
     # Album from 1980, single from 1985 - album clearly canonical
     bucketed = BucketedCandidateSet(
         studio_albums=[BucketedReleaseGroup(
@@ -1762,9 +1764,8 @@ def test_bucketed_candidate_set_needs_adjudication_album_is_first():
             first_release_date="1985-06-01"
         )]
     )
-    # Multiple buckets but album predates - still needs adjudication by current logic
-    # because multiple non-empty buckets triggers adjudication
-    assert bucketed.needs_adjudication() is True  # Current behavior
+    # Album predates single - no adjudication needed, album is clearly canonical
+    assert bucketed.needs_adjudication() is False
 
 
 def test_bucketed_candidate_set_needs_adjudication_no_dates():
