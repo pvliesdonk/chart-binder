@@ -682,13 +682,30 @@ class MusicGraphDB:
         """
         Fallback fuzzy search using Levenshtein distance.
 
+        This is Tier 2 of search_recordings_fuzzy(), used when the Tier 1
+        SQL LIKE query returns no results. It's slower (scans all recordings
+        in the length range) but more tolerant of typos and variations.
+
+        Why Levenshtein:
+        - Catches common typos: "Beetles" matches "Beatles" (86% similar)
+        - Handles OCR errors from chart image scans
+        - Works with partial matches when LIKE would fail
+
+        Why 80% threshold:
+        - Matches the DEFAULT_MATCH_THRESHOLD from normalize.py
+        - Allows ~1 typo per 5 characters
+        - Rejects clearly different titles
+
+        Combined scoring (min of title + artist):
+        - Both title AND artist must be reasonable matches
+        - Prevents "Yesterday by The Beatles" matching "Yesterday by U2"
+        - Uses min() not average to catch either being way off
+
         Returns candidates above a similarity threshold (default 80%).
         """
-        try:
-            from rapidfuzz import fuzz
-        except ImportError:
-            logger.warning("rapidfuzz library not available for Levenshtein fallback")
-            return []
+        # Import centralized fuzzy matching from normalize module
+        # This ensures consistent behavior across the codebase
+        from chart_binder.normalize import DEFAULT_MATCH_THRESHOLD, fuzzy_ratio
 
         # Fetch all recordings (with length filter if specified)
         base_query = """
@@ -713,26 +730,25 @@ class MusicGraphDB:
         all_recordings = [dict(row) for row in cursor.fetchall()]
 
         # Calculate similarity scores and filter
-        SIMILARITY_THRESHOLD = 80  # 0-100 scale
+        # Uses centralized threshold from normalize.py for consistency
         candidates = []
 
         for rec in all_recordings:
-            title_similarity = fuzz.ratio(
-                title.lower(), (rec.get("title_normalized") or rec.get("title", "")).lower()
-            )
+            # Compare against normalized title if available, fall back to raw title
+            rec_title = (rec.get("title_normalized") or rec.get("title", "")).lower()
+            title_similarity = fuzzy_ratio(title.lower(), rec_title)
 
             # If artist filter is specified, also check artist similarity
             if artist_name is not None:
-                artist_similarity = fuzz.ratio(
-                    artist_name.lower(),
-                    (rec.get("artist_name") or "").lower(),
-                )
+                rec_artist = (rec.get("artist_name") or "").lower()
+                artist_similarity = fuzzy_ratio(artist_name.lower(), rec_artist)
                 # Combined score: both must be reasonable matches
+                # Using min() ensures we don't accept good title + bad artist
                 combined_score = min(title_similarity, artist_similarity)
             else:
                 combined_score = title_similarity
 
-            if combined_score >= SIMILARITY_THRESHOLD:
+            if combined_score >= DEFAULT_MATCH_THRESHOLD:
                 candidates.append((combined_score, rec))
 
         # Sort by similarity score (descending) and take top N
@@ -742,7 +758,7 @@ class MusicGraphDB:
         if results:
             logger.debug(
                 f"Levenshtein fallback found {len(results)} candidates "
-                f"with similarity >= {SIMILARITY_THRESHOLD}%"
+                f"with similarity >= {DEFAULT_MATCH_THRESHOLD}%"
             )
 
         return results
