@@ -1,9 +1,33 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
 from enum import StrEnum
+
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# rapidfuzz Import (Module-level)
+# =============================================================================
+# Import rapidfuzz once at module load to:
+# 1. Avoid repeated try/except in each function call
+# 2. Log warning only once if library is missing
+# 3. Provide consistent behavior across all fuzzy functions
+#
+# If rapidfuzz is not installed, _fuzz will be None and fuzzy functions
+# will fall back to exact matching only.
+# =============================================================================
+
+try:
+    from rapidfuzz import fuzz as _fuzz
+except ImportError:
+    _fuzz = None
+    logger.warning(
+        "rapidfuzz library not available - fuzzy matching will fall back to exact matching. "
+        "Install with: uv add rapidfuzz"
+    )
 
 
 class TagKind(StrEnum):
@@ -477,13 +501,10 @@ def fuzzy_ratio(a: str, b: str) -> float:
         >>> fuzzy_ratio("hello", "world")
         20.0
     """
-    try:
-        from rapidfuzz import fuzz
-
-        return fuzz.ratio(a, b)
-    except ImportError:
-        # Fallback: exact match only (no fuzzy matching available)
-        return 100.0 if a == b else 0.0
+    if _fuzz is not None:
+        return _fuzz.ratio(a, b)
+    # Fallback: exact match only (no fuzzy matching available)
+    return 100.0 if a == b else 0.0
 
 
 def fuzzy_token_set_ratio(a: str, b: str) -> float:
@@ -519,13 +540,10 @@ def fuzzy_token_set_ratio(a: str, b: str) -> float:
         >>> fuzzy_token_set_ratio("Yesterday", "Yesterday (Remastered)")
         100.0
     """
-    try:
-        from rapidfuzz import fuzz
-
-        return fuzz.token_set_ratio(a, b)
-    except ImportError:
-        # Fallback: exact match only
-        return 100.0 if a == b else 0.0
+    if _fuzz is not None:
+        return _fuzz.token_set_ratio(a, b)
+    # Fallback: exact match only
+    return 100.0 if a == b else 0.0
 
 
 def fuzzy_match(a: str, b: str, threshold: int = DEFAULT_MATCH_THRESHOLD) -> bool:
@@ -603,31 +621,36 @@ def is_sane(
         >>> is_sane("123 (Remix)", "123")  # All digits
         False
     """
+    # Store stripped result once to avoid repeated calls
+    norm_stripped = normalized.strip() if normalized else ""
+
     # Reject empty or whitespace-only results
-    if not normalized or not normalized.strip():
+    if not norm_stripped:
         return False
 
     # Reject single-character results (too aggressive stripping)
-    if len(normalized.strip()) <= 1:
+    if len(norm_stripped) <= 1:
         return False
 
     # Reject all-digit results (likely a catalog number, not a title)
-    if normalized.strip().isdigit():
+    if norm_stripped.isdigit():
         return False
 
     # Reject all-punctuation results
-    if all(c in "!@#$%^&*()_+-=[]{}|;':\",./<>?" for c in normalized.strip()):
+    # Complete set includes: standard punctuation, backtick, tilde, underscore
+    punctuation_chars = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~\\"
+    if all(c in punctuation_chars for c in norm_stripped):
         return False
 
     # Check similarity to original
     # Lower threshold than fuzzy_match() because normalization IS supposed
     # to change the string (lowercase, strip diacritics, etc.)
-    similarity = fuzzy_ratio(original.lower(), normalized.lower())
+    similarity = fuzzy_ratio(original.lower(), norm_stripped.lower())
     if similarity < threshold:
         # Edge case: if normalized is a substantial substring, allow it
         # This handles "Yesterday (Remastered 2009)" → "yesterday"
         # where similarity is low but result is clearly the core title
-        if len(normalized) >= 3 and normalized.lower() in original.lower():
+        if len(norm_stripped) >= 3 and norm_stripped.lower() in original.lower():
             return True
         return False
 
