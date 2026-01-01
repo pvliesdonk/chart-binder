@@ -47,7 +47,11 @@ dependencies = [
     "langchain-community>=0.3.0",
     "langchain-ollama>=0.2.0",
     "langchain-openai>=0.2.0",
-    "thefuzz>=0.22.0",
+    # rapidfuzz: Fast fuzzy string matching library (MIT license)
+    # Replaces thefuzz for better performance and cleaner licensing.
+    # Used for: candidate validation (is_sane), title/artist similarity scoring.
+    # See: https://github.com/rapidfuzz/RapidFuzz
+    "rapidfuzz>=3.0.0",
     "psycopg2-binary>=2.9.11",
     "mbdata>=30.0.1",
 ]
