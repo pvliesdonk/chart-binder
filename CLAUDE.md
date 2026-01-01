@@ -39,6 +39,39 @@ This document provides guidance for AI agents working on the chart-binder projec
 - **Type checking**: mypy strict mode
 - **Testing**: pytest
 
+### Environment Configuration
+
+Copy `.env.example` to `.env` and configure:
+
+```bash
+cp .env.example .env
+# Edit .env with your values
+```
+
+**Required variables:**
+- `MUSICBRAINZ_USER_AGENT` - Required by MusicBrainz API rate limiting policy
+- `ACOUSTID_API_KEY` - For audio fingerprint lookups
+
+**Optional - External APIs:**
+- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` - Spotify enrichment
+- `DISCOGS_TOKEN` - Discogs lookups
+- `OPENAI_API_KEY` - LLM adjudication (Phase D)
+- `GOOGLE_API_KEY` - Google services
+
+**Optional - Local MusicBrainz mirror:**
+- `MUSICBRAINZ_DB_HOST` - PostgreSQL host (e.g., `192.168.50.212`)
+- `MUSICBRAINZ_DB_PORT` - PostgreSQL port (default: `5432`)
+- `MUSICBRAINZ_WEB_URL` - Web interface URL
+
+**Optional - Local services:**
+- `OLLAMA_HOST` - Local LLM endpoint
+- `SEARXNG_URL` - Search engine
+- `BEETS_CONFIG` - Path to beets config for playlist generation
+- `MUSIC_LIBRARY` - Path to local music files
+
+**Optional - Observability:**
+- `LANGSMITH_*` - LangSmith tracing configuration
+
 ### Running Commands
 
 ```bash
@@ -348,6 +381,7 @@ EOF
 - **Normalization Rules**: `docs/appendix/normalization.md`
 - **QA Pack**: `docs/appendix/normalization-qa.md`
 - **Database Schema**: `docs/database-schema.md`
+- **Environment Config**: `.env.example`
 
 ## Quick Reference
 
