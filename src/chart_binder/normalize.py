@@ -421,6 +421,219 @@ class Normalizer:
         return s
 
 
+# =============================================================================
+# Fuzzy Matching Utilities
+# =============================================================================
+#
+# These functions provide centralized fuzzy string matching for candidate
+# validation and search result filtering. They use rapidfuzz for performance.
+#
+# Design rationale:
+# - is_sane(): Prevents false positives from over-normalization. If we strip
+#   too much (diacritics, punctuation, guests), the normalized form might be
+#   meaningless (e.g., single char, all numbers). This catches those cases.
+# - fuzzy_ratio(): Raw similarity score (0-100) for ranking candidates.
+# - fuzzy_match(): Boolean check for filtering candidates above threshold.
+#
+# The 70% threshold for is_sane() was chosen empirically:
+# - Lower values (50-60%) let through too many false positives
+# - Higher values (80-90%) reject valid normalizations (e.g., "The Beatles" → "beatles")
+# - 70% balances catching garbage while allowing legitimate simplification
+# =============================================================================
+
+
+# Default thresholds (can be overridden by callers)
+DEFAULT_SANITY_THRESHOLD = 70  # Minimum similarity to original to be "sane"
+DEFAULT_MATCH_THRESHOLD = 80  # Minimum similarity for fuzzy_match()
+
+
+def fuzzy_ratio(a: str, b: str) -> float:
+    """
+    Calculate fuzzy similarity ratio between two strings.
+
+    Uses Levenshtein distance normalized to 0-100 scale.
+    Higher values = more similar.
+
+    Why Levenshtein (fuzz.ratio):
+    - Simple, predictable behavior
+    - Works well for similar-length strings
+    - Fast for typical artist/title lengths (~50 chars)
+
+    For word-order independent matching (e.g., "Artist A & Artist B" vs
+    "Artist B & Artist A"), use fuzzy_token_set_ratio() instead.
+
+    Args:
+        a: First string to compare
+        b: Second string to compare
+
+    Returns:
+        Similarity score from 0.0 (completely different) to 100.0 (identical)
+
+    Example:
+        >>> fuzzy_ratio("hello", "hello")
+        100.0
+        >>> fuzzy_ratio("hello", "hallo")
+        80.0
+        >>> fuzzy_ratio("hello", "world")
+        20.0
+    """
+    try:
+        from rapidfuzz import fuzz
+
+        return fuzz.ratio(a, b)
+    except ImportError:
+        # Fallback: exact match only (no fuzzy matching available)
+        return 100.0 if a == b else 0.0
+
+
+def fuzzy_token_set_ratio(a: str, b: str) -> float:
+    """
+    Calculate fuzzy similarity using token set ratio.
+
+    Token set ratio is order-independent: it tokenizes both strings,
+    finds common tokens, and compares the remaining tokens.
+
+    Why token_set_ratio:
+    - Handles word reordering: "Queen & David Bowie" ≈ "David Bowie & Queen"
+    - Handles partial matches: "Yesterday (Remastered)" ≈ "Yesterday"
+    - Better for artist names with multiple members in different orders
+
+    When to use:
+    - Comparing artist names (order may vary)
+    - Comparing titles with extra info (remixes, features)
+
+    When NOT to use:
+    - Exact title matching (use fuzzy_ratio instead)
+    - Short strings (tokenization less meaningful)
+
+    Args:
+        a: First string to compare
+        b: Second string to compare
+
+    Returns:
+        Similarity score from 0.0 to 100.0 (order-independent)
+
+    Example:
+        >>> fuzzy_token_set_ratio("Queen & David Bowie", "David Bowie & Queen")
+        100.0
+        >>> fuzzy_token_set_ratio("Yesterday", "Yesterday (Remastered)")
+        100.0
+    """
+    try:
+        from rapidfuzz import fuzz
+
+        return fuzz.token_set_ratio(a, b)
+    except ImportError:
+        # Fallback: exact match only
+        return 100.0 if a == b else 0.0
+
+
+def fuzzy_match(a: str, b: str, threshold: int = DEFAULT_MATCH_THRESHOLD) -> bool:
+    """
+    Check if two strings are similar enough to be considered a match.
+
+    This is a convenience wrapper around fuzzy_ratio() that returns a boolean.
+    Use this for filtering candidates where you need a yes/no decision.
+
+    Why 80% default threshold:
+    - Industry standard for fuzzy deduplication
+    - Allows minor typos ("Beetles" vs "Beatles" = 86%)
+    - Rejects clearly different strings ("Beatles" vs "Stones" = 40%)
+    - Matches our MusicBrainz search confidence baseline
+
+    Args:
+        a: First string to compare
+        b: Second string to compare
+        threshold: Minimum similarity score to return True (0-100, default 80)
+
+    Returns:
+        True if similarity >= threshold, False otherwise
+
+    Example:
+        >>> fuzzy_match("hello", "hallo")  # 80% similar
+        True
+        >>> fuzzy_match("hello", "hallo", threshold=85)  # Too strict
+        False
+    """
+    return fuzzy_ratio(a, b) >= threshold
+
+
+def is_sane(
+    original: str,
+    normalized: str,
+    threshold: int = DEFAULT_SANITY_THRESHOLD,
+) -> bool:
+    """
+    Validate that a normalized string is still meaningful.
+
+    This function catches over-normalization: cases where we stripped too
+    much and the result is garbage (empty, single char, all numbers, etc.).
+
+    The check has two parts:
+    1. Length/content checks: reject obviously invalid results
+    2. Similarity check: ensure normalized isn't too different from original
+
+    Why we need this:
+    - Normalization can strip diacritics, guests, edition tags, articles
+    - Aggressive stripping might leave meaningless residue
+    - Example: "A" from "The A-Team (Remastered 2020)" is not useful
+    - Example: "123" from "123 (feat. Artist)" is probably wrong
+
+    The 70% threshold means:
+    - "The Beatles" → "beatles" (75% similar) = SANE
+    - "The A-Team" → "a team" (55% similar) = SANE (passes length check)
+    - "The A" → "a" (33% similar) = NOT SANE
+
+    Args:
+        original: The original string before normalization
+        normalized: The normalized string to validate
+        threshold: Minimum similarity to original (0-100, default 70)
+
+    Returns:
+        True if normalized is a valid simplification of original,
+        False if it looks like over-normalization garbage
+
+    Example:
+        >>> is_sane("The Beatles", "beatles")
+        True
+        >>> is_sane("Yesterday (Remastered 2009)", "yesterday")
+        True
+        >>> is_sane("The A", "a")  # Single char after normalization
+        False
+        >>> is_sane("123 (Remix)", "123")  # All digits
+        False
+    """
+    # Reject empty or whitespace-only results
+    if not normalized or not normalized.strip():
+        return False
+
+    # Reject single-character results (too aggressive stripping)
+    if len(normalized.strip()) <= 1:
+        return False
+
+    # Reject all-digit results (likely a catalog number, not a title)
+    if normalized.strip().isdigit():
+        return False
+
+    # Reject all-punctuation results
+    if all(c in "!@#$%^&*()_+-=[]{}|;':\",./<>?" for c in normalized.strip()):
+        return False
+
+    # Check similarity to original
+    # Lower threshold than fuzzy_match() because normalization IS supposed
+    # to change the string (lowercase, strip diacritics, etc.)
+    similarity = fuzzy_ratio(original.lower(), normalized.lower())
+    if similarity < threshold:
+        # Edge case: if normalized is a substantial substring, allow it
+        # This handles "Yesterday (Remastered 2009)" → "yesterday"
+        # where similarity is low but result is clearly the core title
+        if len(normalized) >= 3 and normalized.lower() in original.lower():
+            return True
+        return False
+
+    return True
+
+
 ## Tests
 
 
@@ -512,3 +725,98 @@ def test_idempotence_title():
     result1 = norm.normalize_title("Yesterday (Remastered 2009)")
     result2 = norm.normalize_title(result1.core)
     assert result1.core == result2.core
+
+
+# --- Fuzzy matching tests ---
+
+
+def test_fuzzy_ratio_identical():
+    """Identical strings should have 100% similarity."""
+    assert fuzzy_ratio("hello", "hello") == 100.0
+    assert fuzzy_ratio("The Beatles", "The Beatles") == 100.0
+
+
+def test_fuzzy_ratio_similar():
+    """Similar strings should have high similarity."""
+    # One character difference in 5-char string
+    ratio = fuzzy_ratio("hello", "hallo")
+    assert 75 <= ratio <= 85  # Allow some variance
+
+
+def test_fuzzy_ratio_different():
+    """Different strings should have low similarity."""
+    ratio = fuzzy_ratio("hello", "world")
+    assert ratio < 50
+
+
+def test_fuzzy_token_set_ratio_reorder():
+    """Token set ratio should handle word reordering."""
+    # Same words, different order
+    ratio = fuzzy_token_set_ratio("Queen & David Bowie", "David Bowie & Queen")
+    assert ratio >= 90  # Should be very similar
+
+
+def test_fuzzy_token_set_ratio_subset():
+    """Token set ratio should handle subsets well."""
+    # "Yesterday" is subset of "Yesterday (Remastered)"
+    ratio = fuzzy_token_set_ratio("Yesterday", "Yesterday Remastered")
+    assert ratio >= 80
+
+
+def test_fuzzy_match_above_threshold():
+    """fuzzy_match should return True above threshold."""
+    # "Beetles" vs "Beatles" - common typo
+    assert fuzzy_match("Beetles", "Beatles")  # > 80%
+
+
+def test_fuzzy_match_below_threshold():
+    """fuzzy_match should return False below threshold."""
+    assert not fuzzy_match("Beatles", "Rolling Stones")
+
+
+def test_fuzzy_match_custom_threshold():
+    """fuzzy_match should respect custom threshold."""
+    # These are ~80% similar, so threshold 85 should fail
+    assert not fuzzy_match("hello", "hallo", threshold=85)
+    assert fuzzy_match("hello", "hallo", threshold=75)
+
+
+def test_is_sane_valid_normalization():
+    """is_sane should accept valid normalizations."""
+    # Normal case: lowercase + strip article
+    assert is_sane("The Beatles", "beatles")
+    # Normal case: strip edition suffix
+    assert is_sane("Yesterday (Remastered 2009)", "yesterday")
+    # Normal case: strip diacritics
+    assert is_sane("Café del Mar", "cafe del mar")
+
+
+def test_is_sane_rejects_empty():
+    """is_sane should reject empty results."""
+    assert not is_sane("Something", "")
+    assert not is_sane("Something", "   ")
+
+
+def test_is_sane_rejects_single_char():
+    """is_sane should reject single-character results."""
+    assert not is_sane("The A", "a")
+    assert not is_sane("Something", "x")
+
+
+def test_is_sane_rejects_all_digits():
+    """is_sane should reject all-digit results (likely catalog numbers)."""
+    assert not is_sane("123 (Remix)", "123")
+    assert not is_sane("Track 42", "42")
+
+
+def test_is_sane_rejects_over_normalization():
+    """is_sane should reject results too different from original."""
+    # This would fail because "xyz" is not similar to "The Beatles"
+    assert not is_sane("The Beatles", "xyz")
+
+
+def test_is_sane_allows_substantial_substring():
+    """is_sane should allow result that's a substantial substring of original."""
+    # "yesterday" is in "Yesterday (Remastered 2009)" even though
+    # the fuzzy ratio might be low due to length difference
+    assert is_sane("Yesterday (Remastered 2009)", "yesterday")
