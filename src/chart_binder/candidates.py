@@ -23,6 +23,37 @@ class DiscoveryMethod(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ReleaseGroupBucket(StrEnum):
+    """
+    Release group classification bucket for candidate prioritization.
+
+    Bucketing rationale:
+    - STUDIO_ALBUM: Standard studio albums - highest priority as primary releases
+    - EP: Extended plays - secondary priority, often preview releases
+    - SOUNDTRACK: Film/TV soundtracks - special handling needed for date comparison
+    - SINGLE: Singles - usually promotional, lowest priority for canonical selection
+    - OTHER: Compilations, live albums, remixes - require case-by-case handling
+
+    Priority order (for canonical selection):
+    1. STUDIO_ALBUM - almost always the definitive release
+    2. EP - valid if predates album (early single/EP)
+    3. SOUNDTRACK - only if it's the original context (e.g., "Eye of the Tiger")
+    4. SINGLE - promotional releases, rarely canonical
+    5. OTHER - compilation appearances, live versions, etc.
+
+    The bucketing supports the adjudication strategy where:
+    - Album releases are strongly preferred
+    - Soundtracks may win if they're the original context
+    - Singles/EPs only win if they predate the album significantly
+    """
+
+    STUDIO_ALBUM = "studio_album"
+    EP = "ep"
+    SOUNDTRACK = "soundtrack"
+    SINGLE = "single"
+    OTHER = "other"
+
+
 @dataclass
 class Candidate:
     """A candidate (recording, release_group) pair with associated releases."""
@@ -46,6 +77,247 @@ class CandidateSet:
     normalized_title: str = ""
     normalized_artist: str = ""
     length_ms: int | None = None
+
+
+@dataclass
+class BucketedReleaseGroup:
+    """
+    A release group with its bucket classification and sorting metadata.
+
+    Captures the release group's primary data along with the bucket it belongs to
+    and the first_release_date for sorting within buckets.
+    """
+
+    mbid: str
+    title: str
+    bucket: ReleaseGroupBucket
+    first_release_date: str | None = None  # ISO format: YYYY-MM-DD or partial
+    type: str | None = None  # MusicBrainz primary type: Album, Single, EP, etc.
+    secondary_types: list[str] = field(default_factory=list)  # e.g., ["Soundtrack", "Compilation"]
+    artist_mbid: str | None = None
+    artist_name: str = ""
+
+    def __lt__(self, other: BucketedReleaseGroup) -> bool:
+        """Sort by date ascending (None dates sort last)."""
+        if self.first_release_date is None and other.first_release_date is None:
+            return self.title < other.title  # Tie-break by title
+        if self.first_release_date is None:
+            return False  # None dates sort last
+        if other.first_release_date is None:
+            return True  # Non-None dates sort before None
+        return self.first_release_date < other.first_release_date
+
+
+@dataclass
+class BucketedCandidateSet:
+    """
+    Candidates organized by release group bucket for prioritized selection.
+
+    This structure supports the adjudication strategy by grouping candidates
+    into buckets based on release group type. Each bucket is sorted by
+    first_release_date ascending, enabling date-based disambiguation.
+
+    Usage:
+        bucketed = BucketedCandidateSet.from_release_groups(release_groups)
+        best = bucketed.select_best()  # Returns highest-priority release group
+
+    Selection strategy:
+        1. Look for STUDIO_ALBUM first - almost always the canonical release
+        2. If no album, check EP (might be early release)
+        3. If no album/EP, check SOUNDTRACK (might be original context)
+        4. Finally fall back to SINGLE or OTHER
+        5. Within each bucket, prefer the earliest release date
+        6. If dates are equal or ambiguous, defer to LLM adjudication
+    """
+
+    studio_albums: list[BucketedReleaseGroup] = field(default_factory=list)
+    eps: list[BucketedReleaseGroup] = field(default_factory=list)
+    soundtracks: list[BucketedReleaseGroup] = field(default_factory=list)
+    singles: list[BucketedReleaseGroup] = field(default_factory=list)
+    other: list[BucketedReleaseGroup] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Sort all buckets by date after initialization."""
+        self.studio_albums.sort()
+        self.eps.sort()
+        self.soundtracks.sort()
+        self.singles.sort()
+        self.other.sort()
+
+    @property
+    def total_count(self) -> int:
+        """Total number of release groups across all buckets."""
+        return (
+            len(self.studio_albums)
+            + len(self.eps)
+            + len(self.soundtracks)
+            + len(self.singles)
+            + len(self.other)
+        )
+
+    @property
+    def is_empty(self) -> bool:
+        """Check if no release groups are present."""
+        return self.total_count == 0
+
+    def select_best(self) -> BucketedReleaseGroup | None:
+        """
+        Select the best (highest priority) release group.
+
+        Priority order:
+        1. STUDIO_ALBUM (earliest)
+        2. EP (earliest)
+        3. SOUNDTRACK (earliest)
+        4. SINGLE (earliest)
+        5. OTHER (earliest)
+
+        Returns None if no release groups are present.
+
+        Note: This is a simple heuristic. Complex cases (e.g., soundtrack that
+        predates album) should be deferred to LLM adjudication.
+        """
+        priority_order = [
+            self.studio_albums,
+            self.eps,
+            self.soundtracks,
+            self.singles,
+            self.other,
+        ]
+        for bucket in priority_order:
+            if bucket:
+                return bucket[0]
+        return None
+
+    def needs_adjudication(self) -> bool:
+        """
+        Check if this candidate set requires LLM adjudication.
+
+        Adjudication is needed when:
+        - Multiple buckets have candidates (e.g., both album and soundtrack)
+        - A soundtrack or single predates the album
+        - Multiple release groups within same bucket have close dates
+
+        Returns True if human/LLM judgment is needed for disambiguation.
+        """
+        # Count non-empty buckets
+        non_empty_buckets = sum(
+            1
+            for bucket in [
+                self.studio_albums,
+                self.eps,
+                self.soundtracks,
+                self.singles,
+                self.other,
+            ]
+            if bucket
+        )
+
+        # Simple case: only one bucket has content
+        if non_empty_buckets <= 1:
+            return False
+
+        # If we have an album, check if anything predates it
+        if self.studio_albums:
+            album_date = self.studio_albums[0].first_release_date
+            if album_date:
+                # Check if any lower-priority release predates the album
+                for bucket in (self.soundtracks, self.singles, self.eps):
+                    if bucket and bucket[0].first_release_date:
+                        if bucket[0].first_release_date < album_date:
+                            return True
+                # Album is present and is the earliest - no adjudication needed
+                return False
+
+        # No album, but multiple buckets - needs adjudication
+        return non_empty_buckets > 1
+
+    @classmethod
+    def from_release_groups(cls, release_groups: list[dict[str, Any]]) -> BucketedCandidateSet:
+        """
+        Create a BucketedCandidateSet from a list of release group dicts.
+
+        Args:
+            release_groups: List of release group dicts with keys:
+                - mbid: str
+                - title: str
+                - type: str | None (Album, Single, EP, etc.)
+                - secondary_types: list[str] | None (Soundtrack, Compilation, etc.)
+                - first_release_date: str | None (ISO format)
+                - artist_mbid: str | None
+                - artist_name: str | None
+
+        Returns:
+            BucketedCandidateSet with release groups classified into buckets.
+        """
+        buckets: dict[ReleaseGroupBucket, list[BucketedReleaseGroup]] = {
+            bucket: [] for bucket in ReleaseGroupBucket
+        }
+
+        for rg in release_groups:
+            bucket = cls._classify_bucket(rg.get("type"), rg.get("secondary_types") or [])
+            bucketed_rg = BucketedReleaseGroup(
+                mbid=rg["mbid"],
+                title=rg.get("title", ""),
+                bucket=bucket,
+                first_release_date=rg.get("first_release_date"),
+                type=rg.get("type"),
+                secondary_types=rg.get("secondary_types") or [],
+                artist_mbid=rg.get("artist_mbid"),
+                artist_name=rg.get("artist_name", ""),
+            )
+            buckets[bucket].append(bucketed_rg)
+
+        return cls(
+            studio_albums=buckets[ReleaseGroupBucket.STUDIO_ALBUM],
+            eps=buckets[ReleaseGroupBucket.EP],
+            soundtracks=buckets[ReleaseGroupBucket.SOUNDTRACK],
+            singles=buckets[ReleaseGroupBucket.SINGLE],
+            other=buckets[ReleaseGroupBucket.OTHER],
+        )
+
+    @staticmethod
+    def _classify_bucket(
+        primary_type: str | None, secondary_types: list[str]
+    ) -> ReleaseGroupBucket:
+        """
+        Classify a release group into a bucket based on MusicBrainz types.
+
+        Classification logic:
+        1. If secondary_types contains "Soundtrack" → SOUNDTRACK
+           (even if primary_type is Album, the soundtrack context matters)
+        2. Primary type "Album" (without Soundtrack) → STUDIO_ALBUM
+        3. Primary type "EP" → EP
+        4. Primary type "Single" → SINGLE
+        5. Everything else (Compilation, Live, etc.) → OTHER
+
+        Args:
+            primary_type: MusicBrainz primary type (Album, Single, EP, etc.)
+            secondary_types: List of secondary types (Soundtrack, Compilation, Live, etc.)
+
+        Returns:
+            The appropriate ReleaseGroupBucket classification.
+        """
+        # Normalize for case-insensitive comparison
+        primary = (primary_type or "").lower()
+        secondaries = [s.lower() for s in secondary_types]
+
+        # Soundtrack secondary type takes precedence
+        if "soundtrack" in secondaries:
+            return ReleaseGroupBucket.SOUNDTRACK
+
+        # Primary type classification
+        if primary == "album":
+            # Check for compilation - goes to OTHER
+            if "compilation" in secondaries:
+                return ReleaseGroupBucket.OTHER
+            return ReleaseGroupBucket.STUDIO_ALBUM
+        elif primary == "ep":
+            return ReleaseGroupBucket.EP
+        elif primary == "single":
+            return ReleaseGroupBucket.SINGLE
+        else:
+            # Broadcast, Other, or unknown
+            return ReleaseGroupBucket.OTHER
 
 
 @dataclass
@@ -1044,3 +1316,627 @@ def test_discover_with_normalizer_edge_cases(tmp_path):
     assert len(candidates) >= 1
     # Should find remix version within length tolerance
     assert any("Vogue" in c.title for c in candidates)
+
+
+## Tests for Bucketing
+
+
+def test_release_group_bucket_enum_values():
+    """Verify ReleaseGroupBucket enum has expected values and order."""
+    # All expected bucket types exist
+    assert ReleaseGroupBucket.STUDIO_ALBUM == "studio_album"
+    assert ReleaseGroupBucket.EP == "ep"
+    assert ReleaseGroupBucket.SOUNDTRACK == "soundtrack"
+    assert ReleaseGroupBucket.SINGLE == "single"
+    assert ReleaseGroupBucket.OTHER == "other"
+
+    # Verify we have exactly 5 bucket types
+    assert len(ReleaseGroupBucket) == 5
+
+
+def test_classify_bucket_studio_album():
+    """Test classification of standard studio albums."""
+    # Plain album
+    assert BucketedCandidateSet._classify_bucket("Album", []) == ReleaseGroupBucket.STUDIO_ALBUM
+    # Case insensitive
+    assert BucketedCandidateSet._classify_bucket("album", []) == ReleaseGroupBucket.STUDIO_ALBUM
+    assert BucketedCandidateSet._classify_bucket("ALBUM", []) == ReleaseGroupBucket.STUDIO_ALBUM
+
+
+def test_classify_bucket_ep():
+    """Test classification of EPs."""
+    assert BucketedCandidateSet._classify_bucket("EP", []) == ReleaseGroupBucket.EP
+    assert BucketedCandidateSet._classify_bucket("ep", []) == ReleaseGroupBucket.EP
+
+
+def test_classify_bucket_single():
+    """Test classification of singles."""
+    assert BucketedCandidateSet._classify_bucket("Single", []) == ReleaseGroupBucket.SINGLE
+    assert BucketedCandidateSet._classify_bucket("single", []) == ReleaseGroupBucket.SINGLE
+
+
+def test_classify_bucket_soundtrack_secondary_type():
+    """Test that Soundtrack secondary type takes precedence over primary type."""
+    # Album with Soundtrack secondary type → SOUNDTRACK (not STUDIO_ALBUM)
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["Soundtrack"])
+        == ReleaseGroupBucket.SOUNDTRACK
+    )
+    # Single with Soundtrack → SOUNDTRACK
+    assert (
+        BucketedCandidateSet._classify_bucket("Single", ["Soundtrack"])
+        == ReleaseGroupBucket.SOUNDTRACK
+    )
+    # EP with Soundtrack → SOUNDTRACK
+    assert (
+        BucketedCandidateSet._classify_bucket("EP", ["Soundtrack"]) == ReleaseGroupBucket.SOUNDTRACK
+    )
+    # Case insensitive
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["soundtrack"])
+        == ReleaseGroupBucket.SOUNDTRACK
+    )
+
+
+def test_classify_bucket_compilation_goes_to_other():
+    """Test that compilations are classified as OTHER, not STUDIO_ALBUM."""
+    # Album compilation → OTHER
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["Compilation"]) == ReleaseGroupBucket.OTHER
+    )
+    # Case insensitive
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["compilation"]) == ReleaseGroupBucket.OTHER
+    )
+
+
+def test_classify_bucket_soundtrack_beats_compilation():
+    """Test that Soundtrack takes precedence over Compilation."""
+    # Both Soundtrack and Compilation → SOUNDTRACK wins
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["Soundtrack", "Compilation"])
+        == ReleaseGroupBucket.SOUNDTRACK
+    )
+    # Order shouldn't matter
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["Compilation", "Soundtrack"])
+        == ReleaseGroupBucket.SOUNDTRACK
+    )
+
+
+def test_classify_bucket_other_types():
+    """Test classification of other primary types."""
+    # Broadcast → OTHER
+    assert BucketedCandidateSet._classify_bucket("Broadcast", []) == ReleaseGroupBucket.OTHER
+    # Unknown type → OTHER
+    assert BucketedCandidateSet._classify_bucket("Other", []) == ReleaseGroupBucket.OTHER
+    # None type → OTHER
+    assert BucketedCandidateSet._classify_bucket(None, []) == ReleaseGroupBucket.OTHER
+    # Empty string → OTHER
+    assert BucketedCandidateSet._classify_bucket("", []) == ReleaseGroupBucket.OTHER
+
+
+def test_classify_bucket_live_album_is_studio_album():
+    """Test that live albums remain classified as STUDIO_ALBUM.
+
+    Per current classification logic, the "Live" secondary type on an "Album"
+    does NOT change its classification from STUDIO_ALBUM. Only "Compilation"
+    secondary type demotes an Album to OTHER. This is intentional - a live
+    album is still an album, just recorded live.
+    """
+    assert (
+        BucketedCandidateSet._classify_bucket("Album", ["Live"]) == ReleaseGroupBucket.STUDIO_ALBUM
+    )
+
+
+def test_bucketed_release_group_sorting_by_date():
+    """Test that BucketedReleaseGroup sorts by date ascending."""
+    rg1 = BucketedReleaseGroup(
+        mbid="rg-1",
+        title="Early Album",
+        bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+        first_release_date="1980-01-01",
+    )
+    rg2 = BucketedReleaseGroup(
+        mbid="rg-2",
+        title="Later Album",
+        bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+        first_release_date="1985-06-15",
+    )
+    rg3 = BucketedReleaseGroup(
+        mbid="rg-3",
+        title="Latest Album",
+        bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+        first_release_date="1990-12-31",
+    )
+
+    # Sorted list should have earliest first
+    sorted_rgs = sorted([rg3, rg1, rg2])
+    assert sorted_rgs[0].mbid == "rg-1"  # 1980
+    assert sorted_rgs[1].mbid == "rg-2"  # 1985
+    assert sorted_rgs[2].mbid == "rg-3"  # 1990
+
+
+def test_bucketed_release_group_none_dates_sort_last():
+    """Test that None dates sort after dated release groups."""
+    rg_dated = BucketedReleaseGroup(
+        mbid="rg-dated",
+        title="Dated Album",
+        bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+        first_release_date="2000-01-01",
+    )
+    rg_none = BucketedReleaseGroup(
+        mbid="rg-none",
+        title="No Date Album",
+        bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+        first_release_date=None,
+    )
+
+    sorted_rgs = sorted([rg_none, rg_dated])
+    assert sorted_rgs[0].mbid == "rg-dated"  # Dated comes first
+    assert sorted_rgs[1].mbid == "rg-none"  # None dates sort last
+
+
+def test_bucketed_release_group_both_none_dates_sort_by_title():
+    """Test that two None-dated release groups sort by title."""
+    rg_a = BucketedReleaseGroup(
+        mbid="rg-a", title="Alpha", bucket=ReleaseGroupBucket.STUDIO_ALBUM, first_release_date=None
+    )
+    rg_z = BucketedReleaseGroup(
+        mbid="rg-z", title="Zebra", bucket=ReleaseGroupBucket.STUDIO_ALBUM, first_release_date=None
+    )
+
+    sorted_rgs = sorted([rg_z, rg_a])
+    assert sorted_rgs[0].title == "Alpha"
+    assert sorted_rgs[1].title == "Zebra"
+
+
+def test_bucketed_candidate_set_from_release_groups():
+    """Test creating BucketedCandidateSet from release group dicts."""
+    release_groups = [
+        {
+            "mbid": "rg-1",
+            "title": "Studio Album",
+            "type": "Album",
+            "first_release_date": "1985-01-01",
+            "secondary_types": [],
+        },
+        {
+            "mbid": "rg-2",
+            "title": "The Single",
+            "type": "Single",
+            "first_release_date": "1984-06-01",
+            "secondary_types": [],
+        },
+        {
+            "mbid": "rg-3",
+            "title": "Movie Soundtrack",
+            "type": "Album",
+            "first_release_date": "1984-03-01",
+            "secondary_types": ["Soundtrack"],
+        },
+        {
+            "mbid": "rg-4",
+            "title": "EP Release",
+            "type": "EP",
+            "first_release_date": "1984-09-01",
+            "secondary_types": [],
+        },
+        {
+            "mbid": "rg-5",
+            "title": "Greatest Hits",
+            "type": "Album",
+            "first_release_date": "1990-01-01",
+            "secondary_types": ["Compilation"],
+        },
+    ]
+
+    bucketed = BucketedCandidateSet.from_release_groups(release_groups)
+
+    # Check distribution
+    assert len(bucketed.studio_albums) == 1
+    assert len(bucketed.singles) == 1
+    assert len(bucketed.soundtracks) == 1
+    assert len(bucketed.eps) == 1
+    assert len(bucketed.other) == 1  # Compilation goes to OTHER
+
+    # Check specific placements
+    assert bucketed.studio_albums[0].mbid == "rg-1"
+    assert bucketed.singles[0].mbid == "rg-2"
+    assert bucketed.soundtracks[0].mbid == "rg-3"
+    assert bucketed.eps[0].mbid == "rg-4"
+    assert bucketed.other[0].mbid == "rg-5"
+
+
+def test_bucketed_candidate_set_sorting_within_buckets():
+    """Test that buckets are sorted by date after construction."""
+    release_groups = [
+        {
+            "mbid": "rg-late",
+            "title": "Late Album",
+            "type": "Album",
+            "first_release_date": "2000-01-01",
+        },
+        {
+            "mbid": "rg-early",
+            "title": "Early Album",
+            "type": "Album",
+            "first_release_date": "1980-01-01",
+        },
+        {
+            "mbid": "rg-mid",
+            "title": "Mid Album",
+            "type": "Album",
+            "first_release_date": "1990-01-01",
+        },
+    ]
+
+    bucketed = BucketedCandidateSet.from_release_groups(release_groups)
+
+    # Albums should be sorted by date ascending
+    assert bucketed.studio_albums[0].mbid == "rg-early"  # 1980
+    assert bucketed.studio_albums[1].mbid == "rg-mid"  # 1990
+    assert bucketed.studio_albums[2].mbid == "rg-late"  # 2000
+
+
+def test_bucketed_candidate_set_select_best_priority_order():
+    """Test that select_best() returns candidates in priority order."""
+    # Test with only albums
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1", title="Album", bucket=ReleaseGroupBucket.STUDIO_ALBUM
+            )
+        ]
+    )
+    best = bucketed.select_best()
+    assert best is not None
+    assert best.mbid == "album-1"
+
+    # Test priority: album > EP
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1", title="Album", bucket=ReleaseGroupBucket.STUDIO_ALBUM
+            )
+        ],
+        eps=[BucketedReleaseGroup(mbid="ep-1", title="EP", bucket=ReleaseGroupBucket.EP)],
+    )
+    best = bucketed.select_best()
+    assert best is not None
+    assert best.mbid == "album-1"
+
+    # Test priority: EP > soundtrack (when no album)
+    bucketed = BucketedCandidateSet(
+        eps=[BucketedReleaseGroup(mbid="ep-1", title="EP", bucket=ReleaseGroupBucket.EP)],
+        soundtracks=[
+            BucketedReleaseGroup(
+                mbid="st-1", title="Soundtrack", bucket=ReleaseGroupBucket.SOUNDTRACK
+            )
+        ],
+    )
+    best = bucketed.select_best()
+    assert best is not None
+    assert best.mbid == "ep-1"
+
+    # Test priority: soundtrack > single (when no album/EP)
+    bucketed = BucketedCandidateSet(
+        soundtracks=[
+            BucketedReleaseGroup(
+                mbid="st-1", title="Soundtrack", bucket=ReleaseGroupBucket.SOUNDTRACK
+            )
+        ],
+        singles=[
+            BucketedReleaseGroup(mbid="single-1", title="Single", bucket=ReleaseGroupBucket.SINGLE)
+        ],
+    )
+    best = bucketed.select_best()
+    assert best is not None
+    assert best.mbid == "st-1"
+
+    # Test priority: single > other (when no album/EP/soundtrack)
+    bucketed = BucketedCandidateSet(
+        singles=[
+            BucketedReleaseGroup(mbid="single-1", title="Single", bucket=ReleaseGroupBucket.SINGLE)
+        ],
+        other=[
+            BucketedReleaseGroup(
+                mbid="other-1", title="Compilation", bucket=ReleaseGroupBucket.OTHER
+            )
+        ],
+    )
+    best = bucketed.select_best()
+    assert best is not None
+    assert best.mbid == "single-1"
+
+    # Test fallback to other
+    bucketed = BucketedCandidateSet(
+        other=[
+            BucketedReleaseGroup(
+                mbid="other-1", title="Compilation", bucket=ReleaseGroupBucket.OTHER
+            )
+        ]
+    )
+    best = bucketed.select_best()
+    assert best is not None
+    assert best.mbid == "other-1"
+
+
+def test_bucketed_candidate_set_select_best_empty():
+    """Test select_best() returns None for empty set."""
+    bucketed = BucketedCandidateSet()
+    assert bucketed.select_best() is None
+
+
+def test_bucketed_candidate_set_select_best_earliest_within_bucket():
+    """Test that select_best() returns earliest release within chosen bucket."""
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-late",
+                title="Late Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1990-01-01",
+            ),
+            BucketedReleaseGroup(
+                mbid="album-early",
+                title="Early Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1980-01-01",
+            ),
+        ]
+    )
+    best = bucketed.select_best()
+    # Should return earliest album (after sorting in __post_init__)
+    assert best is not None
+    assert best.mbid == "album-early"
+
+
+def test_bucketed_candidate_set_total_count():
+    """Test total_count property."""
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(mbid="a1", title="A1", bucket=ReleaseGroupBucket.STUDIO_ALBUM)
+        ],
+        eps=[BucketedReleaseGroup(mbid="e1", title="E1", bucket=ReleaseGroupBucket.EP)],
+        soundtracks=[
+            BucketedReleaseGroup(mbid="s1", title="S1", bucket=ReleaseGroupBucket.SOUNDTRACK),
+            BucketedReleaseGroup(mbid="s2", title="S2", bucket=ReleaseGroupBucket.SOUNDTRACK),
+        ],
+    )
+    assert bucketed.total_count == 4
+
+
+def test_bucketed_candidate_set_is_empty():
+    """Test is_empty property."""
+    empty = BucketedCandidateSet()
+    assert empty.is_empty is True
+
+    non_empty = BucketedCandidateSet(
+        singles=[BucketedReleaseGroup(mbid="s1", title="Single", bucket=ReleaseGroupBucket.SINGLE)]
+    )
+    assert non_empty.is_empty is False
+
+
+def test_bucketed_candidate_set_needs_adjudication_single_bucket():
+    """Test that single-bucket sets don't need adjudication."""
+    # Only albums - no adjudication needed
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="a1",
+                title="Album 1",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1980-01-01",
+            ),
+            BucketedReleaseGroup(
+                mbid="a2",
+                title="Album 2",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1985-01-01",
+            ),
+        ]
+    )
+    assert bucketed.needs_adjudication() is False
+
+
+def test_bucketed_candidate_set_needs_adjudication_soundtrack_predates_album():
+    """Test adjudication needed when soundtrack predates album."""
+    # Soundtrack from March 1984, album from January 1985
+    # This is the "Eye of the Tiger" scenario - soundtrack might be canonical
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1",
+                title="Studio Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1985-01-01",
+            )
+        ],
+        soundtracks=[
+            BucketedReleaseGroup(
+                mbid="st-1",
+                title="Movie Soundtrack",
+                bucket=ReleaseGroupBucket.SOUNDTRACK,
+                first_release_date="1984-03-01",
+            )
+        ],
+    )
+    assert bucketed.needs_adjudication() is True
+
+
+def test_bucketed_candidate_set_needs_adjudication_single_predates_album():
+    """Test adjudication needed when single predates album."""
+    # Single from June 1984, album from January 1985
+    # The single might be the original canonical release
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1",
+                title="Studio Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1985-01-01",
+            )
+        ],
+        singles=[
+            BucketedReleaseGroup(
+                mbid="single-1",
+                title="The Single",
+                bucket=ReleaseGroupBucket.SINGLE,
+                first_release_date="1984-06-01",
+            )
+        ],
+    )
+    assert bucketed.needs_adjudication() is True
+
+
+def test_bucketed_candidate_set_needs_adjudication_ep_predates_album():
+    """Test adjudication needed when EP predates album."""
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1",
+                title="Studio Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1985-01-01",
+            )
+        ],
+        eps=[
+            BucketedReleaseGroup(
+                mbid="ep-1",
+                title="Early EP",
+                bucket=ReleaseGroupBucket.EP,
+                first_release_date="1984-09-01",
+            )
+        ],
+    )
+    assert bucketed.needs_adjudication() is True
+
+
+def test_bucketed_candidate_set_needs_adjudication_album_is_first():
+    """Test no adjudication when album is the earliest release.
+
+    When a studio album is present and predates all other releases, we can
+    confidently select it without LLM adjudication. This reduces costs and
+    speeds up processing for the common case.
+    """
+    # Album from 1980, single from 1985 - album clearly canonical
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1",
+                title="Studio Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date="1980-01-01",
+            )
+        ],
+        singles=[
+            BucketedReleaseGroup(
+                mbid="single-1",
+                title="The Single",
+                bucket=ReleaseGroupBucket.SINGLE,
+                first_release_date="1985-06-01",
+            )
+        ],
+    )
+    # Album predates single - no adjudication needed, album is clearly canonical
+    assert bucketed.needs_adjudication() is False
+
+
+def test_bucketed_candidate_set_needs_adjudication_no_dates():
+    """Test adjudication when dates are missing."""
+    # No dates at all - multiple buckets means adjudication needed
+    bucketed = BucketedCandidateSet(
+        studio_albums=[
+            BucketedReleaseGroup(
+                mbid="album-1",
+                title="Studio Album",
+                bucket=ReleaseGroupBucket.STUDIO_ALBUM,
+                first_release_date=None,
+            )
+        ],
+        soundtracks=[
+            BucketedReleaseGroup(
+                mbid="st-1",
+                title="Soundtrack",
+                bucket=ReleaseGroupBucket.SOUNDTRACK,
+                first_release_date=None,
+            )
+        ],
+    )
+    assert bucketed.needs_adjudication() is True
+
+
+def test_bucketed_candidate_set_from_release_groups_preserves_metadata():
+    """Test that from_release_groups() preserves all metadata."""
+    release_groups = [
+        {
+            "mbid": "rg-1",
+            "title": "The Album",
+            "type": "Album",
+            "first_release_date": "1985-06-15",
+            "secondary_types": ["Live"],
+            "artist_mbid": "artist-1",
+            "artist_name": "The Artist",
+        }
+    ]
+
+    bucketed = BucketedCandidateSet.from_release_groups(release_groups)
+
+    assert len(bucketed.studio_albums) == 1
+    rg = bucketed.studio_albums[0]
+    assert rg.mbid == "rg-1"
+    assert rg.title == "The Album"
+    assert rg.type == "Album"
+    assert rg.first_release_date == "1985-06-15"
+    assert rg.secondary_types == ["Live"]
+    assert rg.artist_mbid == "artist-1"
+    assert rg.artist_name == "The Artist"
+    assert rg.bucket == ReleaseGroupBucket.STUDIO_ALBUM
+
+
+def test_bucketed_candidate_set_from_release_groups_handles_missing_fields():
+    """Test that from_release_groups() handles missing optional fields."""
+    release_groups = [
+        {"mbid": "rg-1", "title": "Minimal"},  # Only required fields
+    ]
+
+    bucketed = BucketedCandidateSet.from_release_groups(release_groups)
+
+    # Should go to OTHER due to None type
+    assert len(bucketed.other) == 1
+    rg = bucketed.other[0]
+    assert rg.mbid == "rg-1"
+    assert rg.title == "Minimal"
+    assert rg.type is None
+    assert rg.first_release_date is None
+    assert rg.secondary_types == []
+    assert rg.artist_mbid is None
+    assert rg.artist_name == ""
+
+
+def test_bucketed_candidate_set_partial_dates():
+    """Test handling of partial ISO dates (YYYY or YYYY-MM)."""
+    release_groups = [
+        {"mbid": "rg-year", "title": "Year Only", "type": "Album", "first_release_date": "1985"},
+        {
+            "mbid": "rg-month",
+            "title": "Year-Month",
+            "type": "Album",
+            "first_release_date": "1984-06",
+        },
+        {
+            "mbid": "rg-full",
+            "title": "Full Date",
+            "type": "Album",
+            "first_release_date": "1984-06-15",
+        },
+    ]
+
+    bucketed = BucketedCandidateSet.from_release_groups(release_groups)
+
+    # String comparison should still work for ISO dates
+    # 1984-06 < 1984-06-15 < 1985
+    assert bucketed.studio_albums[0].mbid == "rg-month"  # 1984-06
+    assert bucketed.studio_albums[1].mbid == "rg-full"  # 1984-06-15
+    assert bucketed.studio_albums[2].mbid == "rg-year"  # 1985
