@@ -592,6 +592,67 @@ class MusicGraphDB:
         finally:
             conn.close()
 
+    def get_release_groups_for_artist(
+        self, artist_mbid: str, limit: int = 500
+    ) -> list[dict[str, Any]]:
+        """
+        Get all release groups for a specific artist.
+
+        Args:
+            artist_mbid: The artist MBID
+            limit: Maximum number of results (default 500)
+
+        Returns:
+            List of release_group dicts
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT rg.*, a.name as artist_name
+                FROM release_group rg
+                LEFT JOIN artist a ON rg.artist_mbid = a.mbid
+                WHERE rg.artist_mbid = ?
+                ORDER BY rg.first_release_date ASC NULLS LAST
+                LIMIT ?
+                """,
+                (artist_mbid, limit),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_recordings_for_release_group(self, release_group_mbid: str) -> list[dict[str, Any]]:
+        """
+        Get all recordings for a specific release group.
+
+        Args:
+            release_group_mbid: The release group MBID
+
+        Returns:
+            List of recording dicts with artist info
+        """
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT DISTINCT rec.*, a.name as artist_name
+                FROM recording rec
+                JOIN recording_release rr ON rec.mbid = rr.recording_mbid
+                JOIN release rel ON rr.release_mbid = rel.mbid
+                LEFT JOIN artist a ON rec.artist_mbid = a.mbid
+                WHERE rel.release_group_mbid = ?
+                """,
+                (release_group_mbid,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
     def search_recordings_fuzzy(
         self,
         title: str,
