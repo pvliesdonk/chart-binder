@@ -36,10 +36,13 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
+
+from rapidfuzz import fuzz
 
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.normalize import Normalizer
@@ -125,6 +128,10 @@ class SearchConfig:
     # Similarity thresholds for fuzzy matching
     min_title_similarity: float = 70.0  # Minimum title similarity to accept
     min_artist_similarity: float = 60.0  # Minimum artist similarity to accept
+
+    # Length tolerances (as fractions, e.g., 0.1 = ±10%)
+    strict_length_tolerance: float = 0.1  # ±10% for strict search
+    fuzzy_length_tolerance: float = 0.2  # ±20% for fuzzy search
 
 
 class MultiStageSearcher:
@@ -228,12 +235,13 @@ class MultiStageSearcher:
 
             # If we have enough results after fuzzy, stop here
             # (Artist browse and AcoustID implemented in Part 2)
-            if len(self._deduplicate(all_results)) >= self.config.min_fuzzy_results:
+            deduplicated_results = self._deduplicate(all_results)
+            if len(deduplicated_results) >= self.config.min_fuzzy_results:
                 logger.info(
                     f"Sufficient results after fuzzy "
-                    f"({len(self._deduplicate(all_results))} >= {self.config.min_fuzzy_results})"
+                    f"({len(deduplicated_results)} >= {self.config.min_fuzzy_results})"
                 )
-                return self._deduplicate(all_results)
+                return deduplicated_results
 
         # Stages 3-4 (ARTIST_BROWSE, ACOUSTID) implemented in Part 2
         # Placeholder logging for future stages
@@ -251,9 +259,15 @@ class MultiStageSearcher:
         """
         Stage 1: Strict recording search.
 
-        Uses exact matching on normalized title and artist fields.
-        This is the fastest and most precise search, but may miss
-        results with slight variations.
+        Uses the same underlying DB query as fuzzy search but with tighter
+        length tolerance and no post-filter similarity scoring. The "strict"
+        stage is effectively the first pass with normalized input, where
+        results that survive the DB's LIKE query are assumed to be good matches.
+
+        Note: The underlying DB uses LIKE '%...%' for substring matching on
+        normalized fields. A true exact-match query would require a separate
+        DB method. For now, we rely on the normalization to produce precise
+        enough results for Stage 1.
 
         Args:
             title_core: Normalized title (core form)
@@ -265,13 +279,12 @@ class MultiStageSearcher:
         """
         logger.debug(f"Strict search: title='{title_core}', artist='{artist_core}'")
 
-        # Calculate length range (±10% tolerance)
-        length_min = int(length_ms * 0.9) if length_ms else None
-        length_max = int(length_ms * 1.1) if length_ms else None
+        # Calculate length range using configurable tolerance
+        tol = self.config.strict_length_tolerance
+        length_min = int(length_ms * (1 - tol)) if length_ms else None
+        length_max = int(length_ms * (1 + tol)) if length_ms else None
 
-        # Query database with strict matching
-        # The search_recordings_fuzzy method with exact normalized input
-        # effectively becomes a strict search
+        # Query database - uses LIKE matching on normalized fields
         recordings = self.db.search_recordings_fuzzy(
             title=title_core,
             artist_name=artist_core,
@@ -310,9 +323,10 @@ class MultiStageSearcher:
         """
         logger.debug(f"Fuzzy search: title='{title_core}', artist='{artist_core}'")
 
-        # Wider length tolerance for fuzzy search (±20%)
-        length_min = int(length_ms * 0.8) if length_ms else None
-        length_max = int(length_ms * 1.2) if length_ms else None
+        # Wider length tolerance for fuzzy search using configurable value
+        tol = self.config.fuzzy_length_tolerance
+        length_min = int(length_ms * (1 - tol)) if length_ms else None
+        length_max = int(length_ms * (1 + tol)) if length_ms else None
 
         # Query database with fuzzy matching
         # Use partial matching for broader results
@@ -328,19 +342,12 @@ class MultiStageSearcher:
         for rec in recordings:
             result = self._recording_to_search_result(rec, SearchStage.FUZZY)
 
-            # Calculate similarity scores using rapidfuzz
-            try:
-                from rapidfuzz import fuzz
+            # Calculate similarity scores using rapidfuzz (imported at module level)
+            rec_title = rec.get("title_normalized") or rec.get("title", "")
+            rec_artist = rec.get("artist_name_normalized") or rec.get("artist_name", "")
 
-                rec_title = rec.get("title_normalized") or rec.get("title", "")
-                rec_artist = rec.get("artist_name_normalized") or rec.get("artist_name", "")
-
-                result.title_similarity = fuzz.token_set_ratio(title_core, rec_title.lower())
-                result.artist_similarity = fuzz.token_set_ratio(artist_core, rec_artist.lower())
-            except ImportError:
-                # Fallback if rapidfuzz not available
-                result.title_similarity = 80.0
-                result.artist_similarity = 80.0
+            result.title_similarity = fuzz.token_set_ratio(title_core, rec_title.lower())
+            result.artist_similarity = fuzz.token_set_ratio(artist_core, rec_artist.lower())
 
             # Filter by minimum similarity thresholds
             if (
@@ -364,12 +371,10 @@ class MultiStageSearcher:
         Returns:
             SearchResult with recording data and stage provenance
         """
-        # Parse ISRCs from JSON if present
+        # Parse ISRCs from JSON if present (json imported at module level)
         isrcs: list[str] = []
         if recording.get("isrcs_json"):
             try:
-                import json
-
                 isrcs = json.loads(recording["isrcs_json"])
             except (json.JSONDecodeError, TypeError):
                 isrcs = []
@@ -489,6 +494,8 @@ def test_search_config_defaults():
     assert config.enable_acoustid is True
     assert config.min_title_similarity == 70.0
     assert config.min_artist_similarity == 60.0
+    assert config.strict_length_tolerance == 0.1
+    assert config.fuzzy_length_tolerance == 0.2
 
 
 def test_search_config_custom():
