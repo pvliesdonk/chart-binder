@@ -653,6 +653,110 @@ class MusicGraphDB:
         finally:
             conn.close()
 
+    def get_release_groups_for_artists(
+        self, artist_mbids: list[str], limit_per_artist: int = 100
+    ) -> list[dict[str, Any]]:
+        """
+        Batch get all release groups for multiple artists.
+
+        Args:
+            artist_mbids: List of artist MBIDs
+            limit_per_artist: Maximum results per artist (applied via total limit)
+
+        Returns:
+            List of release_group dicts with artist_mbid included
+        """
+        if not artist_mbids:
+            return []
+
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in artist_mbids)
+            cursor.execute(
+                f"""
+                SELECT rg.*, a.name as artist_name
+                FROM release_group rg
+                LEFT JOIN artist a ON rg.artist_mbid = a.mbid
+                WHERE rg.artist_mbid IN ({placeholders})
+                ORDER BY rg.first_release_date ASC NULLS LAST
+                LIMIT ?
+                """,
+                (*artist_mbids, len(artist_mbids) * limit_per_artist),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_recordings_for_release_groups(
+        self, release_group_mbids: list[str]
+    ) -> list[dict[str, Any]]:
+        """
+        Batch get all recordings for multiple release groups.
+
+        Args:
+            release_group_mbids: List of release group MBIDs
+
+        Returns:
+            List of recording dicts with release_group_mbid included
+        """
+        if not release_group_mbids:
+            return []
+
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in release_group_mbids)
+            cursor.execute(
+                f"""
+                SELECT DISTINCT rec.*, a.name as artist_name, rel.release_group_mbid
+                FROM recording rec
+                JOIN recording_release rr ON rec.mbid = rr.recording_mbid
+                JOIN release rel ON rr.release_mbid = rel.mbid
+                LEFT JOIN artist a ON rec.artist_mbid = a.mbid
+                WHERE rel.release_group_mbid IN ({placeholders})
+                """,
+                release_group_mbids,
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
+    def get_release_groups_for_recordings(self, recording_mbids: list[str]) -> list[dict[str, Any]]:
+        """
+        Batch get all release groups containing multiple recordings.
+
+        Args:
+            recording_mbids: List of recording MBIDs
+
+        Returns:
+            List of release_group dicts with recording_mbid included
+        """
+        if not recording_mbids:
+            return []
+
+        conn = self._get_connection()
+        try:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" for _ in recording_mbids)
+            cursor.execute(
+                f"""
+                SELECT DISTINCT rg.*, a.name as artist_name, rr.recording_mbid
+                FROM recording_release rr
+                JOIN release r ON rr.release_mbid = r.mbid
+                JOIN release_group rg ON r.release_group_mbid = rg.mbid
+                LEFT JOIN artist a ON rg.artist_mbid = a.mbid
+                WHERE rr.recording_mbid IN ({placeholders})
+                """,
+                recording_mbids,
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
     def search_recordings_fuzzy(
         self,
         title: str,

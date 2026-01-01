@@ -415,43 +415,54 @@ class MultiStageSearcher:
             logger.debug("No artists found for browse search")
             return results
 
-        # Step 2: For each artist, get their release groups and recordings
+        # Step 2: Filter artists by similarity and collect valid MBIDs
+        valid_artists: dict[str, float] = {}  # mbid -> similarity
         for artist in artists:
             artist_mbid = artist.get("mbid")
             if not artist_mbid:
                 continue
 
-            # Check artist name similarity
             artist_name = artist.get("name", "")
             artist_similarity = fuzz.token_set_ratio(artist_core, artist_name.lower())
-            if artist_similarity < self.config.min_artist_similarity:
-                continue
+            if artist_similarity >= self.config.min_artist_similarity:
+                valid_artists[artist_mbid] = artist_similarity
 
-            # Get release groups for this artist
-            release_groups = self.db.get_release_groups_for_artist(artist_mbid)
+        if not valid_artists:
+            logger.debug("No artists passed similarity threshold")
+            return results
 
-            for rg in release_groups:
-                rg_mbid = rg.get("mbid")
-                if not rg_mbid:
-                    continue
+        # Step 3: Batch fetch all release groups for valid artists
+        artist_mbids = list(valid_artists.keys())
+        release_groups = self.db.get_release_groups_for_artists(artist_mbids)
 
-                # Get recordings for this release group
-                recordings = self.db.get_recordings_for_release_group(rg_mbid)
+        if not release_groups:
+            logger.debug("No release groups found for artists")
+            return results
 
-                for rec in recordings:
-                    rec_title = rec.get("title_normalized") or rec.get("title", "")
-                    title_similarity = fuzz.token_set_ratio(title_core, rec_title.lower())
+        # Step 4: Batch fetch all recordings for these release groups
+        rg_mbids = [rg.get("mbid") for rg in release_groups if rg.get("mbid")]
+        if not rg_mbids:
+            return results
 
-                    # Filter by minimum title similarity
-                    if title_similarity >= self.config.min_title_similarity:
-                        result = self._recording_to_search_result(rec, SearchStage.ARTIST_BROWSE)
-                        result.title_similarity = title_similarity
-                        result.artist_similarity = artist_similarity
-                        results.append(result)
+        recordings = self.db.get_recordings_for_release_groups(rg_mbids)
 
-                        # Limit results per artist to avoid explosion
-                        if len(results) >= self.config.max_results_per_stage:
-                            return results
+        # Step 5: Filter recordings by title similarity
+        for rec in recordings:
+            rec_title = rec.get("title_normalized") or rec.get("title", "")
+            title_similarity = fuzz.token_set_ratio(title_core, rec_title.lower())
+
+            if title_similarity >= self.config.min_title_similarity:
+                # Get artist similarity for this recording's artist
+                rec_artist_mbid = rec.get("artist_mbid", "")
+                artist_similarity = valid_artists.get(rec_artist_mbid, 0.0)
+
+                result = self._recording_to_search_result(rec, SearchStage.ARTIST_BROWSE)
+                result.title_similarity = title_similarity
+                result.artist_similarity = artist_similarity
+                results.append(result)
+
+                if len(results) >= self.config.max_results_per_stage:
+                    return results
 
         return results
 
@@ -478,23 +489,18 @@ class MultiStageSearcher:
         results: list[SearchResult] = []
 
         try:
-            # Create AcoustID client (uses ACOUSTID_API_KEY env var)
-            client = AcoustIDClient()
+            with AcoustIDClient() as client:
+                acoustid_results = client.lookup(
+                    fingerprint=fingerprint,
+                    duration_sec=fingerprint_duration,
+                )
         except ValueError as e:
             # No API key configured
             logger.warning(f"AcoustID not available: {e}")
             return results
-
-        try:
-            acoustid_results = client.lookup(
-                fingerprint=fingerprint,
-                duration_sec=fingerprint_duration,
-            )
         except Exception as e:
             logger.warning(f"AcoustID lookup failed: {e}")
             return results
-        finally:
-            client.close()
 
         # Convert AcoustID results to SearchResults
         # We need to look up the recording in our DB to get full metadata
@@ -604,19 +610,24 @@ class MultiStageSearcher:
         Returns:
             BucketedCandidateSet with release groups organized by type
         """
-        # Collect unique release groups from all recordings
+        # Collect all recording MBIDs
+        recording_mbids = [r.recording_mbid for r in results]
+        if not recording_mbids:
+            return BucketedCandidateSet()
+
+        # Batch fetch all release groups for these recordings
+        all_release_groups = self.db.get_release_groups_for_recordings(recording_mbids)
+
+        # Deduplicate by MBID
         seen_rg_mbids: set[str] = set()
-        release_groups: list[dict[str, Any]] = []
+        unique_release_groups: list[dict[str, Any]] = []
+        for rg in all_release_groups:
+            rg_mbid = rg.get("mbid")
+            if rg_mbid and rg_mbid not in seen_rg_mbids:
+                seen_rg_mbids.add(rg_mbid)
+                unique_release_groups.append(rg)
 
-        for result in results:
-            rg_list = self.db.get_release_groups_for_recording(result.recording_mbid)
-            for rg in rg_list:
-                rg_mbid = rg.get("mbid")
-                if rg_mbid and rg_mbid not in seen_rg_mbids:
-                    seen_rg_mbids.add(rg_mbid)
-                    release_groups.append(rg)
-
-        return BucketedCandidateSet.from_release_groups(release_groups)
+        return BucketedCandidateSet.from_release_groups(unique_release_groups)
 
 
 ## Tests
