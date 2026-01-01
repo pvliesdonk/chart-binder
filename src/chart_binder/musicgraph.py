@@ -685,9 +685,9 @@ class MusicGraphDB:
         Returns candidates above a similarity threshold (default 80%).
         """
         try:
-            from thefuzz import fuzz
+            from rapidfuzz import fuzz
         except ImportError:
-            logger.warning("thefuzz library not available for Levenshtein fallback")
+            logger.warning("rapidfuzz library not available for Levenshtein fallback")
             return []
 
         # Fetch all recordings (with length filter if specified)
