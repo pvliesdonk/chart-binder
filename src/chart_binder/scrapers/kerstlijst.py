@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,12 +67,7 @@ class KerstlijstImporter:
             logger.error(f"Failed to parse Kerstlijst JSON: {e}")
             return []
 
-        songs: list[KerstlijstSong] = []
-
-        for item in data:
-            song = self._parse_song(item)
-            if song:
-                songs.append(song)
+        songs = [song for item in data if (song := self._parse_song(item))]
 
         logger.info(f"Loaded {len(songs)} songs from Kerstlijst JSON")
         return songs
@@ -124,19 +120,15 @@ class KerstlijstImporter:
         Returns:
             List of ScrapedEntry sorted by rank
         """
-        entries: list[ScrapedEntry] = []
-
-        for song in songs:
-            if year in song.positions:
-                entries.append(
-                    ScrapedEntry(
-                        rank=song.positions[year],
-                        artist=song.artist,
-                        title=song.title,
-                    )
-                )
-
-        # Sort by rank
+        entries = [
+            ScrapedEntry(
+                rank=song.positions[year],
+                artist=song.artist,
+                title=song.title,
+            )
+            for song in songs
+            if year in song.positions
+        ]
         entries.sort(key=lambda e: e.rank)
         return entries
 
@@ -159,12 +151,18 @@ class KerstlijstImporter:
         Returns:
             Dict mapping year to list of ScrapedEntry (sorted by rank)
         """
-        result: dict[int, list[ScrapedEntry]] = {}
+        entries_by_year: dict[int, list[ScrapedEntry]] = defaultdict(list)
 
-        for year in self.get_all_years(songs):
-            result[year] = self.get_entries_for_year(songs, year)
+        for song in songs:
+            for year, rank in song.positions.items():
+                entries_by_year[year].append(
+                    ScrapedEntry(rank=rank, artist=song.artist, title=song.title)
+                )
 
-        return result
+        for entries in entries_by_year.values():
+            entries.sort(key=lambda e: e.rank)
+
+        return dict(entries_by_year)
 
     def validate_year(self, entries: list[ScrapedEntry], year: int) -> list[str]:
         """
@@ -191,170 +189,3 @@ class KerstlijstImporter:
             warnings.append(f"Duplicate ranks found for {year}")
 
         return warnings
-
-
-## Tests
-
-
-def test_kerstlijst_importer_load():
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        json_path = Path(tmpdir) / "kerstlijst.json"
-        json_path.write_text(
-            json.dumps(
-                [
-                    {
-                        "artiest": "Wham!",
-                        "titel": "Last Christmas",
-                        "hitlists": {"spotweb": {"2020": 1, "2021": 2}},
-                    },
-                    {
-                        "artiest": "Mariah Carey",
-                        "titel": "All I Want For Christmas Is You",
-                        "hitlists": {"spotweb": {"2020": 2, "2021": 1}},
-                    },
-                ]
-            )
-        )
-
-        importer = KerstlijstImporter()
-        songs = importer.load(json_path)
-
-        assert len(songs) == 2
-        assert songs[0].artist == "Wham!"
-        assert songs[0].positions[2020] == 1
-        assert songs[0].positions[2021] == 2
-
-
-def test_kerstlijst_get_entries_for_year():
-    songs = [
-        KerstlijstSong(artist="Wham!", title="Last Christmas", positions={2020: 1, 2021: 2}),
-        KerstlijstSong(
-            artist="Mariah Carey",
-            title="All I Want For Christmas Is You",
-            positions={2020: 2, 2021: 1},
-        ),
-    ]
-
-    importer = KerstlijstImporter()
-    entries = importer.get_entries_for_year(songs, 2020)
-
-    assert len(entries) == 2
-    assert entries[0].rank == 1
-    assert entries[0].artist == "Wham!"
-    assert entries[1].rank == 2
-    assert entries[1].artist == "Mariah Carey"
-
-
-def test_kerstlijst_get_all_years():
-    songs = [
-        KerstlijstSong(artist="Wham!", title="Last Christmas", positions={2020: 1, 2021: 2}),
-        KerstlijstSong(artist="Other", title="Song", positions={2019: 5}),
-    ]
-
-    importer = KerstlijstImporter()
-    years = importer.get_all_years(songs)
-
-    assert years == {2019, 2020, 2021}
-
-
-def test_kerstlijst_get_entries_by_year():
-    songs = [
-        KerstlijstSong(artist="Wham!", title="Last Christmas", positions={2020: 1, 2021: 2}),
-        KerstlijstSong(
-            artist="Mariah Carey",
-            title="All I Want For Christmas Is You",
-            positions={2020: 2, 2021: 1},
-        ),
-    ]
-
-    importer = KerstlijstImporter()
-    by_year = importer.get_entries_by_year(songs)
-
-    assert 2020 in by_year
-    assert 2021 in by_year
-    assert len(by_year[2020]) == 2
-    assert len(by_year[2021]) == 2
-
-    # 2020: Wham! #1, Mariah #2
-    assert by_year[2020][0].artist == "Wham!"
-    assert by_year[2020][1].artist == "Mariah Carey"
-
-    # 2021: Mariah #1, Wham! #2
-    assert by_year[2021][0].artist == "Mariah Carey"
-    assert by_year[2021][1].artist == "Wham!"
-
-
-def test_kerstlijst_missing_file():
-    importer = KerstlijstImporter()
-    songs = importer.load(Path("/nonexistent/file.json"))
-    assert songs == []
-
-
-def test_kerstlijst_invalid_json():
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        json_path = Path(tmpdir) / "invalid.json"
-        json_path.write_text("not valid json {{{")
-
-        importer = KerstlijstImporter()
-        songs = importer.load(json_path)
-        assert songs == []
-
-
-def test_kerstlijst_skips_invalid_entries():
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        json_path = Path(tmpdir) / "kerstlijst.json"
-        json_path.write_text(
-            json.dumps(
-                [
-                    # Valid entry
-                    {
-                        "artiest": "Wham!",
-                        "titel": "Last Christmas",
-                        "hitlists": {"spotweb": {"2020": 1}},
-                    },
-                    # Missing artist
-                    {"artiest": "", "titel": "Some Song", "hitlists": {"spotweb": {"2020": 2}}},
-                    # Missing title
-                    {
-                        "artiest": "Some Artist",
-                        "titel": "",
-                        "hitlists": {"spotweb": {"2020": 3}},
-                    },
-                    # No positions
-                    {"artiest": "No Positions", "titel": "Song", "hitlists": {"spotweb": {}}},
-                    # Invalid rank (too high)
-                    {
-                        "artiest": "Invalid",
-                        "titel": "Rank",
-                        "hitlists": {"spotweb": {"2020": 9999}},
-                    },
-                ]
-            )
-        )
-
-        importer = KerstlijstImporter()
-        songs = importer.load(json_path)
-
-        # Only the first valid entry should be loaded
-        assert len(songs) == 1
-        assert songs[0].artist == "Wham!"
-
-
-def test_kerstlijst_validate_year():
-    songs = [
-        KerstlijstSong(artist="A", title="Song A", positions={2020: 1}),
-        KerstlijstSong(artist="B", title="Song B", positions={2020: 2}),
-        KerstlijstSong(artist="C", title="Song C", positions={2020: 4}),  # Gap at 3
-    ]
-
-    importer = KerstlijstImporter()
-    entries = importer.get_entries_for_year(songs, 2020)
-    warnings = importer.validate_year(entries, 2020)
-
-    assert any("Missing ranks" in w for w in warnings)

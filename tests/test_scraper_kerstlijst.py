@@ -48,6 +48,54 @@ class TestKerstlijstImporterLoad:
         songs = kerstlijst_importer.load(Path("/nonexistent/file.json"))
         assert songs == []
 
+    def test_load_invalid_json(self, kerstlijst_importer, tmp_path):
+        """Test loading invalid JSON returns empty list."""
+        json_path = tmp_path / "invalid.json"
+        json_path.write_text("not valid json {{{")
+
+        songs = kerstlijst_importer.load(json_path)
+        assert songs == []
+
+    def test_load_skips_invalid_entries(self, kerstlijst_importer, tmp_path):
+        """Test that invalid entries are skipped during load."""
+        import json
+
+        json_path = tmp_path / "kerstlijst.json"
+        json_path.write_text(
+            json.dumps(
+                [
+                    # Valid entry
+                    {
+                        "artiest": "Wham!",
+                        "titel": "Last Christmas",
+                        "hitlists": {"spotweb": {"2020": 1}},
+                    },
+                    # Missing artist
+                    {"artiest": "", "titel": "Some Song", "hitlists": {"spotweb": {"2020": 2}}},
+                    # Missing title
+                    {
+                        "artiest": "Some Artist",
+                        "titel": "",
+                        "hitlists": {"spotweb": {"2020": 3}},
+                    },
+                    # No positions
+                    {"artiest": "No Positions", "titel": "Song", "hitlists": {"spotweb": {}}},
+                    # Invalid rank (too high)
+                    {
+                        "artiest": "Invalid",
+                        "titel": "Rank",
+                        "hitlists": {"spotweb": {"2020": 9999}},
+                    },
+                ]
+            )
+        )
+
+        songs = kerstlijst_importer.load(json_path)
+
+        # Only the first valid entry should be loaded
+        assert len(songs) == 1
+        assert songs[0].artist == "Wham!"
+
 
 class TestKerstlijstEntriesForYear:
     """Tests for extracting entries by year."""
