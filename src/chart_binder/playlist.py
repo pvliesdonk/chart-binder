@@ -264,42 +264,40 @@ class PlaylistGenerator:
             return None
 
         try:
-            conn = sqlite3.connect(self.beets_db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
+            with sqlite3.connect(self.beets_db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
 
-            # Try MBID lookup first
-            recording_mbid = entry.get("recording_mbid")
-            if recording_mbid:
+                # Try MBID lookup first
+                recording_mbid = entry.get("recording_mbid")
+                if recording_mbid:
+                    cursor.execute(
+                        "SELECT path FROM items WHERE mb_trackid = ?",
+                        (recording_mbid,),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        path = Path(row["path"].decode() if isinstance(row["path"], bytes) else row["path"])
+                        if path.exists():
+                            return path
+
+                # Fall back to artist/title search
+                artist = entry.get("artist_canonical") or entry["artist_raw"]
+                title = entry.get("title_canonical") or entry["title_raw"]
+
                 cursor.execute(
-                    "SELECT path FROM items WHERE mb_trackid = ?",
-                    (recording_mbid,),
+                    """
+                    SELECT path FROM items
+                    WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?)
+                    LIMIT 1
+                    """,
+                    (artist, title),
                 )
                 row = cursor.fetchone()
                 if row:
                     path = Path(row["path"].decode() if isinstance(row["path"], bytes) else row["path"])
                     if path.exists():
                         return path
-
-            # Fall back to artist/title search
-            artist = entry.get("artist_canonical") or entry["artist_raw"]
-            title = entry.get("title_canonical") or entry["title_raw"]
-
-            cursor.execute(
-                """
-                SELECT path FROM items
-                WHERE LOWER(artist) = LOWER(?) AND LOWER(title) = LOWER(?)
-                LIMIT 1
-                """,
-                (artist, title),
-            )
-            row = cursor.fetchone()
-            if row:
-                path = Path(row["path"].decode() if isinstance(row["path"], bytes) else row["path"])
-                if path.exists():
-                    return path
-
-            conn.close()
         except sqlite3.Error as e:
             logger.warning(f"Beets database error: {e}")
 
@@ -328,10 +326,9 @@ class PlaylistGenerator:
         for pattern in patterns:
             for ext in self.audio_extensions:
                 full_pattern = f"{pattern}{ext}"
-                matches = list(self.music_library.glob(full_pattern))
-                if matches:
+                for match in self.music_library.glob(full_pattern):
                     # Return first match (could be improved with scoring)
-                    return matches[0]
+                    return match
 
         return None
 
@@ -446,8 +443,8 @@ def get_beets_db_path() -> Path | None:
     if beets_config:
         config_path = Path(beets_config)
         if config_path.exists():
-            # Parse beets config to find library path
-            # For simplicity, check common locations
+            # TODO: Parse beets config YAML to find library path.
+            # For now, fall back to checking common locations below.
             pass
 
     # Check default beets database locations

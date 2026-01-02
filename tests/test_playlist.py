@@ -309,9 +309,7 @@ class TestPlaylistGeneratorFilesearch:
             output=output,
         )
 
-        # Queen and Beatles should be found via filesystem
-        {e.artist for e in result.missing if e.reason != MissingReason.NO_LOCAL_FILE}
-        # Eagles and Unknown should be missing
+        # Eagles and Unknown Artist should be in missing (no files for them)
         assert any("Eagles" in m.artist for m in result.missing)
         assert any("Unknown" in m.artist for m in result.missing)
 
