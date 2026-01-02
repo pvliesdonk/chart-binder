@@ -392,9 +392,16 @@ class ChartsDB:
     # Chart entry management
 
     @staticmethod
-    def generate_entry_id(run_id: str, rank: int) -> str:
-        """Generate deterministic entry ID from run_id and rank."""
-        combined = f"{run_id}:{rank}"
+    def generate_entry_id(run_id: str, rank: int, side: str | None = None) -> str:
+        """Generate deterministic entry ID from run_id, rank, and optional side.
+
+        For split entries (double A-sides), include the side designation to
+        ensure unique IDs when multiple entries share the same rank.
+        """
+        if side:
+            combined = f"{run_id}:{rank}:{side}"
+        else:
+            combined = f"{run_id}:{rank}"
         return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
     def add_entry(
@@ -415,7 +422,7 @@ class ChartsDB:
 
         Returns the entry_id.
         """
-        entry_id = self.generate_entry_id(run_id, rank)
+        entry_id = self.generate_entry_id(run_id, rank, side_designation)
         if scraped_at is None:
             scraped_at = time.time()
 
@@ -467,7 +474,7 @@ class ChartsDB:
         try:
             cursor = conn.cursor()
             for entry in entries:
-                entry_id = self.generate_entry_id(run_id, entry.rank)
+                entry_id = self.generate_entry_id(run_id, entry.rank, entry.side_designation)
                 entry_ids.append(entry_id)
                 cursor.execute(
                     """
