@@ -46,6 +46,10 @@ class ChartEntry:
     previous_position: int | None = None
     weeks_on_chart: int | None = None
     side_designation: str | None = None  # Side for split entries ('A', 'B', 'AA', etc.)
+    # Wikipedia enrichment fields
+    wikipedia_artist: str | None = None  # Wikipedia URL for artist
+    wikipedia_title: str | None = None  # Wikipedia URL for song
+    history_url: str | None = None  # Chart history page URL
     entry_id: str | None = None  # Deterministic ID (hash of run_id + rank)
 
     # Normalized fields (computed, for legacy compatibility)
@@ -167,6 +171,9 @@ class ChartsDB:
                 previous_position INTEGER,
                 weeks_on_chart INTEGER,
                 side_designation TEXT,
+                wikipedia_artist TEXT,
+                wikipedia_title TEXT,
+                history_url TEXT,
                 entry_unit TEXT NOT NULL,
                 extra_raw TEXT,
                 scraped_at REAL NOT NULL,
@@ -260,6 +267,22 @@ class ChartsDB:
             conn.execute("SELECT side_designation FROM chart_entry LIMIT 1")
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE chart_entry ADD COLUMN side_designation TEXT")
+
+        # Migration: Add Wikipedia enrichment columns if they don't exist
+        try:
+            conn.execute("SELECT wikipedia_artist FROM chart_entry LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN wikipedia_artist TEXT")
+
+        try:
+            conn.execute("SELECT wikipedia_title FROM chart_entry LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN wikipedia_title TEXT")
+
+        try:
+            conn.execute("SELECT history_url FROM chart_entry LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN history_url TEXT")
 
         conn.commit()
         conn.close()
@@ -415,6 +438,9 @@ class ChartsDB:
         previous_position: int | None = None,
         weeks_on_chart: int | None = None,
         side_designation: str | None = None,
+        wikipedia_artist: str | None = None,
+        wikipedia_title: str | None = None,
+        history_url: str | None = None,
         scraped_at: float | None = None,
     ) -> str:
         """
@@ -431,15 +457,19 @@ class ChartsDB:
             conn.execute(
                 """
                 INSERT INTO chart_entry (entry_id, run_id, rank, artist_raw, title_raw,
-                    previous_position, weeks_on_chart, side_designation, entry_unit,
-                    extra_raw, scraped_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    previous_position, weeks_on_chart, side_designation,
+                    wikipedia_artist, wikipedia_title, history_url,
+                    entry_unit, extra_raw, scraped_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(entry_id) DO UPDATE SET
                     artist_raw = excluded.artist_raw,
                     title_raw = excluded.title_raw,
                     previous_position = excluded.previous_position,
                     weeks_on_chart = excluded.weeks_on_chart,
                     side_designation = excluded.side_designation,
+                    wikipedia_artist = excluded.wikipedia_artist,
+                    wikipedia_title = excluded.wikipedia_title,
+                    history_url = excluded.history_url,
                     entry_unit = excluded.entry_unit,
                     extra_raw = excluded.extra_raw
                 """,
@@ -452,6 +482,9 @@ class ChartsDB:
                     previous_position,
                     weeks_on_chart,
                     side_designation,
+                    wikipedia_artist,
+                    wikipedia_title,
+                    history_url,
                     entry_unit.value,
                     extra_raw,
                     scraped_at,
@@ -479,15 +512,19 @@ class ChartsDB:
                 cursor.execute(
                     """
                     INSERT INTO chart_entry (entry_id, run_id, rank, artist_raw, title_raw,
-                        previous_position, weeks_on_chart, side_designation, entry_unit,
-                        extra_raw, scraped_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        previous_position, weeks_on_chart, side_designation,
+                        wikipedia_artist, wikipedia_title, history_url,
+                        entry_unit, extra_raw, scraped_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(entry_id) DO UPDATE SET
                         artist_raw = excluded.artist_raw,
                         title_raw = excluded.title_raw,
                         previous_position = excluded.previous_position,
                         weeks_on_chart = excluded.weeks_on_chart,
                         side_designation = excluded.side_designation,
+                        wikipedia_artist = excluded.wikipedia_artist,
+                        wikipedia_title = excluded.wikipedia_title,
+                        history_url = excluded.history_url,
                         entry_unit = excluded.entry_unit,
                         extra_raw = excluded.extra_raw
                     """,
@@ -500,6 +537,9 @@ class ChartsDB:
                         entry.previous_position,
                         entry.weeks_on_chart,
                         entry.side_designation,
+                        entry.wikipedia_artist,
+                        entry.wikipedia_title,
+                        entry.history_url,
                         entry.entry_unit.value,
                         entry.extra_raw,
                         scraped_at,
