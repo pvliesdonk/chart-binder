@@ -243,12 +243,26 @@ class Top40Scraper(ChartScraper):
                     )
                 ]
 
-        # Single entry (no split)
+        # For non-split cases, return a single entry.
+        # If the split resulted in a single artist and title, use those cleaned parts.
+        # Otherwise, this is an ambiguous case (e.g. multiple artists, one title),
+        # so we fall back to the original cleaned strings to avoid data loss.
+        if len(artists) == 1 and len(titles) == 1:
+            return [
+                ScrapedEntry(
+                    rank=rank,
+                    artist=artists[0],
+                    title=titles[0],
+                    previous_position=previous_position,
+                    weeks_on_chart=weeks_on_chart,
+                )
+            ]
+
         return [
             ScrapedEntry(
                 rank=rank,
-                artist=artists[0],
-                title=titles[0],
+                artist=artist,
+                title=title,
                 previous_position=previous_position,
                 weeks_on_chart=weeks_on_chart,
             )

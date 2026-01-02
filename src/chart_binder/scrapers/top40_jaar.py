@@ -205,8 +205,14 @@ class Top40JaarScraper(ChartScraper):
             else:
                 return [ScrapedEntry(rank=rank, artist=artist, title=title)]
 
-        # Single entry (no split)
-        return [ScrapedEntry(rank=rank, artist=artists[0], title=titles[0])]
+        # For non-split cases, return a single entry.
+        # If the split resulted in a single artist and title, use those cleaned parts.
+        # Otherwise, this is an ambiguous case, so we fall back to the original
+        # cleaned strings to avoid data loss.
+        if len(artists) == 1 and len(titles) == 1:
+            return [ScrapedEntry(rank=rank, artist=artists[0], title=titles[0])]
+
+        return [ScrapedEntry(rank=rank, artist=artist, title=title)]
 
 
 class Top40JaarParser:
