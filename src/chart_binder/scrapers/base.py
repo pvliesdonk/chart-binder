@@ -22,6 +22,7 @@ class ScrapedEntry:
     title: str
     previous_position: int | None = None  # Position in previous week (from website)
     weeks_on_chart: int | None = None  # How long on chart (from website)
+    side: str | None = None  # Side designation for split entries ('A', 'B', 'AA', etc.)
 
     def as_tuple(self) -> tuple[int, str, str]:
         """Convert to simple tuple format for backwards compatibility."""

@@ -45,6 +45,7 @@ class ChartEntry:
     extra_raw: str | None = None
     previous_position: int | None = None
     weeks_on_chart: int | None = None
+    side_designation: str | None = None  # Side for split entries ('A', 'B', 'AA', etc.)
     entry_id: str | None = None  # Deterministic ID (hash of run_id + rank)
 
     # Normalized fields (computed, for legacy compatibility)
@@ -165,6 +166,7 @@ class ChartsDB:
                 title_raw TEXT NOT NULL,
                 previous_position INTEGER,
                 weeks_on_chart INTEGER,
+                side_designation TEXT,
                 entry_unit TEXT NOT NULL,
                 extra_raw TEXT,
                 scraped_at REAL NOT NULL,
@@ -252,6 +254,12 @@ class ChartsDB:
                 ALTER TABLE chart_link ADD COLUMN source TEXT;
                 """
             )
+
+        # Migration: Add side_designation column to chart_entry if it doesn't exist
+        try:
+            conn.execute("SELECT side_designation FROM chart_entry LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN side_designation TEXT")
 
         conn.commit()
         conn.close()
@@ -399,6 +407,7 @@ class ChartsDB:
         extra_raw: str | None = None,
         previous_position: int | None = None,
         weeks_on_chart: int | None = None,
+        side_designation: str | None = None,
         scraped_at: float | None = None,
     ) -> str:
         """
@@ -415,13 +424,15 @@ class ChartsDB:
             conn.execute(
                 """
                 INSERT INTO chart_entry (entry_id, run_id, rank, artist_raw, title_raw,
-                    previous_position, weeks_on_chart, entry_unit, extra_raw, scraped_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    previous_position, weeks_on_chart, side_designation, entry_unit,
+                    extra_raw, scraped_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(entry_id) DO UPDATE SET
                     artist_raw = excluded.artist_raw,
                     title_raw = excluded.title_raw,
                     previous_position = excluded.previous_position,
                     weeks_on_chart = excluded.weeks_on_chart,
+                    side_designation = excluded.side_designation,
                     entry_unit = excluded.entry_unit,
                     extra_raw = excluded.extra_raw
                 """,
@@ -433,6 +444,7 @@ class ChartsDB:
                     title_raw,
                     previous_position,
                     weeks_on_chart,
+                    side_designation,
                     entry_unit.value,
                     extra_raw,
                     scraped_at,
@@ -460,13 +472,15 @@ class ChartsDB:
                 cursor.execute(
                     """
                     INSERT INTO chart_entry (entry_id, run_id, rank, artist_raw, title_raw,
-                        previous_position, weeks_on_chart, entry_unit, extra_raw, scraped_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        previous_position, weeks_on_chart, side_designation, entry_unit,
+                        extra_raw, scraped_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(entry_id) DO UPDATE SET
                         artist_raw = excluded.artist_raw,
                         title_raw = excluded.title_raw,
                         previous_position = excluded.previous_position,
                         weeks_on_chart = excluded.weeks_on_chart,
+                        side_designation = excluded.side_designation,
                         entry_unit = excluded.entry_unit,
                         extra_raw = excluded.extra_raw
                     """,
@@ -478,6 +492,7 @@ class ChartsDB:
                         entry.title_raw,
                         entry.previous_position,
                         entry.weeks_on_chart,
+                        entry.side_designation,
                         entry.entry_unit.value,
                         entry.extra_raw,
                         scraped_at,
