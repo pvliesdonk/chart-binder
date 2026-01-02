@@ -194,7 +194,8 @@ reportImplicitRelativeImport = false  # Test files use implicit imports
 
 [tool.codespell]
 # acn = SQL alias for artist_credit_name table in MusicBrainz schema
-ignore-words-list = "acn"
+# te = Dutch word meaning "too" (e.g., "Duurt Te Lang" = "Lasts Too Long")
+ignore-words-list = "acn,te"
 # skip = "foo.py,bar.py"
 
 [tool.pytest.ini_options]
