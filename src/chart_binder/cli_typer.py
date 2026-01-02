@@ -60,12 +60,14 @@ coverage_app = typer.Typer(help="Chart coverage analysis commands")
 charts_app = typer.Typer(help="Chart data scraping and management")
 review_app = typer.Typer(help="Review and resolve indeterminate decisions")
 analytics_app = typer.Typer(help="Cross-chart querying and analytics")
+playlist_app = typer.Typer(help="Generate playlists from chart data")
 
 app.add_typer(cache_app, name="cache")
 app.add_typer(coverage_app, name="coverage")
 app.add_typer(charts_app, name="charts")
 app.add_typer(review_app, name="review")
 app.add_typer(analytics_app, name="analytics")
+app.add_typer(playlist_app, name="playlist")
 
 
 # Global state (set by callback)
@@ -2190,6 +2192,231 @@ def analytics_lookup(
             cprint(f"  Spotify ID: {song.spotify_id}")
         if song.isrc:
             cprint(f"  ISRC: {song.isrc}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+# ====================================================================
+# PLAYLIST COMMANDS
+# ====================================================================
+
+
+@playlist_app.command("generate")
+def playlist_generate(
+    chart_period: Annotated[str, typer.Argument(help="Chart and period (chart_id:period, e.g., 'nl_top2000:2024')")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path("playlist.m3u"),
+    format: Annotated[str, typer.Option("--format", "-f", help="Playlist format (m3u or m3u8)")] = "m3u",
+    music_library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to music library")] = None,
+    beets_db: Annotated[Path | None, typer.Option("--beets", "-b", help="Path to beets database")] = None,
+    relative_paths: Annotated[bool, typer.Option("--relative", "-r", help="Use relative paths")] = False,
+    show_missing: Annotated[bool, typer.Option("--show-missing", help="Show missing entries report")] = False,
+) -> None:
+    """Generate M3U/M3U8 playlist from a chart run.
+
+    Resolves chart entries to local audio files via beets database or
+    filesystem search.
+
+    Examples:
+        canon playlist generate nl_top2000:2024 --output top2000_2024.m3u
+        canon playlist generate nl_top40:2024-W01 --format m3u8 --output chart.m3u8
+        canon playlist generate nl_top2000:2024 --beets ~/.config/beets/library.db
+        canon playlist generate nl_top2000:2024 --library /media/music --relative
+    """
+    from chart_binder.charts_db import ChartsDB
+    from chart_binder.playlist import (
+        PlaylistFormat,
+        PlaylistGenerator,
+        get_beets_db_path,
+        get_music_library_path,
+    )
+
+    config = state.config
+    output_format_cli = state.output_format
+
+    # Parse chart_id:period
+    if ":" not in chart_period:
+        print_error("Invalid format. Use 'chart_id:period' (e.g., 'nl_top2000:2024')")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    chart_id, period = chart_period.split(":", 1)
+
+    # Determine playlist format
+    try:
+        playlist_format = PlaylistFormat(format.lower())
+    except ValueError:
+        print_error(f"Invalid format '{format}'. Use 'm3u' or 'm3u8'")
+        raise typer.Exit(code=ExitCode.ERROR) from None
+
+    # Get paths (from args or environment)
+    lib_path = music_library or get_music_library_path()
+    beets_path = beets_db or get_beets_db_path()
+
+    if not lib_path and not beets_path:
+        print_warning("No music library or beets database configured.")
+        print_warning("Set MUSIC_LIBRARY or BEETS_CONFIG environment variables, or use --library/--beets options.")
+
+    # Create generator
+    db = ChartsDB(config.database.charts_path)
+    generator = PlaylistGenerator(
+        charts_db=db,
+        music_library=lib_path,
+        beets_db_path=beets_path,
+    )
+
+    # Generate playlist
+    result = generator.generate(
+        chart_id=chart_id,
+        period=period,
+        output=output,
+        format=playlist_format,
+        use_relative_paths=relative_paths,
+    )
+
+    # Build result dict for JSON output
+    result_dict = {
+        "chart_id": result.chart_id,
+        "period": result.period,
+        "output_path": str(result.output_path),
+        "found": result.found,
+        "total": result.total,
+        "coverage_pct": round(result.coverage_pct, 1),
+        "missing_count": len(result.missing),
+    }
+
+    if output_format_cli == OutputFormat.JSON:
+        if show_missing:
+            result_dict["missing"] = [
+                {
+                    "rank": m.rank,
+                    "artist": m.artist,
+                    "title": m.title,
+                    "reason": m.reason.value,
+                    "song_id": m.song_id,
+                }
+                for m in result.missing
+            ]
+        cprint(json.dumps(result_dict, indent=2))
+    else:
+        if result.total == 0:
+            print_error(f"No chart run found for {chart_id}:{period}")
+            raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+        cprint("\n[bold]Playlist Generated[/bold]")
+        cprint(f"  Chart: {chart_id}:{period}")
+        cprint(f"  Output: {result.output_path}")
+        cprint(f"  Format: {playlist_format.value}")
+        cprint("")
+        cprint(f"  [green]Found:[/green] {result.found}/{result.total} entries ({result.coverage_pct:.1f}% coverage)")
+
+        if result.missing:
+            cprint(f"  [yellow]Missing:[/yellow] {len(result.missing)} entries")
+
+            if show_missing:
+                cprint("")
+                report = generator.get_missing_report(result)
+                cprint(report)
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+@playlist_app.command("info")
+def playlist_info(
+    chart_period: Annotated[str, typer.Argument(help="Chart and period (chart_id:period)")],
+) -> None:
+    """Show information about a chart run for playlist generation.
+
+    Displays entry count and linked song statistics without generating a playlist.
+
+    Examples:
+        canon playlist info nl_top2000:2024
+        canon playlist info nl_top40:2024-W01
+    """
+    from chart_binder.charts_db import ChartsDB
+
+    config = state.config
+    output_format_cli = state.output_format
+
+    # Parse chart_id:period
+    if ":" not in chart_period:
+        print_error("Invalid format. Use 'chart_id:period' (e.g., 'nl_top2000:2024')")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    chart_id, period = chart_period.split(":", 1)
+
+    db = ChartsDB(config.database.charts_path)
+
+    # Get run
+    run = db.get_run_by_period(chart_id, period)
+    if not run:
+        print_error(f"No chart run found for {chart_id}:{period}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    # Get entry stats
+    conn = db._get_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # Total entries
+        cursor.execute("SELECT COUNT(*) as cnt FROM chart_entry WHERE run_id = ?", (run["run_id"],))
+        total_entries = cursor.fetchone()["cnt"]
+
+        # Linked entries (have at least one song link)
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT e.entry_id) as cnt
+            FROM chart_entry e
+            JOIN chart_entry_song es ON e.entry_id = es.entry_id
+            WHERE e.run_id = ?
+            """,
+            (run["run_id"],),
+        )
+        linked_entries = cursor.fetchone()["cnt"]
+
+        # Entries with MBID
+        cursor.execute(
+            """
+            SELECT COUNT(DISTINCT e.entry_id) as cnt
+            FROM chart_entry e
+            JOIN chart_entry_song es ON e.entry_id = es.entry_id
+            JOIN song s ON es.song_id = s.song_id
+            WHERE e.run_id = ? AND s.recording_mbid IS NOT NULL
+            """,
+            (run["run_id"],),
+        )
+        mbid_entries = cursor.fetchone()["cnt"]
+
+    finally:
+        conn.close()
+
+    link_pct = (linked_entries / total_entries * 100) if total_entries > 0 else 0.0
+    mbid_pct = (mbid_entries / total_entries * 100) if total_entries > 0 else 0.0
+
+    result_dict = {
+        "chart_id": chart_id,
+        "period": period,
+        "run_id": run["run_id"],
+        "total_entries": total_entries,
+        "linked_entries": linked_entries,
+        "link_pct": round(link_pct, 1),
+        "mbid_entries": mbid_entries,
+        "mbid_pct": round(mbid_pct, 1),
+    }
+
+    if output_format_cli == OutputFormat.JSON:
+        cprint(json.dumps(result_dict, indent=2))
+    else:
+        cprint(f"\n[bold]{chart_id}:{period}[/bold]")
+        cprint(f"  Run ID: {run['run_id']}")
+        cprint("")
+        cprint(f"  Total entries: {total_entries}")
+        cprint(f"  Linked to songs: {linked_entries} ({link_pct:.1f}%)")
+        cprint(f"  With MBIDs: {mbid_entries} ({mbid_pct:.1f}%)")
+        cprint("")
+        if link_pct < 50:
+            print_warning("Low song linkage. Run 'canon charts link' to improve coverage.")
+        elif mbid_pct < link_pct * 0.5:
+            print_warning("Many linked songs missing MBIDs. Run 'canon charts enrich' to add MBIDs.")
 
     raise typer.Exit(code=ExitCode.SUCCESS)
 
