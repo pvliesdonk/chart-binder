@@ -17,7 +17,10 @@ __all__ = [
     "Top40JaarScraper",
     "Top2000Scraper",
     "ZwaarsteScraper",
+    "KerstlijstImporter",
+    "KerstlijstSong",
     "SCRAPER_REGISTRY",
+    "IMPORTER_REGISTRY",
 ]
 
 from chart_binder.scrapers.base import (
@@ -28,6 +31,7 @@ from chart_binder.scrapers.base import (
     calculate_overlap,
     cross_reference_previous_positions,
 )
+from chart_binder.scrapers.kerstlijst import KerstlijstImporter, KerstlijstSong
 from chart_binder.scrapers.top40 import Top40Scraper
 from chart_binder.scrapers.top40_jaar import Top40JaarScraper
 from chart_binder.scrapers.top2000 import Top2000Scraper
@@ -39,4 +43,9 @@ SCRAPER_REGISTRY: dict[str, tuple[type[ChartScraper], str]] = {
     "t40jaar": (Top40JaarScraper, "nl_top40_jaar"),
     "top2000": (Top2000Scraper, "nl_top2000"),
     "zwaarste": (ZwaarsteScraper, "nl_538_zwaarste"),
+}
+
+# Importer registry for file-based imports (not HTTP scrapers)
+IMPORTER_REGISTRY: dict[str, type[KerstlijstImporter]] = {
+    "kerstlijst": KerstlijstImporter,
 }
