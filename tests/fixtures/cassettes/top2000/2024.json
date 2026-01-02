@@ -1,0 +1,44 @@
+{
+  "positions": [
+    {
+      "position": {"current": 1, "previous": 2},
+      "track": {"artist": "Queen", "title": "Bohemian Rhapsody"}
+    },
+    {
+      "position": {"current": 2, "previous": 1},
+      "track": {"artist": "Eagles", "title": "Hotel California"}
+    },
+    {
+      "position": {"current": 3, "previous": 5},
+      "track": {"artist": "Led Zeppelin", "title": "Stairway To Heaven"}
+    },
+    {
+      "position": {"current": 4, "previous": 3},
+      "track": {"artist": "Pink Floyd", "title": "Wish You Were Here"}
+    },
+    {
+      "position": {"current": 5, "previous": 4},
+      "track": {"artist": "Deep Purple", "title": "Child In Time"}
+    },
+    {
+      "position": {"current": 6, "previous": null},
+      "track": {"artist": "The Rolling Stones", "title": "Paint It Black"}
+    },
+    {
+      "position": {"current": 7, "previous": 10},
+      "track": {"artist": "Dire Straits", "title": "Brothers In Arms"}
+    },
+    {
+      "position": {"current": 8, "previous": 7},
+      "track": {"artist": "U2", "title": "One"}
+    },
+    {
+      "position": {"current": 9, "previous": 8},
+      "track": {"artist": "The Who", "title": "Baba O'Riley"}
+    },
+    {
+      "position": {"current": 10, "previous": 6},
+      "track": {"artist": "Eagles", "title": "Peaceful Easy Feeling"}
+    }
+  ]
+}
