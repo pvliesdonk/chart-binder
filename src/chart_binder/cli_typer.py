@@ -59,11 +59,13 @@ cache_app = typer.Typer(help="HTTP cache management commands")
 coverage_app = typer.Typer(help="Chart coverage analysis commands")
 charts_app = typer.Typer(help="Chart data scraping and management")
 review_app = typer.Typer(help="Review and resolve indeterminate decisions")
+analytics_app = typer.Typer(help="Cross-chart querying and analytics")
 
 app.add_typer(cache_app, name="cache")
 app.add_typer(coverage_app, name="coverage")
 app.add_typer(charts_app, name="charts")
 app.add_typer(review_app, name="review")
+app.add_typer(analytics_app, name="analytics")
 
 
 # Global state (set by callback)
@@ -1944,6 +1946,252 @@ def review_reject(
     print_error("review reject command not yet implemented in Typer CLI")
     print_error("Review system commands are lower priority - contribute if needed!")
     raise typer.Exit(code=ExitCode.ERROR)
+
+
+# ====================================================================
+# ANALYTICS COMMANDS
+# ====================================================================
+
+
+@analytics_app.command("history")
+def analytics_history(
+    artist: Annotated[str, typer.Argument(help="Artist name")],
+    title: Annotated[str, typer.Argument(help="Song title")],
+    fuzzy_threshold: Annotated[
+        float, typer.Option("--threshold", "-t", help="Fuzzy match threshold (0-1)")
+    ] = 0.7,
+) -> None:
+    """Show chart history for a song across all charts.
+
+    Finds a song by artist and title (with fuzzy matching) and displays
+    all of its chart appearances.
+
+    Examples:
+        canon analytics history "Queen" "Bohemian Rhapsody"
+        canon analytics history "Wham!" "Last Christmas" --threshold 0.8
+    """
+    from chart_binder.analytics import ChartAnalytics
+    from chart_binder.charts_db import ChartsDB
+
+    config = state.config
+    output_format = state.output_format
+
+    db = ChartsDB(config.database.charts_path)
+    analytics = ChartAnalytics(db)
+
+    # Find the song
+    song = analytics.get_song_by_artist_title(artist, title, threshold=fuzzy_threshold)
+
+    if not song:
+        print_error(f"No song found matching '{artist}' - '{title}'")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    # Get chart history
+    history = analytics.get_song_chart_history(song.song_id)
+
+    if not history:
+        print_warning(f"Song found but has no chart appearances: {song.artist_canonical} - {song.title_canonical}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    result = {
+        "song_id": song.song_id,
+        "artist": song.artist_canonical,
+        "title": song.title_canonical,
+        "recording_mbid": song.recording_mbid,
+        "appearances": [
+            {
+                "chart": h.chart_name,
+                "period": h.period,
+                "rank": h.rank,
+                "previous_position": h.previous_position,
+                "weeks_on_chart": h.weeks_on_chart,
+            }
+            for h in history
+        ],
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint(f"\n[bold]{song.artist_canonical} - {song.title_canonical}[/bold]")
+        if song.recording_mbid:
+            cprint(f"  MBID: {song.recording_mbid}")
+        cprint("")
+
+        # Group by chart
+        by_chart: dict[str, list] = {}
+        for h in history:
+            if h.chart_name not in by_chart:
+                by_chart[h.chart_name] = []
+            by_chart[h.chart_name].append(h)
+
+        for chart_name, appearances in by_chart.items():
+            cprint(f"[green]{chart_name}[/green]")
+            for h in appearances:
+                pos_info = f"#{h.rank}"
+                if h.previous_position:
+                    delta = h.previous_position - h.rank
+                    arrow = "↑" if delta > 0 else "↓" if delta < 0 else "→"
+                    pos_info += f" ({arrow}{abs(delta)} from #{h.previous_position})"
+                if h.weeks_on_chart:
+                    pos_info += f" [dim]{h.weeks_on_chart}w[/dim]"
+                cprint(f"  {h.period}: {pos_info}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+@analytics_app.command("compare")
+def analytics_compare(
+    run1: Annotated[str, typer.Argument(help="First chart run (chart_id:period or run_id)")],
+    run2: Annotated[str, typer.Argument(help="Second chart run (chart_id:period or run_id)")],
+    show_movers: Annotated[int, typer.Option("--movers", "-m", help="Show top N movers")] = 10,
+    show_new: Annotated[bool, typer.Option("--new", help="Show new entries")] = False,
+    show_dropped: Annotated[bool, typer.Option("--dropped", help="Show dropped entries")] = False,
+) -> None:
+    """Compare two chart runs for overlap and differences.
+
+    Identifies songs common to both runs, songs unique to each run,
+    and tracks that moved significantly between runs.
+
+    Examples:
+        canon analytics compare nl_top2000:2024 nl_top2000:2023
+        canon analytics compare nl_top2000:2024 nl_top2000:2023 --movers 20
+        canon analytics compare nl_top40:2024-W01 nl_top40:2024-W02 --new --dropped
+    """
+    from chart_binder.analytics import ChartAnalytics
+    from chart_binder.charts_db import ChartsDB
+
+    config = state.config
+    output_format = state.output_format
+
+    db = ChartsDB(config.database.charts_path)
+    analytics = ChartAnalytics(db)
+
+    comparison = analytics.compare_charts(run1, run2)
+
+    if not comparison.run1_period or not comparison.run2_period:
+        print_error(f"Could not find one or both chart runs: {run1}, {run2}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    result = {
+        "run1": {"id": comparison.run1_id, "period": comparison.run1_period},
+        "run2": {"id": comparison.run2_id, "period": comparison.run2_period},
+        "overlap_pct": round(comparison.overlap_pct, 1),
+        "common_count": len(comparison.common_songs),
+        "only_run1_count": len(comparison.only_in_run1),
+        "only_run2_count": len(comparison.only_in_run2),
+    }
+
+    if show_movers > 0:
+        result["top_movers"] = [
+            {"artist": m[0], "title": m[1], "rank1": m[2], "rank2": m[3], "delta": m[4]}
+            for m in comparison.movers[:show_movers]
+        ]
+    if show_new:
+        result["new_entries"] = [
+            {"artist": e[0], "title": e[1], "rank": e[2]} for e in comparison.only_in_run2
+        ]
+    if show_dropped:
+        result["dropped_entries"] = [
+            {"artist": e[0], "title": e[1], "rank": e[2]} for e in comparison.only_in_run1
+        ]
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint("\n[bold]Chart Comparison[/bold]")
+        cprint(f"  Run 1: {comparison.run1_period}")
+        cprint(f"  Run 2: {comparison.run2_period}")
+        cprint("")
+        cprint(f"[green]Overlap: {comparison.overlap_pct:.1f}%[/green]")
+        cprint(f"  Common songs: {len(comparison.common_songs)}")
+        cprint(f"  Only in {comparison.run1_period}: {len(comparison.only_in_run1)}")
+        cprint(f"  Only in {comparison.run2_period}: {len(comparison.only_in_run2)}")
+
+        if show_movers > 0 and comparison.movers:
+            cprint(f"\n[bold]Top {min(show_movers, len(comparison.movers))} Movers:[/bold]")
+            for artist, title, rank1, rank2, delta in comparison.movers[:show_movers]:
+                direction = "[red]↓[/red]" if delta > 0 else "[green]↑[/green]"
+                cprint(f"  {direction} {abs(delta):+3d}: {artist} - {title} (#{rank1} → #{rank2})")
+
+        if show_new and comparison.only_in_run2:
+            cprint(f"\n[bold]New in {comparison.run2_period}:[/bold]")
+            for artist, title, rank in comparison.only_in_run2[:20]:
+                cprint(f"  #{rank:3d}: {artist} - {title}")
+            if len(comparison.only_in_run2) > 20:
+                cprint(f"  ... and {len(comparison.only_in_run2) - 20} more")
+
+        if show_dropped and comparison.only_in_run1:
+            cprint(f"\n[bold]Dropped from {comparison.run1_period}:[/bold]")
+            for artist, title, rank in comparison.only_in_run1[:20]:
+                cprint(f"  #{rank:3d}: {artist} - {title}")
+            if len(comparison.only_in_run1) > 20:
+                cprint(f"  ... and {len(comparison.only_in_run1) - 20} more")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+@analytics_app.command("lookup")
+def analytics_lookup(
+    artist: Annotated[str, typer.Argument(help="Artist name")],
+    title: Annotated[str, typer.Argument(help="Song title")],
+    threshold: Annotated[
+        float, typer.Option("--threshold", "-t", help="Fuzzy match threshold (0-1)")
+    ] = 0.7,
+) -> None:
+    """Look up a song in the database by artist and title.
+
+    Uses fuzzy matching to find songs even with slight variations
+    in spelling or formatting.
+
+    Examples:
+        canon analytics lookup "Beatles" "Hey Jude"
+        canon analytics lookup "Wham" "Last Christmas" --threshold 0.6
+    """
+    from chart_binder.analytics import ChartAnalytics
+    from chart_binder.charts_db import ChartsDB
+
+    config = state.config
+    output_format = state.output_format
+
+    db = ChartsDB(config.database.charts_path)
+    analytics = ChartAnalytics(db)
+
+    song = analytics.get_song_by_artist_title(artist, title, threshold=threshold)
+
+    if not song:
+        print_error(f"No song found matching '{artist}' - '{title}'")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    result = {
+        "song_id": song.song_id,
+        "artist_canonical": song.artist_canonical,
+        "title_canonical": song.title_canonical,
+        "artist_sort": song.artist_sort,
+        "work_key": song.work_key,
+        "recording_mbid": song.recording_mbid,
+        "release_group_mbid": song.release_group_mbid,
+        "spotify_id": song.spotify_id,
+        "isrc": song.isrc,
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint(f"\n[green]Found:[/green] {song.artist_canonical} - {song.title_canonical}")
+        cprint(f"  Song ID: {song.song_id}")
+        if song.work_key:
+            cprint(f"  Work Key: {song.work_key}")
+        if song.recording_mbid:
+            cprint(f"  Recording MBID: {song.recording_mbid}")
+        if song.release_group_mbid:
+            cprint(f"  Release Group MBID: {song.release_group_mbid}")
+        if song.spotify_id:
+            cprint(f"  Spotify ID: {song.spotify_id}")
+        if song.isrc:
+            cprint(f"  ISRC: {song.isrc}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 # ====================================================================
