@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-# Load fixtures from the cassettes directory
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "cassettes"
-
-
-def load_fixture(scraper_type: str, fixture_name: str) -> str:
-    """Load a fixture file as text."""
-    fixture_path = FIXTURES_DIR / scraper_type / fixture_name
-    return fixture_path.read_text(encoding="utf-8")
-
 
 class TestTop40JaarScraperWithMocking:
     """Tests using mocked HTTP responses."""
 
-    def test_scrape_parses_html_correctly(self, top40jaar_scraper, httpx_mock):
+    def test_scrape_parses_html_correctly(self, top40jaar_scraper, httpx_mock, top40jaar_fixture):
         """Test that scraper correctly parses HTML fixture."""
-        html = load_fixture("top40_jaar", "2023.html")
+        html = top40jaar_fixture("2023.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40-jaarlijsten/2023",
             html=html,
@@ -28,8 +17,9 @@ class TestTop40JaarScraperWithMocking:
         result = top40jaar_scraper.scrape("2023")
 
         # Should parse entries from fixture (including split entries)
-        # Position 9 has double title, position 10 has double artist+title
-        assert len(result) >= 10, f"Expected at least 10 entries, got {len(result)}"
+        # Position 9 has double title (Penny Lane / Strawberry Fields -> 2 entries)
+        # Position 10 has double artist+title (Artist A/B - Song A/B -> 2 entries)
+        assert len(result) == 12, f"Expected 12 entries after splits, got {len(result)}"
 
         # Check first entry
         rank, artist, title = result[0]
@@ -43,9 +33,9 @@ class TestTop40JaarScraperWithMocking:
         assert artist6 == "Taylor Swift"
         assert title6 == "Anti-Hero"
 
-    def test_scrape_handles_split_entries(self, top40jaar_scraper, httpx_mock):
+    def test_scrape_handles_split_entries(self, top40jaar_scraper, httpx_mock, top40jaar_fixture):
         """Test that split entries (double A-sides) are correctly handled."""
-        html = load_fixture("top40_jaar", "2023.html")
+        html = top40jaar_fixture("2023.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40-jaarlijsten/2023",
             html=html,
@@ -59,9 +49,9 @@ class TestTop40JaarScraperWithMocking:
         assert beatles_entries[0][2] == "Penny Lane"
         assert beatles_entries[1][2] == "Strawberry Fields"
 
-    def test_scrape_rich_returns_metadata(self, top40jaar_scraper, httpx_mock):
+    def test_scrape_rich_returns_metadata(self, top40jaar_scraper, httpx_mock, top40jaar_fixture):
         """Test that scrape_rich returns ScrapedEntry objects."""
-        html = load_fixture("top40_jaar", "2023.html")
+        html = top40jaar_fixture("2023.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40-jaarlijsten/2023",
             html=html,
@@ -69,7 +59,7 @@ class TestTop40JaarScraperWithMocking:
 
         result = top40jaar_scraper.scrape_rich("2023")
 
-        assert len(result) >= 10
+        assert len(result) == 12
 
         # Check that metadata is captured
         first = result[0]
@@ -79,9 +69,9 @@ class TestTop40JaarScraperWithMocking:
         # Year-end charts don't have previous_position
         assert first.previous_position is None
 
-    def test_scrape_with_validation(self, top40jaar_scraper, httpx_mock):
+    def test_scrape_with_validation(self, top40jaar_scraper, httpx_mock, top40jaar_fixture):
         """Test scrape_with_validation returns ScrapeResult."""
-        html = load_fixture("top40_jaar", "2023.html")
+        html = top40jaar_fixture("2023.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40-jaarlijsten/2023",
             html=html,

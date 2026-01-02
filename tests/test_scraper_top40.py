@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-# Load fixtures from the cassettes directory
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "cassettes"
-
-
-def load_fixture(scraper_type: str, fixture_name: str) -> str:
-    """Load a fixture file as text."""
-    fixture_path = FIXTURES_DIR / scraper_type / fixture_name
-    return fixture_path.read_text(encoding="utf-8")
-
 
 class TestTop40ScraperWithMocking:
     """Tests using mocked HTTP responses."""
 
-    def test_scrape_parses_html_correctly(self, top40_scraper, httpx_mock):
+    def test_scrape_parses_html_correctly(self, top40_scraper, httpx_mock, top40_fixture):
         """Test that scraper correctly parses HTML fixture."""
-        html = load_fixture("top40", "2024-W01.html")
+        html = top40_fixture("2024-W01.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40/2024/week-01",
             html=html,
@@ -39,7 +28,7 @@ class TestTop40ScraperWithMocking:
         # Check entry with special characters (BLØF)
         rank3, artist3, title3 = result[2]
         assert rank3 == 3
-        assert "BL" in artist3  # BLØF may have encoding issues
+        assert artist3 == "BLØF"
         assert title3 == "Zoutelande"
 
         # Check entry with feat.
@@ -48,9 +37,9 @@ class TestTop40ScraperWithMocking:
         assert "Post Malone" in artist10
         assert title10 == "Sunflower"
 
-    def test_scrape_rich_returns_metadata(self, top40_scraper, httpx_mock):
+    def test_scrape_rich_returns_metadata(self, top40_scraper, httpx_mock, top40_fixture):
         """Test that scrape_rich returns ScrapedEntry with metadata."""
-        html = load_fixture("top40", "2024-W01.html")
+        html = top40_fixture("2024-W01.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40/2024/week-01",
             html=html,
@@ -73,9 +62,9 @@ class TestTop40ScraperWithMocking:
         assert fourth.rank == 4
         assert fourth.previous_position is None  # "nieuw" should result in None
 
-    def test_scrape_with_validation(self, top40_scraper, httpx_mock):
+    def test_scrape_with_validation(self, top40_scraper, httpx_mock, top40_fixture):
         """Test scrape_with_validation returns ScrapeResult."""
-        html = load_fixture("top40", "2024-W01.html")
+        html = top40_fixture("2024-W01.html")
         httpx_mock.add_response(
             url="https://www.top40.nl/top40/2024/week-01",
             html=html,

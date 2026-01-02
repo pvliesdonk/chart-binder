@@ -3,30 +3,20 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from freezegun import freeze_time
 
 from chart_binder.scrapers.top2000 import Top2000FutureYearError
 
-# Load fixtures from the cassettes directory
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "cassettes"
-
-
-def load_fixture(scraper_type: str, fixture_name: str) -> str:
-    """Load a fixture file as text."""
-    fixture_path = FIXTURES_DIR / scraper_type / fixture_name
-    return fixture_path.read_text(encoding="utf-8")
-
 
 class TestTop2000ScraperWithMocking:
     """Tests using mocked HTTP responses."""
 
     @freeze_time("2025-01-01")
-    def test_scrape_parses_json_correctly(self, top2000_scraper, httpx_mock):
+    def test_scrape_parses_json_correctly(self, top2000_scraper, httpx_mock, top2000_fixture):
         """Test that scraper correctly parses JSON fixture."""
-        json_data = load_fixture("top2000", "2024.json")
+        json_data = top2000_fixture("2024.json")
         httpx_mock.add_response(
             url="https://www.nporadio2.nl/api/charts/npo-radio-2-top-2000-van-2024-12-25",
             json=json.loads(json_data),
@@ -49,9 +39,9 @@ class TestTop2000ScraperWithMocking:
         assert artist10 == "Eagles"
 
     @freeze_time("2025-01-01")
-    def test_scrape_rich_returns_metadata(self, top2000_scraper, httpx_mock):
+    def test_scrape_rich_returns_metadata(self, top2000_scraper, httpx_mock, top2000_fixture):
         """Test that scrape_rich returns ScrapedEntry with metadata."""
-        json_data = load_fixture("top2000", "2024.json")
+        json_data = top2000_fixture("2024.json")
         httpx_mock.add_response(
             url="https://www.nporadio2.nl/api/charts/npo-radio-2-top-2000-van-2024-12-25",
             json=json.loads(json_data),
@@ -74,9 +64,9 @@ class TestTop2000ScraperWithMocking:
         assert sixth.previous_position is None  # Was null in fixture
 
     @freeze_time("2025-01-01")
-    def test_scrape_with_validation(self, top2000_scraper, httpx_mock):
+    def test_scrape_with_validation(self, top2000_scraper, httpx_mock, top2000_fixture):
         """Test scrape_with_validation returns ScrapeResult."""
-        json_data = load_fixture("top2000", "2024.json")
+        json_data = top2000_fixture("2024.json")
         httpx_mock.add_response(
             url="https://www.nporadio2.nl/api/charts/npo-radio-2-top-2000-van-2024-12-25",
             json=json.loads(json_data),
@@ -114,9 +104,9 @@ class TestTop2000TitleCorrection:
         assert uuid is None
 
     @freeze_time("2025-01-01")
-    def test_correction_applied_during_scrape(self, top2000_scraper, httpx_mock):
+    def test_correction_applied_during_scrape(self, top2000_scraper, httpx_mock, top2000_fixture):
         """Test that title corrections are applied during scraping."""
-        json_data = load_fixture("top2000", "2024.json")
+        json_data = top2000_fixture("2024.json")
         httpx_mock.add_response(
             url="https://www.nporadio2.nl/api/charts/npo-radio-2-top-2000-van-2024-12-25",
             json=json.loads(json_data),

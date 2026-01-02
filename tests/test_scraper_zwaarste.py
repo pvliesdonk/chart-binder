@@ -2,24 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-# Load fixtures from the cassettes directory
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "cassettes"
-
-
-def load_fixture(scraper_type: str, fixture_name: str) -> str:
-    """Load a fixture file as text."""
-    fixture_path = FIXTURES_DIR / scraper_type / fixture_name
-    return fixture_path.read_text(encoding="utf-8")
-
 
 class TestZwaarsteScraperWithMocking:
     """Tests using mocked HTTP responses."""
 
-    def test_scrape_parses_html_correctly(self, zwaarste_scraper, httpx_mock):
+    def test_scrape_parses_html_correctly(self, zwaarste_scraper, httpx_mock, zwaarste_fixture):
         """Test that scraper correctly parses HTML fixture."""
-        html = load_fixture("zwaarste", "2024.html")
+        html = zwaarste_fixture("2024.html")
         httpx_mock.add_response(
             url="https://communication.studiobrussel.be/de-zwaarste-lijst-2024-de-volledige-lijst",
             html=html,
@@ -42,9 +31,9 @@ class TestZwaarsteScraperWithMocking:
         assert artist9 == "System Of A Down"
         assert title9 == "Chop Suey!"
 
-    def test_scrape_rich_returns_metadata(self, zwaarste_scraper, httpx_mock):
+    def test_scrape_rich_returns_metadata(self, zwaarste_scraper, httpx_mock, zwaarste_fixture):
         """Test that scrape_rich returns ScrapedEntry objects."""
-        html = load_fixture("zwaarste", "2024.html")
+        html = zwaarste_fixture("2024.html")
         httpx_mock.add_response(
             url="https://communication.studiobrussel.be/de-zwaarste-lijst-2024-de-volledige-lijst",
             html=html,
@@ -62,9 +51,9 @@ class TestZwaarsteScraperWithMocking:
         # Zwaarste Lijst doesn't have previous_position in blog format
         assert first.previous_position is None
 
-    def test_scrape_with_validation(self, zwaarste_scraper, httpx_mock):
+    def test_scrape_with_validation(self, zwaarste_scraper, httpx_mock, zwaarste_fixture):
         """Test scrape_with_validation returns ScrapeResult."""
-        html = load_fixture("zwaarste", "2024.html")
+        html = zwaarste_fixture("2024.html")
         httpx_mock.add_response(
             url="https://communication.studiobrussel.be/de-zwaarste-lijst-2024-de-volledige-lijst",
             html=html,
