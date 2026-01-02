@@ -8,6 +8,7 @@ from typing import Any
 
 from chart_binder.http_cache import HttpCache
 from chart_binder.scrapers.base import ChartScraper, ScrapedEntry
+from chart_binder.scrapers.wikipedia_parser import Top2000WikipediaParser
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +47,17 @@ class Top2000Scraper(ChartScraper):
         ),
     }
 
-    def __init__(self, cache: HttpCache):
+    def __init__(self, cache: HttpCache, *, enrich_wikipedia: bool = False):
         super().__init__("t2000", cache)
+        self.enrich_wikipedia = enrich_wikipedia
+        self._wikipedia_parser: Top2000WikipediaParser | None = None
+
+    @property
+    def wikipedia_parser(self) -> Top2000WikipediaParser:
+        """Lazily initialize Wikipedia parser only when needed."""
+        if self._wikipedia_parser is None:
+            self._wikipedia_parser = Top2000WikipediaParser(self.cache)
+        return self._wikipedia_parser
 
     def _validate_year_available(self, year: int) -> None:
         """
@@ -121,18 +131,53 @@ class Top2000Scraper(ChartScraper):
         # Try NPO API (captures previous_position)
         entries = self._try_api_rich(year)
         if entries:
+            if self.enrich_wikipedia:
+                entries = self._apply_wikipedia_enrichment(entries, year)
             return entries
 
         # Fallback to Wikipedia (no previous_position available)
         basic_entries = self._try_wikipedia_fallback(year)
         if basic_entries:
-            return [
+            entries = [
                 ScrapedEntry(rank=rank, artist=artist, title=title)
                 for rank, artist, title in basic_entries
             ]
+            if self.enrich_wikipedia:
+                entries = self._apply_wikipedia_enrichment(entries, year)
+            return entries
 
         logger.warning(f"No data found for Top 2000 {year}")
         return []
+
+    def _apply_wikipedia_enrichment(
+        self, entries: list[ScrapedEntry], year: int
+    ) -> list[ScrapedEntry]:
+        """
+        Enrich entries with Wikipedia links.
+
+        Adds artist_url, title_url, and history_url from the Dutch Wikipedia
+        Top 2000 tables page when available.
+        """
+        enriched: list[ScrapedEntry] = []
+        for entry in entries:
+            wiki_data = self.wikipedia_parser.get_enrichment(year, entry.rank)
+            if wiki_data:
+                enriched.append(
+                    ScrapedEntry(
+                        rank=entry.rank,
+                        artist=entry.artist,
+                        title=entry.title,
+                        previous_position=entry.previous_position,
+                        weeks_on_chart=entry.weeks_on_chart,
+                        side=entry.side,
+                        wikipedia_artist=wiki_data.artist_url,
+                        wikipedia_title=wiki_data.title_url,
+                        history_url=wiki_data.history_url,
+                    )
+                )
+            else:
+                enriched.append(entry)
+        return enriched
 
     def _try_api_rich(self, year: int) -> list[ScrapedEntry]:
         """Try to fetch from NPO API and capture previous position if available."""
@@ -464,3 +509,88 @@ def test_top2000_validate_year_available_past():
         scraper._validate_year_available(2020)
         scraper._validate_year_available(2023)
         scraper._validate_year_available(2024)
+
+
+def test_top2000_enrich_wikipedia_flag():
+    """Test that enrich_wikipedia flag initializes correctly."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = HttpCache(Path(tmpdir) / "cache")
+
+        # Default is no enrichment
+        scraper1 = Top2000Scraper(cache)
+        assert scraper1.enrich_wikipedia is False
+
+        # Explicit enrichment
+        scraper2 = Top2000Scraper(cache, enrich_wikipedia=True)
+        assert scraper2.enrich_wikipedia is True
+
+
+def test_top2000_wikipedia_parser_lazy_init():
+    """Test that Wikipedia parser is lazily initialized."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = HttpCache(Path(tmpdir) / "cache")
+        scraper = Top2000Scraper(cache, enrich_wikipedia=True)
+
+        # Parser not initialized until accessed
+        assert scraper._wikipedia_parser is None
+
+        # Accessing property initializes it
+        parser = scraper.wikipedia_parser
+        assert parser is not None
+        assert scraper._wikipedia_parser is parser
+
+        # Second access returns same instance
+        assert scraper.wikipedia_parser is parser
+
+
+def test_top2000_apply_wikipedia_enrichment():
+    """Test _apply_wikipedia_enrichment method."""
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from chart_binder.scrapers.wikipedia_parser import WikipediaEnrichment
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cache = HttpCache(Path(tmpdir) / "cache")
+        scraper = Top2000Scraper(cache, enrich_wikipedia=True)
+
+        # Mock the Wikipedia parser
+        mock_parser = MagicMock()
+        scraper._wikipedia_parser = mock_parser
+
+        # Configure mock to return enrichment for rank 1, None for rank 2
+        mock_parser.get_enrichment.side_effect = lambda year, rank: (
+            WikipediaEnrichment(
+                artist_url="https://nl.wikipedia.org/wiki/Queen_(band)",
+                title_url="https://nl.wikipedia.org/wiki/Bohemian_Rhapsody",
+                history_url="https://nl.wikipedia.org/wiki/Top_2000",
+            )
+            if rank == 1
+            else None
+        )
+
+        entries = [
+            ScrapedEntry(rank=1, artist="Queen", title="Bohemian Rhapsody"),
+            ScrapedEntry(rank=2, artist="Eagles", title="Hotel California"),
+        ]
+
+        enriched = scraper._apply_wikipedia_enrichment(entries, 2024)
+
+        assert len(enriched) == 2
+
+        # First entry should have Wikipedia data
+        assert enriched[0].wikipedia_artist == "https://nl.wikipedia.org/wiki/Queen_(band)"
+        assert enriched[0].wikipedia_title == "https://nl.wikipedia.org/wiki/Bohemian_Rhapsody"
+        assert enriched[0].history_url == "https://nl.wikipedia.org/wiki/Top_2000"
+
+        # Second entry should not have Wikipedia data
+        assert enriched[1].wikipedia_artist is None
+        assert enriched[1].wikipedia_title is None
+        assert enriched[1].history_url is None
