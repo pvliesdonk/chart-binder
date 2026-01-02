@@ -8,11 +8,21 @@ Provides functions for:
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from chart_binder.charts_db import Song
+from chart_binder.normalize import Normalizer
+
+# Try to import rapidfuzz for fast fuzzy matching, fall back to difflib
+try:
+    from rapidfuzz import fuzz as _fuzz
+except ImportError:
+    _fuzz = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
-    from chart_binder.charts_db import ChartsDB, Song
+    from chart_binder.charts_db import ChartsDB
 
 
 @dataclass
@@ -49,6 +59,7 @@ class ChartAnalytics:
 
     def __init__(self, charts_db: ChartsDB):
         self.db = charts_db
+        self._normalizer = Normalizer()
 
     def get_song_chart_history(self, song_id: str) -> list[ChartAppearance]:
         """
@@ -90,13 +101,9 @@ class ChartAnalytics:
         Returns:
             Best matching Song or None if no match above threshold
         """
-        from chart_binder.normalize import Normalizer
-
-        normalizer = Normalizer()
-
-        # Normalize input
-        artist_norm = normalizer.normalize_artist(artist).normalized
-        title_norm = normalizer.normalize_title(title).normalized
+        # Normalize input for comparison
+        artist_norm = self._normalizer.normalize_artist(artist).normalized
+        title_norm = self._normalizer.normalize_title(title).normalized
 
         # Try exact match first
         exact_match = self.db.get_song_by_canonical(artist_norm, title_norm)
@@ -104,6 +111,8 @@ class ChartAnalytics:
             return exact_match
 
         # Fuzzy search: get all songs and score them
+        # NOTE: This loads all songs into memory. For large catalogs (>100k songs),
+        # consider implementing database-level fuzzy search or pagination.
         all_songs = self._get_all_songs()
         if not all_songs:
             return None
@@ -112,9 +121,9 @@ class ChartAnalytics:
         best_score = 0.0
 
         for song in all_songs:
-            # Normalize song's canonical fields for comparison
-            song_artist_norm = normalizer.normalize_artist(song.artist_canonical).normalized
-            song_title_norm = normalizer.normalize_title(song.title_canonical).normalized
+            # Canonical fields in database are already normalized, use directly
+            song_artist_norm = song.artist_canonical
+            song_title_norm = song.title_canonical
 
             # Calculate similarity score
             artist_sim = self._similarity(artist_norm, song_artist_norm)
@@ -131,8 +140,6 @@ class ChartAnalytics:
 
     def _get_all_songs(self) -> list[Song]:
         """Get all songs from the database."""
-        from chart_binder.charts_db import Song
-
         conn = self.db._get_connection()
         try:
             conn.row_factory = lambda c, r: Song(
@@ -162,7 +169,9 @@ class ChartAnalytics:
 
     def _similarity(self, s1: str, s2: str) -> float:
         """
-        Calculate similarity between two strings using Levenshtein-based ratio.
+        Calculate similarity between two strings using rapidfuzz (fast Levenshtein).
+
+        Falls back to difflib if rapidfuzz is not available.
 
         Returns score between 0 and 1.
         """
@@ -171,7 +180,11 @@ class ChartAnalytics:
         if not s1 or not s2:
             return 0.0
 
-        # Use difflib for reasonable performance
+        if _fuzz is not None:
+            # rapidfuzz returns 0-100, normalize to 0-1
+            return _fuzz.ratio(s1, s2) / 100.0
+
+        # Fallback to difflib (slower but always available)
         from difflib import SequenceMatcher
 
         return SequenceMatcher(None, s1, s2).ratio()
@@ -206,15 +219,10 @@ class ChartAnalytics:
         entries1 = self._get_run_entries(run1["run_id"])
         entries2 = self._get_run_entries(run2["run_id"])
 
-        # Build lookup by normalized (artist, title)
-        from chart_binder.normalize import Normalizer
-
-        normalizer = Normalizer()
-
         def normalize_key(artist: str, title: str) -> tuple[str, str]:
             return (
-                normalizer.normalize_artist(artist).normalized,
-                normalizer.normalize_title(title).normalized,
+                self._normalizer.normalize_artist(artist).normalized,
+                self._normalizer.normalize_title(title).normalized,
             )
 
         # Map: normalized_key -> (artist_raw, title_raw, rank)
@@ -286,8 +294,6 @@ class ChartAnalytics:
         # Otherwise treat as direct run_id - look it up
         conn = self.db._get_connection()
         try:
-            import sqlite3
-
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(
@@ -303,8 +309,6 @@ class ChartAnalytics:
         """Get all entries for a chart run."""
         conn = self.db._get_connection()
         try:
-            import sqlite3
-
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute(

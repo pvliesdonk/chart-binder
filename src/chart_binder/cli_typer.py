@@ -2019,10 +2019,10 @@ def analytics_history(
         cprint("")
 
         # Group by chart
-        by_chart: dict[str, list] = {}
+        from collections import defaultdict
+
+        by_chart: dict[str, list] = defaultdict(list)
         for h in history:
-            if h.chart_name not in by_chart:
-                by_chart[h.chart_name] = []
             by_chart[h.chart_name].append(h)
 
         for chart_name, appearances in by_chart.items():
