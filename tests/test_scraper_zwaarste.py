@@ -233,3 +233,97 @@ class TestZwaarsteScraperTableParsing:
         assert len(result) == 2
         assert result[0] == (1, "Metallica", "Master Of Puppets")
         assert result[1] == (2, "Iron Maiden", "The Trooper")
+
+
+class TestZwaarsteScraperYearFormats:
+    """Tests for year-specific format parsing (2009 vs 2010+)."""
+
+    def test_2009_three_column_format(self, tmp_cache, httpx_mock, zwaarste_fixture):
+        """Test 2009 format (3 columns: Position | Artist | Title)."""
+        from chart_binder.scrapers import ZwaarsteScraper
+
+        html = zwaarste_fixture("2009-table.html")
+        scraper = ZwaarsteScraper(tmp_cache, url_map={2009: "https://example.com/2009"})
+        httpx_mock.add_response(url="https://example.com/2009", html=html)
+
+        result = scraper.scrape_rich("2009")
+
+        assert len(result) == 5
+        assert result[0].rank == 1
+        assert result[0].artist == "Metallica"
+        assert result[0].title == "Master Of Puppets"
+        assert result[0].previous_position is None  # 2009 has no previous position
+
+    def test_2010_four_column_format(self, tmp_cache, httpx_mock, zwaarste_fixture):
+        """Test 2010+ format (4 columns: Position | Previous | Artist | Title)."""
+        from chart_binder.scrapers import ZwaarsteScraper
+
+        html = zwaarste_fixture("2010-table.html")
+        scraper = ZwaarsteScraper(tmp_cache, url_map={2010: "https://example.com/2010"})
+        httpx_mock.add_response(url="https://example.com/2010", html=html)
+
+        result = scraper.scrape_rich("2010")
+
+        assert len(result) == 7
+
+        # Check entry with previous position
+        assert result[0].rank == 1
+        assert result[0].artist == "Metallica"
+        assert result[0].previous_position == 1
+
+        # Check entry with changed position
+        assert result[1].rank == 2
+        assert result[1].artist == "Iron Maiden"
+        assert result[1].previous_position == 3
+
+        # Check new entry (-)
+        assert result[2].rank == 3
+        assert result[2].artist == "Rammstein"
+        assert result[2].previous_position is None
+
+        # Check re-entry
+        assert result[3].rank == 4
+        assert result[3].artist == "Black Sabbath"
+        assert result[3].previous_position is None
+
+        # Check "nieuw" indicator
+        assert result[5].rank == 6
+        assert result[5].artist == "System Of A Down"
+        assert result[5].previous_position is None
+
+        # Check numeric without parentheses
+        assert result[6].rank == 7
+        assert result[6].artist == "Tool"
+        assert result[6].previous_position == 15
+
+
+class TestZwaarsteScraperPreviousPositionParsing:
+    """Tests for previous position indicator parsing."""
+
+    def test_parse_previous_position_numeric(self, zwaarste_scraper):
+        """Test parsing numeric previous position."""
+        assert zwaarste_scraper._parse_previous_position("(123)") == 123
+        assert zwaarste_scraper._parse_previous_position("123") == 123
+        assert zwaarste_scraper._parse_previous_position("(1)") == 1
+        assert zwaarste_scraper._parse_previous_position("42") == 42
+
+    def test_parse_previous_position_new_entry(self, zwaarste_scraper):
+        """Test parsing new entry indicators."""
+        assert zwaarste_scraper._parse_previous_position("(-)") is None
+        assert zwaarste_scraper._parse_previous_position("-") is None
+        assert zwaarste_scraper._parse_previous_position("nieuw") is None
+        assert zwaarste_scraper._parse_previous_position("(nieuw)") is None
+        assert zwaarste_scraper._parse_previous_position("new") is None
+        assert zwaarste_scraper._parse_previous_position("(new)") is None
+
+    def test_parse_previous_position_reentry(self, zwaarste_scraper):
+        """Test parsing re-entry indicators."""
+        assert zwaarste_scraper._parse_previous_position("(re)") is None
+        assert zwaarste_scraper._parse_previous_position("re") is None
+        assert zwaarste_scraper._parse_previous_position("re-entry") is None
+        assert zwaarste_scraper._parse_previous_position("(re-entry)") is None
+
+    def test_parse_previous_position_empty(self, zwaarste_scraper):
+        """Test parsing empty or whitespace."""
+        assert zwaarste_scraper._parse_previous_position("") is None
+        assert zwaarste_scraper._parse_previous_position("   ") is None

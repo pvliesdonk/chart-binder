@@ -66,29 +66,50 @@ class ZwaarsteScraper(ChartScraper):
         """
         Scrape De Zwaarste Lijst with full metadata.
 
-        Note: This chart is scraped from blog posts which typically don't
-        include previous year positions. Returns basic ScrapedEntry.
+        For table format (2009+), captures previous_position when available.
+        For list format (blog posts), returns basic ScrapedEntry.
         """
-        entries = self.scrape(period)
-        return [
-            ScrapedEntry(rank=rank, artist=artist, title=title) for rank, artist, title in entries
-        ]
+        year = self._parse_year_period(period)
+
+        if year not in self.url_map:
+            logger.warning(f"No URL configured for De Zwaarste Lijst {year}")
+            return []
+
+        url = self.url_map[year]
+        html = self._fetch_url(url)
+        if html is None:
+            logger.warning(f"Failed to fetch De Zwaarste Lijst {year} from {url}")
+            return []
+
+        return self._parse_html_rich(html, year)
 
     def _parse_html(self, html: str, year: int) -> list[tuple[int, str, str]]:
         """Parse De Zwaarste Lijst HTML page."""
-        entries: list[tuple[int, str, str]] = []
+        rich_entries = self._parse_html_rich(html, year)
+        return [(e.rank, e.artist, e.title) for e in rich_entries]
 
-        entries = self._try_parse_ordered_list(html)
+    def _parse_html_rich(self, html: str, year: int) -> list[ScrapedEntry]:
+        """Parse De Zwaarste Lijst HTML page with full metadata."""
+        # Try table format first (captures previous_position for 2010+)
+        entries = self._try_parse_table_rich(html, year)
         if entries:
             return entries
 
-        entries = self._try_parse_table(html)
-        if entries:
-            return entries
+        # Fall back to ordered list format (no previous_position)
+        tuples = self._try_parse_ordered_list(html)
+        if tuples:
+            return [
+                ScrapedEntry(rank=rank, artist=artist, title=title)
+                for rank, artist, title in tuples
+            ]
 
-        entries = self._try_parse_text_lines(html)
-        if entries:
-            return entries
+        # Fall back to text lines (no previous_position)
+        tuples = self._try_parse_text_lines(html)
+        if tuples:
+            return [
+                ScrapedEntry(rank=rank, artist=artist, title=title)
+                for rank, artist, title in tuples
+            ]
 
         logger.warning("Could not parse De Zwaarste Lijst HTML with any strategy")
         return []
@@ -196,6 +217,135 @@ class ZwaarsteScraper(ChartScraper):
                     continue
 
         return entries
+
+    def _try_parse_table_rich(self, html: str, year: int) -> list[ScrapedEntry]:
+        """
+        Try parsing as table with year-specific format detection.
+
+        Format variations:
+        - 2009: 3 columns (Position | Artist | Title)
+        - 2010+: 4 columns (Position | Previous | Artist | Title)
+
+        Previous position indicators:
+        - (123) → Previous position was 123
+        - (-) → New entry
+        - (re) → Re-entry
+        """
+
+        class TableParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.in_table = False
+                self.in_row = False
+                self.in_cell = False
+                self.in_header = False
+                self.rows: list[list[str]] = []
+                self.current_row: list[str] = []
+                self.cell_text = ""
+                self._row_has_data = False
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+                if tag == "table":
+                    self.in_table = True
+                elif tag == "tr" and self.in_table:
+                    self.in_row = True
+                    self.current_row = []
+                    self._row_has_data = False
+                elif tag in ("td", "th") and self.in_row:
+                    self.in_cell = True
+                    self.in_header = tag == "th"
+                    if tag == "td":
+                        self._row_has_data = True
+                    self.cell_text = ""
+
+            def handle_endtag(self, tag: str) -> None:
+                if tag == "table":
+                    self.in_table = False
+                elif tag == "tr" and self.in_row:
+                    self.in_row = False
+                    # Only add rows with data cells (skip header-only rows)
+                    if self.current_row and self._row_has_data:
+                        self.rows.append(self.current_row)
+                elif tag in ("td", "th") and self.in_cell:
+                    self.in_cell = False
+                    self.current_row.append(self.cell_text.strip())
+
+            def handle_data(self, data: str) -> None:
+                if self.in_cell:
+                    self.cell_text += data
+
+        parser = TableParser()
+        parser.feed(html)
+
+        if not parser.rows:
+            return []
+
+        entries: list[ScrapedEntry] = []
+
+        # Detect format based on column count of first data row
+        # 2009 format: 3 columns (Position | Artist | Title)
+        # 2010+ format: 4 columns (Position | Previous | Artist | Title)
+        first_row_cols = len(parser.rows[0]) if parser.rows else 0
+        is_four_column = first_row_cols >= 4 or year >= 2010
+
+        for row in parser.rows:
+            try:
+                if is_four_column and len(row) >= 4:
+                    # 4-column format: Position | Previous | Artist | Title
+                    rank = int(re.sub(r"\D", "", row[0]))
+                    prev_pos = self._parse_previous_position(row[1])
+                    artist = self._clean_text(row[2])
+                    title = self._clean_text(row[3])
+                elif len(row) >= 3:
+                    # 3-column format: Position | Artist | Title
+                    rank = int(re.sub(r"\D", "", row[0]))
+                    prev_pos = None
+                    artist = self._clean_text(row[1])
+                    title = self._clean_text(row[2])
+                else:
+                    continue
+
+                if artist and title:
+                    entries.append(
+                        ScrapedEntry(
+                            rank=rank,
+                            artist=artist,
+                            title=title,
+                            previous_position=prev_pos,
+                        )
+                    )
+            except ValueError:
+                continue
+
+        return entries
+
+    def _parse_previous_position(self, text: str) -> int | None:
+        """
+        Parse previous position indicator.
+
+        Formats:
+        - (123) or 123 → Previous position was 123
+        - (-) or - → New entry (returns None)
+        - (re) or re → Re-entry (returns None)
+        - (nieuw) → New entry (returns None)
+        - empty → No data (returns None)
+        """
+        text = text.strip().lower()
+
+        # Handle empty or dash indicators
+        if not text or text in ("-", "(-)", "nieuw", "(nieuw)", "new", "(new)"):
+            return None
+
+        # Handle re-entry indicator
+        if text in ("re", "(re)", "re-entry", "(re-entry)"):
+            return None
+
+        # Try to extract numeric position
+        match = re.search(r"\d+", text)
+        if match:
+            return int(match.group())
+
+        return None
 
     def _try_parse_text_lines(self, html: str) -> list[tuple[int, str, str]]:
         """Try parsing raw text lines with regex."""
