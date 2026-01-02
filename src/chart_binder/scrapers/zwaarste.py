@@ -25,6 +25,11 @@ class ZwaarsteScraper(ChartScraper):
     chart_db_id = "nl_538_zwaarste"
     expected_entry_count = 150
 
+    # Previous position indicators for new entries
+    NEW_ENTRY_INDICATORS: set[str] = {"-", "(-)", "nieuw", "(nieuw)", "new", "(new)"}
+    # Previous position indicators for re-entries
+    REENTRY_INDICATORS: set[str] = {"re", "(re)", "re-entry", "(re-entry)"}
+
     def __init__(self, cache: HttpCache, url_map: Mapping[int, str] | None = None):
         """
         Initialize scraper with optional URL override map.
@@ -90,26 +95,25 @@ class ZwaarsteScraper(ChartScraper):
 
     def _parse_html_rich(self, html: str, year: int) -> list[ScrapedEntry]:
         """Parse De Zwaarste Lijst HTML page with full metadata."""
+
+        def _tuples_to_entries(tuples: list[tuple[int, str, str]]) -> list[ScrapedEntry]:
+            return [
+                ScrapedEntry(rank=rank, artist=artist, title=title)
+                for rank, artist, title in tuples
+            ]
+
         # Try table format first (captures previous_position for 2010+)
         entries = self._try_parse_table_rich(html, year)
         if entries:
             return entries
 
         # Fall back to ordered list format (no previous_position)
-        tuples = self._try_parse_ordered_list(html)
-        if tuples:
-            return [
-                ScrapedEntry(rank=rank, artist=artist, title=title)
-                for rank, artist, title in tuples
-            ]
+        if tuples := self._try_parse_ordered_list(html):
+            return _tuples_to_entries(tuples)
 
         # Fall back to text lines (no previous_position)
-        tuples = self._try_parse_text_lines(html)
-        if tuples:
-            return [
-                ScrapedEntry(rank=rank, artist=artist, title=title)
-                for rank, artist, title in tuples
-            ]
+        if tuples := self._try_parse_text_lines(html):
+            return _tuples_to_entries(tuples)
 
         logger.warning("Could not parse De Zwaarste Lijst HTML with any strategy")
         return []
@@ -332,12 +336,12 @@ class ZwaarsteScraper(ChartScraper):
         """
         text = text.strip().lower()
 
-        # Handle empty or dash indicators
-        if not text or text in ("-", "(-)", "nieuw", "(nieuw)", "new", "(new)"):
+        # Handle empty or new entry indicators
+        if not text or text in self.NEW_ENTRY_INDICATORS:
             return None
 
         # Handle re-entry indicator
-        if text in ("re", "(re)", "re-entry", "(re-entry)"):
+        if text in self.REENTRY_INDICATORS:
             return None
 
         # Try to extract numeric position
