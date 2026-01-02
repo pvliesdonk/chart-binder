@@ -272,13 +272,17 @@ class ChartsDB:
         try:
             conn.execute("SELECT wikipedia_artist FROM chart_entry LIMIT 1")
         except sqlite3.OperationalError:
-            conn.executescript(
-                """
-                ALTER TABLE chart_entry ADD COLUMN wikipedia_artist TEXT;
-                ALTER TABLE chart_entry ADD COLUMN wikipedia_title TEXT;
-                ALTER TABLE chart_entry ADD COLUMN history_url TEXT;
-                """
-            )
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN wikipedia_artist TEXT")
+
+        try:
+            conn.execute("SELECT wikipedia_title FROM chart_entry LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN wikipedia_title TEXT")
+
+        try:
+            conn.execute("SELECT history_url FROM chart_entry LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE chart_entry ADD COLUMN history_url TEXT")
 
         conn.commit()
         conn.close()

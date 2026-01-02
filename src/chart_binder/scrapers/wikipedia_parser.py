@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 
+import httpx
+
 from chart_binder.http_cache import HttpCache
 
 logger = logging.getLogger(__name__)
@@ -36,8 +38,9 @@ class Top2000WikipediaParser:
     that lists historical Top 2000 positions.
     """
 
-    def __init__(self, cache: HttpCache):
+    def __init__(self, cache: HttpCache, client: httpx.Client):
         self.cache = cache
+        self.client = client
         self._parsed_data: dict[int, dict[int, WikipediaEnrichment]] = {}
 
     def get_enrichment(self, year: int, rank: int) -> WikipediaEnrichment | None:
@@ -67,15 +70,25 @@ class Top2000WikipediaParser:
         self._parsed_data[year] = enrichments
 
     def _fetch_page(self) -> str | None:
-        """Fetch the Wikipedia page HTML."""
-        try:
-            response = self.cache.get(TOP2000_WIKI_URL)
-            if response is None:
-                logger.warning("Failed to fetch Wikipedia page")
+        """Fetch the Wikipedia page HTML, using cache first."""
+        cached_response = self.cache.get(TOP2000_WIKI_URL)
+        if cached_response is not None:
+            if cached_response.status_code == 404:
                 return None
+            return cached_response.text
+
+        try:
+            response = self.client.get(TOP2000_WIKI_URL)
+            self.cache.put(TOP2000_WIKI_URL, response)
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
             return response.text
-        except Exception as e:
-            logger.error(f"Error fetching Wikipedia page: {e}")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error fetching Wikipedia page: {e}")
+            return None
+        except httpx.RequestError as e:
+            logger.error(f"Request error fetching Wikipedia page: {e}")
             return None
 
     def _extract_enrichments(
@@ -139,7 +152,7 @@ class Top2000WikipediaParser:
                         history_url=TOP2000_WIKI_URL,
                     )
 
-        except Exception as e:
+        except (IndexError, ValueError, TypeError) as e:
             logger.error(f"Error parsing Wikipedia HTML: {e}")
 
         return enrichments

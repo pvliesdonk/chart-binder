@@ -56,7 +56,7 @@ class Top2000Scraper(ChartScraper):
     def wikipedia_parser(self) -> Top2000WikipediaParser:
         """Lazily initialize Wikipedia parser only when needed."""
         if self._wikipedia_parser is None:
-            self._wikipedia_parser = Top2000WikipediaParser(self.cache)
+            self._wikipedia_parser = Top2000WikipediaParser(self.cache, self.client)
         return self._wikipedia_parser
 
     def _validate_year_available(self, year: int) -> None:
@@ -153,31 +153,18 @@ class Top2000Scraper(ChartScraper):
         self, entries: list[ScrapedEntry], year: int
     ) -> list[ScrapedEntry]:
         """
-        Enrich entries with Wikipedia links.
+        Enrich entries with Wikipedia links in-place.
 
         Adds artist_url, title_url, and history_url from the Dutch Wikipedia
         Top 2000 tables page when available.
         """
-        enriched: list[ScrapedEntry] = []
         for entry in entries:
             wiki_data = self.wikipedia_parser.get_enrichment(year, entry.rank)
             if wiki_data:
-                enriched.append(
-                    ScrapedEntry(
-                        rank=entry.rank,
-                        artist=entry.artist,
-                        title=entry.title,
-                        previous_position=entry.previous_position,
-                        weeks_on_chart=entry.weeks_on_chart,
-                        side=entry.side,
-                        wikipedia_artist=wiki_data.artist_url,
-                        wikipedia_title=wiki_data.title_url,
-                        history_url=wiki_data.history_url,
-                    )
-                )
-            else:
-                enriched.append(entry)
-        return enriched
+                entry.wikipedia_artist = wiki_data.artist_url
+                entry.wikipedia_title = wiki_data.title_url
+                entry.history_url = wiki_data.history_url
+        return entries
 
     def _try_api_rich(self, year: int) -> list[ScrapedEntry]:
         """Try to fetch from NPO API and capture previous position if available."""
