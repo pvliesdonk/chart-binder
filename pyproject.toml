@@ -71,6 +71,7 @@ beets = [
 dev = [
     "pytest>=8.3.5",
     "pytest-sugar>=1.0.0",
+    "pytest-httpx>=0.35.0",
     "ruff>=0.11.9",
     "codespell>=2.4.1",
     "basedpyright>=1.29.1",
@@ -193,7 +194,8 @@ reportImplicitRelativeImport = false  # Test files use implicit imports
 
 [tool.codespell]
 # acn = SQL alias for artist_credit_name table in MusicBrainz schema
-ignore-words-list = "acn"
+# te = Dutch word meaning "too" (e.g., "Duurt Te Lang" = "Lasts Too Long")
+ignore-words-list = "acn,te"
 # skip = "foo.py,bar.py"
 
 [tool.pytest.ini_options]
