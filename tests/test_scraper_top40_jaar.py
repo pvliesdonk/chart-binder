@@ -190,3 +190,46 @@ class TestTop40JaarScraperErrorHandling:
 
         result = top40jaar_scraper.scrape("2023")
         assert result == []
+
+
+class TestTop40JaarScraperSideDesignation:
+    """Tests for side designation in split entries."""
+
+    def test_split_entry_has_side_designation(self, top40jaar_scraper):
+        """Test that split entries get side designations A, B, etc."""
+        result = top40jaar_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="The Beatles",
+            title="Penny Lane / Strawberry Fields Forever",
+        )
+
+        assert len(result) == 2
+        assert result[0].side == "A"
+        assert result[0].title == "Penny Lane"
+        assert result[1].side == "B"
+        assert result[1].title == "Strawberry Fields Forever"
+
+    def test_split_multiple_artists_has_side_designation(self, top40jaar_scraper):
+        """Test that split entries with multiple artists get side designations."""
+        result = top40jaar_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="Artist A / Artist B",
+            title="Song A / Song B",
+        )
+
+        assert len(result) == 2
+        assert result[0].side == "A"
+        assert result[0].artist == "Artist A"
+        assert result[1].side == "B"
+        assert result[1].artist == "Artist B"
+
+    def test_non_split_entry_has_no_side_designation(self, top40jaar_scraper):
+        """Test that non-split entries don't have side designation."""
+        result = top40jaar_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="The Beatles",
+            title="Yesterday",
+        )
+
+        assert len(result) == 1
+        assert result[0].side is None

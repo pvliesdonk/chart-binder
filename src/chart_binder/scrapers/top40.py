@@ -122,22 +122,15 @@ class Top40Scraper(ChartScraper):
                 prev_pos = entry.get("previous_position")
                 weeks = entry.get("weeks_on_chart")
 
-                # Clean text
-                artist_val = self._clean_text(artist_val)
-                title_val = self._clean_text(title_val)
-                title_val = self._remove_double_parens(title_val)
-
-                # Note: For rich entries, we don't split double A-sides
-                # since metadata is per-entry
-                entries.append(
-                    ScrapedEntry(
-                        rank=rank_val,
-                        artist=artist_val,
-                        title=title_val,
-                        previous_position=prev_pos if isinstance(prev_pos, int) else None,
-                        weeks_on_chart=weeks if isinstance(weeks, int) else None,
-                    )
+                # Handle double A-sides with side designations
+                split_entries = self._handle_split_entries_rich(
+                    rank_val,
+                    artist_val,
+                    title_val,
+                    previous_position=prev_pos if isinstance(prev_pos, int) else None,
+                    weeks_on_chart=weeks if isinstance(weeks, int) else None,
                 )
+                entries.extend(split_entries)
 
             return entries
 
@@ -175,6 +168,105 @@ class Top40Scraper(ChartScraper):
                 return [(rank, artist, title)]
 
         return [(rank, artists[0], titles[0])]
+
+    def _handle_split_entries_rich(
+        self,
+        rank: int,
+        artist: str,
+        title: str,
+        previous_position: int | None = None,
+        weeks_on_chart: int | None = None,
+    ) -> list[ScrapedEntry]:
+        """
+        Handle split entries and return ScrapedEntry objects with side designations.
+
+        For double A-sides (e.g., "Penny Lane / Strawberry Fields"), returns
+        multiple ScrapedEntry objects with side='A', 'B', etc.
+        """
+        artist = self._clean_text(artist)
+        title = self._clean_text(title)
+        title = self._remove_double_parens(title)
+
+        title = title.replace(";", "/")
+
+        artists = [a.strip() for a in artist.split("/") if a.strip()]
+        titles = [t.strip() for t in title.split("/") if t.strip()]
+
+        if not artists or not titles:
+            return [
+                ScrapedEntry(
+                    rank=rank,
+                    artist=artist,
+                    title=title,
+                    previous_position=previous_position,
+                    weeks_on_chart=weeks_on_chart,
+                )
+            ]
+
+        # Single artist, multiple titles (e.g., "The Beatles" + "Penny Lane / Strawberry Fields")
+        if len(artists) == 1 and len(titles) > 1:
+            return [
+                ScrapedEntry(
+                    rank=rank,
+                    artist=artists[0],
+                    title=t,
+                    previous_position=previous_position,
+                    weeks_on_chart=weeks_on_chart,
+                    side=chr(ord("A") + i),  # A, B, C, ...
+                )
+                for i, t in enumerate(titles)
+            ]
+
+        # Multiple artists and titles (e.g., "Artist A / Artist B" + "Song A / Song B")
+        if len(artists) > 1 and len(titles) > 1:
+            if len(artists) == len(titles):
+                return [
+                    ScrapedEntry(
+                        rank=rank,
+                        artist=a,
+                        title=t,
+                        previous_position=previous_position,
+                        weeks_on_chart=weeks_on_chart,
+                        side=chr(ord("A") + i),
+                    )
+                    for i, (a, t) in enumerate(zip(artists, titles, strict=True))
+                ]
+            else:
+                # Mismatch - keep as single entry without splitting
+                return [
+                    ScrapedEntry(
+                        rank=rank,
+                        artist=artist,
+                        title=title,
+                        previous_position=previous_position,
+                        weeks_on_chart=weeks_on_chart,
+                    )
+                ]
+
+        # For non-split cases, return a single entry.
+        # If the split resulted in a single artist and title, use those cleaned parts.
+        # Otherwise, this is an ambiguous case (e.g. multiple artists, one title),
+        # so we fall back to the original cleaned strings to avoid data loss.
+        if len(artists) == 1 and len(titles) == 1:
+            return [
+                ScrapedEntry(
+                    rank=rank,
+                    artist=artists[0],
+                    title=titles[0],
+                    previous_position=previous_position,
+                    weeks_on_chart=weeks_on_chart,
+                )
+            ]
+
+        return [
+            ScrapedEntry(
+                rank=rank,
+                artist=artist,
+                title=title,
+                previous_position=previous_position,
+                weeks_on_chart=weeks_on_chart,
+            )
+        ]
 
     def extract_track_id(self, url: str) -> str | None:
         """

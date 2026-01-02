@@ -178,3 +178,61 @@ class TestTop40ScraperErrorHandling:
 
         result = top40_scraper.scrape("2024-W01")
         assert result == []
+
+
+class TestTop40ScraperSideDesignation:
+    """Tests for side designation in split entries."""
+
+    def test_split_entry_has_side_designation(self, top40_scraper):
+        """Test that split entries get side designations A, B, etc."""
+        result = top40_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="The Beatles",
+            title="Penny Lane / Strawberry Fields Forever",
+        )
+
+        assert len(result) == 2
+        assert result[0].side == "A"
+        assert result[0].title == "Penny Lane"
+        assert result[1].side == "B"
+        assert result[1].title == "Strawberry Fields Forever"
+
+    def test_split_multiple_artists_has_side_designation(self, top40_scraper):
+        """Test that split entries with multiple artists get side designations."""
+        result = top40_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="Artist A / Artist B",
+            title="Song A / Song B",
+        )
+
+        assert len(result) == 2
+        assert result[0].side == "A"
+        assert result[0].artist == "Artist A"
+        assert result[1].side == "B"
+        assert result[1].artist == "Artist B"
+
+    def test_non_split_entry_has_no_side_designation(self, top40_scraper):
+        """Test that non-split entries don't have side designation."""
+        result = top40_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="The Beatles",
+            title="Yesterday",
+        )
+
+        assert len(result) == 1
+        assert result[0].side is None
+
+    def test_split_preserves_metadata(self, top40_scraper):
+        """Test that split entries preserve previous_position and weeks_on_chart."""
+        result = top40_scraper._handle_split_entries_rich(
+            rank=1,
+            artist="Queen",
+            title="We Will Rock You / We Are The Champions",
+            previous_position=5,
+            weeks_on_chart=10,
+        )
+
+        assert len(result) == 2
+        for entry in result:
+            assert entry.previous_position == 5
+            assert entry.weeks_on_chart == 10

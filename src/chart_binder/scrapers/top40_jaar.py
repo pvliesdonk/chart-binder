@@ -45,15 +45,54 @@ class Top40JaarScraper(ChartScraper):
 
     def scrape_rich(self, period: str) -> list[ScrapedEntry]:
         """
-        Scrape year-end chart with metadata.
+        Scrape year-end chart with metadata and side designations.
 
         Note: Year-end charts don't have previous_position since they're
-        annual aggregates. Returns basic ScrapedEntry without position history.
+        annual aggregates. Returns ScrapedEntry with side designation for splits.
         """
-        entries = self.scrape(period)
-        return [
-            ScrapedEntry(rank=rank, artist=artist, title=title) for rank, artist, title in entries
-        ]
+        year = self._parse_year_period(period)
+        url = f"{self.BASE_URL}/top40-jaarlijsten/{year}"
+
+        html = self._fetch_url(url)
+        if html is None:
+            logger.warning(f"Year list {period} not found")
+            return []
+
+        return self._parse_html_rich(html)
+
+    def _parse_html_rich(self, html: str) -> list[ScrapedEntry]:
+        """Parse Top40 year-end chart HTML page with side designations."""
+        try:
+            entries: list[ScrapedEntry] = []
+            parser = Top40JaarParser()
+            parser.feed(html)
+            raw_entries = parser.entries
+
+            for entry in raw_entries:
+                rank_val = entry.get("rank")
+                artist_val = entry.get("artist", "")
+                title_val = entry.get("title", "")
+
+                if rank_val is None or not artist_val or not title_val:
+                    continue
+
+                if not isinstance(rank_val, int):
+                    continue
+                if not isinstance(artist_val, str):
+                    continue
+                if not isinstance(title_val, str):
+                    continue
+
+                split_entries = self._handle_split_entries_rich(
+                    rank_val, artist_val, title_val
+                )
+                entries.extend(split_entries)
+
+            return entries
+
+        except Exception as e:
+            logger.error(f"Error parsing Top40 year-end HTML: {e}")
+            return []
 
     def _parse_html(self, html: str) -> list[tuple[int, str, str]]:
         """Parse Top40 year-end chart HTML page and extract chart entries."""
@@ -117,6 +156,63 @@ class Top40JaarScraper(ChartScraper):
                 return [(rank, artist, title)]
 
         return [(rank, artists[0], titles[0])]
+
+    def _handle_split_entries_rich(
+        self, rank: int, artist: str, title: str
+    ) -> list[ScrapedEntry]:
+        """
+        Handle split entries and return ScrapedEntry objects with side designations.
+
+        For double A-sides (e.g., "Penny Lane / Strawberry Fields"), returns
+        multiple ScrapedEntry objects with side='A', 'B', etc.
+        """
+        artist = self._clean_text(artist)
+        title = self._clean_text(title)
+        title = self._remove_double_parens(title)
+
+        title = title.replace(";", "/")
+
+        artists = [a.strip() for a in artist.split("/") if a.strip()]
+        titles = [t.strip() for t in title.split("/") if t.strip()]
+
+        if not artists or not titles:
+            return [ScrapedEntry(rank=rank, artist=artist, title=title)]
+
+        # Single artist, multiple titles
+        if len(artists) == 1 and len(titles) > 1:
+            return [
+                ScrapedEntry(
+                    rank=rank,
+                    artist=artists[0],
+                    title=t,
+                    side=chr(ord("A") + i),
+                )
+                for i, t in enumerate(titles)
+            ]
+
+        # Multiple artists and titles
+        if len(artists) > 1 and len(titles) > 1:
+            if len(artists) == len(titles):
+                return [
+                    ScrapedEntry(
+                        rank=rank,
+                        artist=a,
+                        title=t,
+                        side=chr(ord("A") + i),
+                    )
+                    for i, (a, t) in enumerate(zip(artists, titles, strict=True))
+                ]
+            else:
+                return [ScrapedEntry(rank=rank, artist=artist, title=title)]
+
+        # For non-split cases, return a single entry.
+        # If the split resulted in a single artist and title, use those cleaned parts.
+        # Otherwise, this is an ambiguous case, so we fall back to the original
+        # cleaned strings to avoid data loss.
+        if len(artists) == 1 and len(titles) == 1:
+            return [ScrapedEntry(rank=rank, artist=artists[0], title=titles[0])]
+
+        return [ScrapedEntry(rank=rank, artist=artist, title=title)]
 
 
 class Top40JaarParser:
