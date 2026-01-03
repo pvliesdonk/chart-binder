@@ -1275,6 +1275,156 @@ def coverage_missing(
     raise typer.Exit(code=ExitCode.SUCCESS if missing else ExitCode.NO_RESULTS)
 
 
+@coverage_app.command("indeterminate")
+def coverage_indeterminate(
+    chart_id: Annotated[str | None, typer.Option("--chart", "-c", help="Filter by chart ID")] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Maximum results")] = 50,
+) -> None:
+    """List indeterminate decisions requiring review.
+
+    Shows decisions in INDETERMINATE state that couldn't be automatically
+    resolved and need manual review.
+
+    Examples:
+        canon coverage indeterminate
+        canon coverage indeterminate --chart nl_top2000
+        canon coverage indeterminate --limit 10
+    """
+    from chart_binder.decisions_db import DecisionsDB, DecisionState
+
+    config = state.config
+    output_format = state.output_format
+
+    db = DecisionsDB(config.database.decisions_path)
+
+    # Get all stale/indeterminate decisions
+    stale = db.get_stale_decisions()
+
+    # Filter to only INDETERMINATE
+    indeterminate = [d for d in stale if d["state"] == DecisionState.INDETERMINATE]
+
+    # Apply chart filter if specified
+    if chart_id:
+        # Filter by work_key prefix (chart entries have work_key starting with chart_id)
+        indeterminate = [d for d in indeterminate if d.get("work_key", "").startswith(chart_id)]
+
+    # Apply limit
+    indeterminate = indeterminate[:limit]
+
+    result = {
+        "total": len(indeterminate),
+        "decisions": [
+            {
+                "file_id": d["file_id"],
+                "work_key": d["work_key"],
+                "mb_rg_id": d["mb_rg_id"],
+                "mb_release_id": d["mb_release_id"],
+                "ruleset_version": d["ruleset_version"],
+                "trace_compact": d["trace_compact"],
+                "updated_at": d["updated_at"],
+            }
+            for d in indeterminate
+        ],
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint("\n[bold]INDETERMINATE Decisions[/bold]")
+        cprint("=" * 50)
+
+        if not indeterminate:
+            cprint("  No indeterminate decisions found.")
+        else:
+            for i, d in enumerate(indeterminate, 1):
+                work_key = d.get("work_key", "unknown")
+                trace = d.get("trace_compact", "")
+                cprint(f"\n  {i}. {work_key}")
+                cprint(f"     Release Group: {d['mb_rg_id']}")
+                if trace:
+                    cprint(f"     Trace: {trace}")
+
+            cprint(f"\n  Total: {len(indeterminate)} indeterminate decisions")
+
+    raise typer.Exit(code=ExitCode.SUCCESS if indeterminate else ExitCode.NO_RESULTS)
+
+
+@coverage_app.command("drift")
+def coverage_drift() -> None:
+    """Show drift report for decisions.
+
+    Displays summary of decisions in STALE states indicating changes
+    in evidence or rules since the decision was made.
+
+    Examples:
+        canon coverage drift
+    """
+    from chart_binder.decisions_db import DecisionsDB
+    from chart_binder.drift import DriftDetector
+
+    config = state.config
+    output_format = state.output_format
+
+    db = DecisionsDB(config.database.decisions_path)
+    detector = DriftDetector(db)
+
+    # Get stale decisions summary
+    stale_summaries = detector.review_drift()
+
+    # Group by state
+    by_state: dict[str, list] = {}
+    for summary in stale_summaries:
+        state_key = summary.state.value
+        if state_key not in by_state:
+            by_state[state_key] = []
+        by_state[state_key].append(summary)
+
+    result = {
+        "total_stale": len(stale_summaries),
+        "by_state": {state: len(items) for state, items in by_state.items()},
+        "details": {
+            state: [
+                {
+                    "file_id": s.file_id,
+                    "work_key": s.work_key,
+                    "mb_rg_id": s.mb_rg_id,
+                    "ruleset_version": s.ruleset_version,
+                }
+                for s in items[:10]  # Limit details per category
+            ]
+            for state, items in by_state.items()
+        },
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint("\n[bold]Drift Report[/bold]")
+        cprint("=" * 50)
+
+        if not stale_summaries:
+            cprint("  No stale decisions found. All decisions are current.")
+        else:
+            for state_key, items in by_state.items():
+                state_desc = {
+                    "stale_evidence": "STALE_EVIDENCE: New data available",
+                    "stale_rules": "STALE_RULES: Ruleset updated",
+                    "stale_both": "STALE_BOTH: Evidence and rules changed",
+                    "stale_nondeterministic": "STALE_NONDETERMINISTIC: Non-deterministic behavior",
+                    "indeterminate": "INDETERMINATE: Requires manual review",
+                }.get(state_key, state_key.upper())
+
+                cprint(f"\n  [yellow]{state_desc}[/yellow]: {len(items)} decisions")
+                for s in items[:3]:  # Show first 3 per category
+                    cprint(f"    - {s.work_key}")
+                if len(items) > 3:
+                    cprint(f"    ... and {len(items) - 3} more")
+
+            cprint(f"\n  Total stale decisions: {len(stale_summaries)}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS if stale_summaries else ExitCode.NO_RESULTS)
+
+
 # ====================================================================
 # CHARTS COMMANDS
 # ====================================================================
