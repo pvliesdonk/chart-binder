@@ -5,8 +5,10 @@ Modern CLI with beautiful output, type-safe commands, and integrated progress tr
 
 from __future__ import annotations
 
+import getpass
 import json
 import logging
+import os
 import sqlite3
 import sys
 from enum import StrEnum
@@ -25,6 +27,7 @@ from chart_binder.console import (
     print_warning,
     set_console,
 )
+from chart_binder.llm import ReviewAction, ReviewQueue, ReviewSource
 from chart_binder.safe_logging import configure_rich_logging
 
 # Supported audio file extensions
@@ -80,6 +83,23 @@ class AppState:
 
 
 state = AppState()
+
+
+def _current_state() -> tuple[Config, OutputFormat]:
+    """Return the initialized config and output format or exit."""
+    cfg = getattr(state, "config", None)
+    output = getattr(state, "output_format", None)
+
+    if cfg is None or output is None:
+        print_error("CLI state is not initialized. Run `canon --help` first.")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    return cfg, output
+
+
+def _reviewed_by() -> str:
+    """Resolve reviewed_by identifier for audit logs."""
+    return os.getenv("CHART_BINDER_REVIEWED_BY") or getpass.getuser() or "cli_user"
 
 
 def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
@@ -1277,7 +1297,9 @@ def coverage_missing(
 
 @coverage_app.command("indeterminate")
 def coverage_indeterminate(
-    chart_id: Annotated[str | None, typer.Option("--chart", "-c", help="Filter by chart ID")] = None,
+    chart_id: Annotated[
+        str | None, typer.Option("--chart", "-c", help="Filter by chart ID")
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Maximum results")] = 50,
 ) -> None:
     """List indeterminate decisions requiring review.
@@ -2052,12 +2074,42 @@ def review_list(
     limit: Annotated[int, typer.Option(help="Maximum items to show")] = 20,
 ) -> None:
     """List items needing review."""
-    # TODO: Implement review list command
-    # This command lists entries needing human review from the review queue
-    # See cli.py:review_list for implementation (if exists)
-    print_error("review list command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    try:
+        source_filter = ReviewSource(source) if source else None
+    except ValueError:
+        valid = ", ".join([s.value for s in ReviewSource])
+        print_error(f"Invalid review source: '{source}'. Valid options are: {valid}")
+        raise typer.Exit(code=ExitCode.ERROR) from None
+    items = queue.get_pending(source=source_filter, limit=limit)
+
+    if output_format == OutputFormat.JSON:
+        payload = [
+            {
+                "review_id": item.review_id,
+                "file_id": item.file_id,
+                "work_key": item.work_key,
+                "source": item.source.value,
+                "created_at": item.created_at,
+            }
+            for item in items
+        ]
+        cprint(json.dumps(payload, indent=2))
+    else:
+        if not items:
+            print_success("No pending review items.")
+            raise typer.Exit(code=ExitCode.SUCCESS)
+
+        cprint(f"Pending Review Items ({len(items)}):")
+        cprint("=" * 50)
+        for item in items:
+            cprint(f"ID:    {item.review_id[:8]}...")
+            cprint(f"Work:  {item.work_key}")
+            cprint(f"Source:{item.source.value}")
+            cprint("=" * 50)
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @review_app.command("show")
@@ -2065,11 +2117,34 @@ def review_show(
     review_id: Annotated[str, typer.Argument(help="Review ID")],
 ) -> None:
     """Show details for a review item."""
-    # TODO: Implement review show command
-    # This command displays details for a specific review queue entry
-    print_error("review show command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    item = queue.get_item(review_id)
+
+    if not item:
+        print_error(f"Review item not found: {review_id}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    if output_format == OutputFormat.JSON:
+        cprint(
+            json.dumps(
+                {
+                    "review_id": item.review_id,
+                    "file_id": item.file_id,
+                    "work_key": item.work_key,
+                    "source": item.source.value,
+                    "evidence_bundle": item.evidence_bundle,
+                    "decision_trace": item.decision_trace,
+                    "llm_suggestion": item.llm_suggestion,
+                    "created_at": item.created_at,
+                },
+                indent=2,
+            )
+        )
+    else:
+        cprint(item.to_display())
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @review_app.command("accept")
@@ -2080,11 +2155,26 @@ def review_accept(
     notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
 ) -> None:
     """Accept a specific CRG for a review item."""
-    # TODO: Implement review accept command
-    # This command accepts a review decision and updates the database
-    print_error("review accept command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    succeeded = queue.complete_review(
+        review_id,
+        action=ReviewAction.ACCEPT,
+        action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
+        reviewed_by=_reviewed_by(),
+        notes=notes,
+    )
+
+    if not succeeded:
+        print_error(f"Failed to complete review: {review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"status": "accepted", "review_id": review_id}, indent=2))
+    else:
+        print_success(f"Accepted review {review_id[:8]}... with CRG {crg_mbid}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @review_app.command("reject")
@@ -2093,11 +2183,25 @@ def review_reject(
     notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
 ) -> None:
     """Reject/skip a review item."""
-    # TODO: Implement review reject command
-    # This command rejects/skips a review item
-    print_error("review reject command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    succeeded = queue.complete_review(
+        review_id,
+        action=ReviewAction.SKIP,
+        reviewed_by=_reviewed_by(),
+        notes=notes,
+    )
+
+    if not succeeded:
+        print_error(f"Failed to skip review: {review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"status": "skipped", "review_id": review_id}, indent=2))
+    else:
+        print_success(f"Skipped review {review_id[:8]}...")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 # ====================================================================
@@ -2142,7 +2246,9 @@ def analytics_history(
     history = analytics.get_song_chart_history(song.song_id)
 
     if not history:
-        print_warning(f"Song found but has no chart appearances: {song.artist_canonical} - {song.title_canonical}")
+        print_warning(
+            f"Song found but has no chart appearances: {song.artist_canonical} - {song.title_canonical}"
+        )
         raise typer.Exit(code=ExitCode.NO_RESULTS)
 
     result = {
@@ -2353,13 +2459,27 @@ def analytics_lookup(
 
 @playlist_app.command("generate")
 def playlist_generate(
-    chart_period: Annotated[str, typer.Argument(help="Chart and period (chart_id:period, e.g., 'nl_top2000:2024')")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path("playlist.m3u"),
-    format: Annotated[str, typer.Option("--format", "-f", help="Playlist format (m3u or m3u8)")] = "m3u",
-    music_library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to music library")] = None,
-    beets_db: Annotated[Path | None, typer.Option("--beets", "-b", help="Path to beets database")] = None,
-    relative_paths: Annotated[bool, typer.Option("--relative", "-r", help="Use relative paths")] = False,
-    show_missing: Annotated[bool, typer.Option("--show-missing", help="Show missing entries report")] = False,
+    chart_period: Annotated[
+        str, typer.Argument(help="Chart and period (chart_id:period, e.g., 'nl_top2000:2024')")
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path(
+        "playlist.m3u"
+    ),
+    format: Annotated[
+        str, typer.Option("--format", "-f", help="Playlist format (m3u or m3u8)")
+    ] = "m3u",
+    music_library: Annotated[
+        Path | None, typer.Option("--library", "-l", help="Path to music library")
+    ] = None,
+    beets_db: Annotated[
+        Path | None, typer.Option("--beets", "-b", help="Path to beets database")
+    ] = None,
+    relative_paths: Annotated[
+        bool, typer.Option("--relative", "-r", help="Use relative paths")
+    ] = False,
+    show_missing: Annotated[
+        bool, typer.Option("--show-missing", help="Show missing entries report")
+    ] = False,
 ) -> None:
     """Generate M3U/M3U8 playlist from a chart run.
 
@@ -2403,7 +2523,9 @@ def playlist_generate(
 
     if not lib_path and not beets_path:
         print_warning("No music library or beets database configured.")
-        print_warning("Set MUSIC_LIBRARY or BEETS_CONFIG environment variables, or use --library/--beets options.")
+        print_warning(
+            "Set MUSIC_LIBRARY or BEETS_CONFIG environment variables, or use --library/--beets options."
+        )
 
     # Create generator
     db = ChartsDB(config.database.charts_path)
@@ -2456,7 +2578,9 @@ def playlist_generate(
         cprint(f"  Output: {result.output_path}")
         cprint(f"  Format: {playlist_format.value}")
         cprint("")
-        cprint(f"  [green]Found:[/green] {result.found}/{result.total} entries ({result.coverage_pct:.1f}% coverage)")
+        cprint(
+            f"  [green]Found:[/green] {result.found}/{result.total} entries ({result.coverage_pct:.1f}% coverage)"
+        )
 
         if result.missing:
             cprint(f"  [yellow]Missing:[/yellow] {len(result.missing)} entries")
@@ -2566,7 +2690,9 @@ def playlist_info(
         if link_pct < 50:
             print_warning("Low song linkage. Run 'canon charts link' to improve coverage.")
         elif mbid_pct < link_pct * 0.5:
-            print_warning("Many linked songs missing MBIDs. Run 'canon charts enrich' to add MBIDs.")
+            print_warning(
+                "Many linked songs missing MBIDs. Run 'canon charts enrich' to add MBIDs."
+            )
 
     raise typer.Exit(code=ExitCode.SUCCESS)
 
