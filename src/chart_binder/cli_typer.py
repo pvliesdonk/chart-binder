@@ -162,6 +162,69 @@ def _apply_review_action(
             )
 
 
+def _normalize_scope_id(value: str) -> str:
+    """Normalize scope IDs for consistent override matching."""
+    return value.strip().lower()
+
+
+def _apply_review_action(
+    config: Config,
+    queue: ReviewQueue,
+    item: ReviewItem,
+    *,
+    action: ReviewAction,
+    crg_mbid: str | None = None,
+    rr_mbid: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Apply a review action and persist overrides when needed."""
+    if action == ReviewAction.ACCEPT:
+        action_data = {"crg_mbid": crg_mbid, "rr_mbid": rr_mbid}
+    elif action == ReviewAction.ACCEPT_LLM:
+        action_data = item.llm_suggestion
+    else:
+        action_data = None
+
+    succeeded = queue.complete_review(
+        item.review_id,
+        action=action,
+        action_data=action_data,
+        reviewed_by=_reviewed_by(),
+        notes=notes,
+    )
+
+    if not succeeded:
+        print_error(f"Failed to complete review: {item.review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    target_crg = crg_mbid
+    target_rr = rr_mbid
+    if action == ReviewAction.ACCEPT_LLM and item.llm_suggestion:
+        target_crg = item.llm_suggestion.get("crg_mbid")
+        target_rr = item.llm_suggestion.get("rr_mbid")
+
+    if target_crg:
+        from chart_binder.decisions_db import DecisionsDB
+
+        scope = "file"
+        scope_id = item.file_id
+        if item.work_key:
+            scope = "track"
+            scope_id = _normalize_scope_id(item.work_key)
+
+        if scope_id:
+            db = DecisionsDB(config.database.decisions_path)
+            db.create_override(
+                scope=scope,
+                scope_id=scope_id,
+                override_type="crg",
+                target_crg_mbid=target_crg,
+                target_rr_mbid=target_rr,
+                note=notes or "Manual review accept",
+                created_by="cli_user",
+            )
+
+
 def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
     """Collect audio files from paths (files or directories).
 
