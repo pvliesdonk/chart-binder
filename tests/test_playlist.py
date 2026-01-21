@@ -339,8 +339,12 @@ class TestPlaylistGeneratorMissingReport:
             found=5,
             total=10,
             missing=[
-                MissingEntry(rank=1, artist="Artist 1", title="Title 1", reason=MissingReason.NO_SONG_LINK),
-                MissingEntry(rank=2, artist="Artist 2", title="Title 2", reason=MissingReason.NO_LOCAL_FILE),
+                MissingEntry(
+                    rank=1, artist="Artist 1", title="Title 1", reason=MissingReason.NO_SONG_LINK
+                ),
+                MissingEntry(
+                    rank=2, artist="Artist 2", title="Title 2", reason=MissingReason.NO_LOCAL_FILE
+                ),
             ],
         )
 
@@ -390,9 +394,7 @@ class TestPlaylistFileContent:
         assert "#EXTINF:" in content
         assert "Queen - Bohemian Rhapsody" in content
 
-    def test_playlist_relative_paths(
-        self, populated_db: ChartsDB, music_library: Path
-    ):
+    def test_playlist_relative_paths(self, populated_db: ChartsDB, music_library: Path):
         # Output in music library to enable relative paths
         output = music_library / "playlist.m3u"
         generator = PlaylistGenerator(
@@ -409,4 +411,6 @@ class TestPlaylistFileContent:
 
         content = output.read_text()
         # Should not have absolute paths
-        assert not any(line.startswith("/") for line in content.split("\n") if not line.startswith("#"))
+        assert not any(
+            line.startswith("/") for line in content.split("\n") if not line.startswith("#")
+        )

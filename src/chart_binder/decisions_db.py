@@ -768,9 +768,7 @@ def test_create_override_and_lookup(tmp_path):
     assert len(overrides) == 1
     assert overrides[0]["override_id"] == override_id
 
-    applicable = db.get_applicable_override(
-        file_id=None, artist="artist", title="title"
-    )
+    applicable = db.get_applicable_override(file_id=None, artist="artist", title="title")
     assert applicable is not None
 
     crg_mbid, rr_mbid = db.extract_override_targets(applicable)

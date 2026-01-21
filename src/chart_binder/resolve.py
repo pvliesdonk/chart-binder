@@ -362,8 +362,8 @@ def _resolve_with_fetcher(
         try:
             import sys
 
-            from chart_binder.llm.adjudicator import AdjudicationOutcome
             from chart_binder.llm import ReviewQueue, ReviewSource
+            from chart_binder.llm.adjudicator import AdjudicationOutcome
 
             review_queue: ReviewQueue | None = None
             if config.llm.review_queue_path:
@@ -417,9 +417,7 @@ def _resolve_with_fetcher(
                         f"⚠ LLM suggestion queued for review (confidence={adjudication_result.confidence:.2f})"
                     )
                 else:
-                    log.warning(
-                        "LLM suggestion generated but no review queue is configured."
-                    )
+                    log.warning("LLM suggestion generated but no review queue is configured.")
             else:
                 log.info(
                     f"⚠ LLM adjudication below threshold: "
