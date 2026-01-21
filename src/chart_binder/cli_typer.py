@@ -5,10 +5,8 @@ Modern CLI with beautiful output, type-safe commands, and integrated progress tr
 
 from __future__ import annotations
 
-import getpass
 import json
 import logging
-import os
 import sqlite3
 import sys
 from enum import StrEnum
@@ -101,11 +99,6 @@ def _current_state() -> tuple[Config, OutputFormat]:
     return cfg, output
 
 
-def _reviewed_by() -> str:
-    """Resolve reviewed_by identifier for audit logs."""
-    return os.getenv("CHART_BINDER_REVIEWED_BY") or getpass.getuser() or "cli_user"
-
-
 def _normalize_scope_id(value: str) -> str:
     """Normalize scope IDs for consistent override matching."""
     return value.strip().lower()
@@ -133,7 +126,7 @@ def _apply_review_action(
         item.review_id,
         action=action,
         action_data=action_data,
-        reviewed_by=_reviewed_by(),
+        reviewed_by="cli_user",
         notes=notes,
     )
 
@@ -2231,12 +2224,7 @@ def review_list(
     """List items needing review."""
     config, output_format = _current_state()
     queue = ReviewQueue(config.llm.review_queue_path)
-    try:
-        source_filter = ReviewSource(source) if source else None
-    except ValueError:
-        valid = ", ".join([s.value for s in ReviewSource])
-        print_error(f"Invalid review source: '{source}'. Valid options are: {valid}")
-        raise typer.Exit(code=ExitCode.ERROR) from None
+    source_filter = ReviewSource(source) if source else None
     items = queue.get_pending(source=source_filter, limit=limit)
 
     if output_format == OutputFormat.JSON:
