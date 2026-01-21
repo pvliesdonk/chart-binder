@@ -25,6 +25,7 @@ from chart_binder.console import (
     print_warning,
     set_console,
 )
+from chart_binder.llm import ReviewAction, ReviewQueue, ReviewSource
 from chart_binder.safe_logging import configure_rich_logging
 
 # Supported audio file extensions
@@ -80,6 +81,18 @@ class AppState:
 
 
 state = AppState()
+
+
+def _current_state() -> tuple[Config, OutputFormat]:
+    """Return the initialized config and output format or exit."""
+    cfg = getattr(state, "config", None)
+    output = getattr(state, "output_format", None)
+
+    if cfg is None or output is None:
+        print_error("CLI state is not initialized. Run `canon --help` first.")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    return cfg, output
 
 
 def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
@@ -2052,12 +2065,37 @@ def review_list(
     limit: Annotated[int, typer.Option(help="Maximum items to show")] = 20,
 ) -> None:
     """List items needing review."""
-    # TODO: Implement review list command
-    # This command lists entries needing human review from the review queue
-    # See cli.py:review_list for implementation (if exists)
-    print_error("review list command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    source_filter = ReviewSource(source) if source else None
+    items = queue.get_pending(source=source_filter, limit=limit)
+
+    if output_format == OutputFormat.JSON:
+        payload = [
+            {
+                "review_id": item.review_id,
+                "file_id": item.file_id,
+                "work_key": item.work_key,
+                "source": item.source.value,
+                "created_at": item.created_at,
+            }
+            for item in items
+        ]
+        cprint(json.dumps(payload, indent=2))
+    else:
+        if not items:
+            print_success("No pending review items.")
+            raise typer.Exit(code=ExitCode.SUCCESS)
+
+        cprint(f"Pending Review Items ({len(items)}):")
+        cprint("=" * 50)
+        for item in items:
+            cprint(f"ID:    {item.review_id[:8]}...")
+            cprint(f"Work:  {item.work_key}")
+            cprint(f"Source:{item.source.value}")
+            cprint("=" * 50)
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @review_app.command("show")
@@ -2065,11 +2103,34 @@ def review_show(
     review_id: Annotated[str, typer.Argument(help="Review ID")],
 ) -> None:
     """Show details for a review item."""
-    # TODO: Implement review show command
-    # This command displays details for a specific review queue entry
-    print_error("review show command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    item = queue.get_item(review_id)
+
+    if not item:
+        print_error(f"Review item not found: {review_id}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    if output_format == OutputFormat.JSON:
+        cprint(
+            json.dumps(
+                {
+                    "review_id": item.review_id,
+                    "file_id": item.file_id,
+                    "work_key": item.work_key,
+                    "source": item.source.value,
+                    "evidence_bundle": item.evidence_bundle,
+                    "decision_trace": item.decision_trace,
+                    "llm_suggestion": item.llm_suggestion,
+                    "created_at": item.created_at,
+                },
+                indent=2,
+            )
+        )
+    else:
+        cprint(item.to_display())
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @review_app.command("accept")
@@ -2080,11 +2141,26 @@ def review_accept(
     notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
 ) -> None:
     """Accept a specific CRG for a review item."""
-    # TODO: Implement review accept command
-    # This command accepts a review decision and updates the database
-    print_error("review accept command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    succeeded = queue.complete_review(
+        review_id,
+        action=ReviewAction.ACCEPT,
+        action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
+        reviewed_by="cli_user",
+        notes=notes,
+    )
+
+    if not succeeded:
+        print_error(f"Failed to complete review: {review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"status": "accepted", "review_id": review_id}, indent=2))
+    else:
+        print_success(f"Accepted review {review_id[:8]}... with CRG {crg_mbid}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 @review_app.command("reject")
@@ -2093,11 +2169,25 @@ def review_reject(
     notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
 ) -> None:
     """Reject/skip a review item."""
-    # TODO: Implement review reject command
-    # This command rejects/skips a review item
-    print_error("review reject command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    succeeded = queue.complete_review(
+        review_id,
+        action=ReviewAction.SKIP,
+        reviewed_by="cli_user",
+        notes=notes,
+    )
+
+    if not succeeded:
+        print_error(f"Failed to skip review: {review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"status": "skipped", "review_id": review_id}, indent=2))
+    else:
+        print_success(f"Skipped review {review_id[:8]}...")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
 
 
 # ====================================================================

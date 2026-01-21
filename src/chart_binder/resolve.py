@@ -10,6 +10,7 @@ All paths use the same 7-rule CRG selection algorithm implemented in resolver.py
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -85,6 +86,7 @@ def resolve_artist_title(
     """
     from chart_binder.candidates import CandidateBuilder
     from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
+    from chart_binder.llm import ReviewQueue, ReviewSource
     from chart_binder.musicgraph import MusicGraphDB
     from chart_binder.normalize import Normalizer
     from chart_binder.resolver import (
@@ -323,6 +325,13 @@ def _resolve_with_fetcher(
 
             from chart_binder.llm.adjudicator import AdjudicationOutcome
 
+            review_queue: ReviewQueue | None = None
+            if config.llm.review_queue_path:
+                review_queue = ReviewQueue(config.llm.review_queue_path)
+
+            work_key = f"{artist} // {title}"
+            file_id = hashlib.sha256(work_key.encode()).hexdigest()
+
             # Show progress message (clear line and show LLM submission status)
             print(f"\r{'':<120}", end="", file=sys.stderr)
             print(f"  ⏳ Submitting to LLM adjudicator for {artist} - {title}...", file=sys.stderr)
@@ -351,6 +360,26 @@ def _resolve_with_fetcher(
                 log.info(
                     f"✓ LLM auto-accepted: CRG={adjudication_result.crg_mbid}, "
                     f"confidence={adjudication_result.confidence:.2f}"
+                )
+            elif adjudication_result.outcome == AdjudicationOutcome.REVIEW and review_queue:
+                suggestion = {
+                    "crg_mbid": adjudication_result.crg_mbid,
+                    "rr_mbid": adjudication_result.rr_mbid,
+                    "confidence": adjudication_result.confidence,
+                    "rationale": adjudication_result.rationale,
+                    "model_id": adjudication_result.model_id,
+                    "adjudication_id": adjudication_result.adjudication_id,
+                }
+                review_queue.add_item(
+                    file_id=file_id,
+                    work_key=work_key,
+                    source=ReviewSource.LLM_REVIEW,
+                    evidence_bundle=evidence_bundle,
+                    decision_trace=decision_trace_dict,
+                    llm_suggestion=suggestion,
+                )
+                log.info(
+                    f"⚠ LLM suggestion queued for review (confidence={adjudication_result.confidence:.2f})"
                 )
             else:
                 log.info(
