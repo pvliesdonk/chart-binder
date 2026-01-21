@@ -67,23 +67,23 @@ class TestKerstlijstImporterLoad:
                     # Valid entry
                     {
                         "artiest": "Wham!",
-                        "titel": "Last Christmas",
+                        "title": "Last Christmas",
                         "hitlists": {"spotweb": {"2020": 1}},
                     },
                     # Missing artist
-                    {"artiest": "", "titel": "Some Song", "hitlists": {"spotweb": {"2020": 2}}},
+                    {"artiest": "", "title": "Some Song", "hitlists": {"spotweb": {"2020": 2}}},
                     # Missing title
                     {
                         "artiest": "Some Artist",
-                        "titel": "",
+                        "title": "",
                         "hitlists": {"spotweb": {"2020": 3}},
                     },
                     # No positions
-                    {"artiest": "No Positions", "titel": "Song", "hitlists": {"spotweb": {}}},
+                    {"artiest": "No Positions", "title": "Song", "hitlists": {"spotweb": {}}},
                     # Invalid rank (too high)
                     {
                         "artiest": "Invalid",
-                        "titel": "Rank",
+                        "title": "Rank",
                         "hitlists": {"spotweb": {"2020": 9999}},
                     },
                 ]

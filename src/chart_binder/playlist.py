@@ -277,7 +277,9 @@ class PlaylistGenerator:
                     )
                     row = cursor.fetchone()
                     if row:
-                        path = Path(row["path"].decode() if isinstance(row["path"], bytes) else row["path"])
+                        path = Path(
+                            row["path"].decode() if isinstance(row["path"], bytes) else row["path"]
+                        )
                         if path.exists():
                             return path
 
@@ -295,7 +297,9 @@ class PlaylistGenerator:
                 )
                 row = cursor.fetchone()
                 if row:
-                    path = Path(row["path"].decode() if isinstance(row["path"], bytes) else row["path"])
+                    path = Path(
+                        row["path"].decode() if isinstance(row["path"], bytes) else row["path"]
+                    )
                     if path.exists():
                         return path
         except sqlite3.Error as e:
@@ -338,11 +342,11 @@ class PlaylistGenerator:
         normalized = self._normalizer.normalize_title(text).normalized
 
         # Remove characters that are typically removed from filenames
-        for char in ['/', '\\', ':', '*', '?', '"', '<', '>', '|']:
-            normalized = normalized.replace(char, '')
+        for char in ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]:
+            normalized = normalized.replace(char, "")
 
         # Replace spaces with wildcards for glob
-        return normalized.replace(' ', '*')
+        return normalized.replace(" ", "*")
 
     def _write_playlist(
         self,

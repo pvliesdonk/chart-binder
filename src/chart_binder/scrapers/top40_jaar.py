@@ -83,9 +83,7 @@ class Top40JaarScraper(ChartScraper):
                 if not isinstance(title_val, str):
                     continue
 
-                split_entries = self._handle_split_entries_rich(
-                    rank_val, artist_val, title_val
-                )
+                split_entries = self._handle_split_entries_rich(rank_val, artist_val, title_val)
                 entries.extend(split_entries)
 
             return entries
@@ -157,9 +155,7 @@ class Top40JaarScraper(ChartScraper):
 
         return [(rank, artists[0], titles[0])]
 
-    def _handle_split_entries_rich(
-        self, rank: int, artist: str, title: str
-    ) -> list[ScrapedEntry]:
+    def _handle_split_entries_rich(self, rank: int, artist: str, title: str) -> list[ScrapedEntry]:
         """
         Handle split entries and return ScrapedEntry objects with side designations.
 

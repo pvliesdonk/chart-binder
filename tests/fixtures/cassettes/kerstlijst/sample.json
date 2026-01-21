@@ -1,7 +1,7 @@
 [
   {
     "artiest": "Wham!",
-    "titel": "Last Christmas",
+    "title": "Last Christmas",
     "hitlists": {
       "spotweb": {
         "2020": 1,
@@ -12,7 +12,7 @@
   },
   {
     "artiest": "Mariah Carey",
-    "titel": "All I Want For Christmas Is You",
+    "title": "All I Want For Christmas Is You",
     "hitlists": {
       "spotweb": {
         "2020": 2,
@@ -23,7 +23,7 @@
   },
   {
     "artiest": "Chris Rea",
-    "titel": "Driving Home For Christmas",
+    "title": "Driving Home For Christmas",
     "hitlists": {
       "spotweb": {
         "2020": 3,
@@ -34,7 +34,7 @@
   },
   {
     "artiest": "Band Aid",
-    "titel": "Do They Know It's Christmas",
+    "title": "Do They Know It's Christmas",
     "hitlists": {
       "spotweb": {
         "2020": 4,
@@ -45,7 +45,7 @@
   },
   {
     "artiest": "Shakin' Stevens",
-    "titel": "Merry Christmas Everyone",
+    "title": "Merry Christmas Everyone",
     "hitlists": {
       "spotweb": {
         "2020": 5,
@@ -55,7 +55,7 @@
   },
   {
     "artiest": "The Pogues & Kirsty MacColl",
-    "titel": "Fairytale Of New York",
+    "title": "Fairytale Of New York",
     "hitlists": {
       "spotweb": {
         "2021": 5
