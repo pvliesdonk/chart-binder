@@ -392,42 +392,34 @@ def _resolve_with_fetcher(
             result.llm_confidence = adjudication_result.confidence
             result.llm_rationale = adjudication_result.rationale
 
-            if (
-                adjudication_result.outcome != AdjudicationOutcome.ERROR
-                and adjudication_result.confidence >= auto_accept_threshold
+            if adjudication_result.outcome in (
+                AdjudicationOutcome.ACCEPTED,
+                AdjudicationOutcome.REVIEW,
             ):
-                result.state = "decided"
-                result.crg_mbid = adjudication_result.crg_mbid
-                result.rr_mbid = adjudication_result.rr_mbid
-                result.crg_rationale = str(CRGRationale.LLM_ADJUDICATION)
-                result.rr_rationale = str(RRRationale.LLM_ADJUDICATION)
-                result.llm_adjudicated = True
-                result.confidence = adjudication_result.confidence
-
-                log.info(
-                    f"✓ LLM auto-accepted: CRG={adjudication_result.crg_mbid}, "
-                    f"confidence={adjudication_result.confidence:.2f}"
-                )
-            elif adjudication_result.outcome == AdjudicationOutcome.REVIEW and review_queue:
-                suggestion = {
-                    "crg_mbid": adjudication_result.crg_mbid,
-                    "rr_mbid": adjudication_result.rr_mbid,
-                    "confidence": adjudication_result.confidence,
-                    "rationale": adjudication_result.rationale,
-                    "model_id": adjudication_result.model_id,
-                    "adjudication_id": adjudication_result.adjudication_id,
-                }
-                review_queue.add_item(
-                    file_id=file_id,
-                    work_key=work_key,
-                    source=ReviewSource.LLM_REVIEW,
-                    evidence_bundle=evidence_bundle,
-                    decision_trace=decision_trace_dict,
-                    llm_suggestion=suggestion,
-                )
-                log.info(
-                    f"⚠ LLM suggestion queued for review (confidence={adjudication_result.confidence:.2f})"
-                )
+                if review_queue:
+                    suggestion = {
+                        "crg_mbid": adjudication_result.crg_mbid,
+                        "rr_mbid": adjudication_result.rr_mbid,
+                        "confidence": adjudication_result.confidence,
+                        "rationale": adjudication_result.rationale,
+                        "model_id": adjudication_result.model_id,
+                        "adjudication_id": adjudication_result.adjudication_id,
+                    }
+                    review_queue.add_item(
+                        file_id=file_id,
+                        work_key=work_key,
+                        source=ReviewSource.LLM_REVIEW,
+                        evidence_bundle=evidence_bundle,
+                        decision_trace=decision_trace_dict,
+                        llm_suggestion=suggestion,
+                    )
+                    log.info(
+                        f"⚠ LLM suggestion queued for review (confidence={adjudication_result.confidence:.2f})"
+                    )
+                else:
+                    log.warning(
+                        "LLM suggestion generated but no review queue is configured."
+                    )
             else:
                 log.info(
                     f"⚠ LLM adjudication below threshold: "
