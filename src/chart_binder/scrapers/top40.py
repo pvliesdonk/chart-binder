@@ -305,6 +305,7 @@ class _Top40HTMLParser:
     def __init__(self, parent: Top40Parser):
         self.parent = parent
         self._in_item = False
+        self._item_depth = 0
         self._in_position = False
         self._in_title = False
         self._in_artist = False
@@ -341,17 +342,34 @@ class _Top40HTMLParser:
     def _handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_dict = {k: v for k, v in attrs if v is not None}
         class_attr = attr_dict.get("class", "")
+        classes = class_attr.split()
+        started_item = False
 
-        if "top40-list__item" in class_attr or (tag == "li" and "list-item" in class_attr):
+        if ("top40-list__item" in classes) or (tag == "li" and "list-item" in classes):
             self._in_item = True
+            self._item_depth = 1
             self._current_entry = {}
+            started_item = True
 
         if self._in_item:
-            if "top40-list__position" in class_attr or "position" in class_attr:
+            if not started_item and tag not in {"br", "img", "input", "meta", "link", "hr"}:
+                self._item_depth += 1
+
+            if (
+                "top40-list__item__info__position" in classes
+                or "top40-list__position" in classes
+                or "position" in classes
+            ):
                 self._in_position = True
+                self._text_buffer = ""
+            elif tag == "h2" and "h3" in class_attr:
+                self._in_title = True
                 self._text_buffer = ""
             elif "top40-list__title" in class_attr or "title" in class_attr:
                 self._in_title = True
+                self._text_buffer = ""
+            elif tag == "h3" and "lead" in class_attr and "lowercase" in class_attr:
+                self._in_artist = True
                 self._text_buffer = ""
             elif "top40-list__artist" in class_attr or "artist" in class_attr:
                 self._in_artist = True
@@ -362,10 +380,16 @@ class _Top40HTMLParser:
             ):
                 self._in_previous = True
                 self._text_buffer = ""
+            elif "top40-list__item__controls--rank" in class_attr:
+                self._in_previous = True
+                self._text_buffer = ""
             # Weeks on chart - various class patterns
             elif any(
                 x in class_attr.lower() for x in ["weeks", "weken", "duration", "chart-weeks"]
             ):
+                self._in_weeks = True
+                self._text_buffer = ""
+            elif "top40-list__item__controls--weeks" in class_attr:
                 self._in_weeks = True
                 self._text_buffer = ""
 
@@ -408,11 +432,14 @@ class _Top40HTMLParser:
             except ValueError:
                 pass
 
-        if self._in_item and tag in ("li", "div"):
-            if "rank" in self._current_entry:
-                self.parent.entries.append(self._current_entry.copy())
-            self._in_item = False
-            self._current_entry = {}
+        if self._in_item:
+            if tag not in {"br", "img", "input", "meta", "link", "hr"}:
+                self._item_depth = max(0, self._item_depth - 1)
+            if self._item_depth == 0:
+                if "rank" in self._current_entry:
+                    self.parent.entries.append(self._current_entry.copy())
+                self._in_item = False
+                self._current_entry = {}
 
     def _handle_data(self, data: str) -> None:
         if (

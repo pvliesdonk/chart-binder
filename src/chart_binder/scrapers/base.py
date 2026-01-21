@@ -327,7 +327,12 @@ class ChartScraper(ABC):
 
         try:
             response = self.client.get(url)
+        except httpx.RequestError as e:
+            logger.warning(f"Request error fetching {url}: {e}")
+            return None
 
+        try:
+            response.read()
             self.cache.put(url, response)
 
             if response.status_code == 404:
@@ -337,9 +342,8 @@ class ChartScraper(ABC):
         except httpx.HTTPStatusError as e:
             logger.warning(f"HTTP error fetching {url}: {e}")
             return None
-        except httpx.RequestError as e:
-            logger.warning(f"Request error fetching {url}: {e}")
-            return None
+        finally:
+            response.close()
 
     def _fetch_json(self, url: str) -> dict[str, object] | list[object] | None:
         """
@@ -358,7 +362,12 @@ class ChartScraper(ABC):
 
         try:
             response = self.client.get(url)
+        except httpx.RequestError as e:
+            logger.warning(f"Request error fetching {url}: {e}")
+            return None
 
+        try:
+            response.read()
             self.cache.put(url, response)
 
             if response.status_code == 404:
@@ -368,12 +377,11 @@ class ChartScraper(ABC):
         except httpx.HTTPStatusError as e:
             logger.warning(f"HTTP error fetching {url}: {e}")
             return None
-        except httpx.RequestError as e:
-            logger.warning(f"Request error fetching {url}: {e}")
-            return None
         except Exception as e:
             logger.warning(f"JSON parse error for {url}: {e}")
             return None
+        finally:
+            response.close()
 
     def _parse_period(self, period: str) -> tuple[int, int]:
         """
