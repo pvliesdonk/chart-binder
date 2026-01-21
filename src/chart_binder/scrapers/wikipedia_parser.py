@@ -91,9 +91,7 @@ class Top2000WikipediaParser:
             logger.error(f"Request error fetching Wikipedia page: {e}")
             return None
 
-    def _extract_enrichments(
-        self, html: str, year: int
-    ) -> dict[int, WikipediaEnrichment]:
+    def _extract_enrichments(self, html: str, year: int) -> dict[int, WikipediaEnrichment]:
         """Extract enrichment data from Wikipedia HTML for a specific year."""
         enrichments: dict[int, WikipediaEnrichment] = {}
 

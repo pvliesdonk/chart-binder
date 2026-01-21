@@ -36,8 +36,20 @@ def populated_db(temp_db: ChartsDB) -> ChartsDB:
         ("song-1", "Queen", "Bohemian Rhapsody", "Queen", "queen_bohemian_rhapsody"),
         ("song-2", "The Beatles", "Hey Jude", "Beatles, The", "beatles_hey_jude"),
         ("song-3", "Eagles", "Hotel California", "Eagles", "eagles_hotel_california"),
-        ("song-4", "Led Zeppelin", "Stairway To Heaven", "Led Zeppelin", "led_zeppelin_stairway_to_heaven"),
-        ("song-5", "Pink Floyd", "Wish You Were Here", "Pink Floyd", "pink_floyd_wish_you_were_here"),
+        (
+            "song-4",
+            "Led Zeppelin",
+            "Stairway To Heaven",
+            "Led Zeppelin",
+            "led_zeppelin_stairway_to_heaven",
+        ),
+        (
+            "song-5",
+            "Pink Floyd",
+            "Wish You Were Here",
+            "Pink Floyd",
+            "pink_floyd_wish_you_were_here",
+        ),
     ]
     for song_id, artist, title, artist_sort, work_key in songs:
         conn.execute(
@@ -75,7 +87,14 @@ def populated_db(temp_db: ChartsDB) -> ChartsDB:
         ("entry-2023-1", "run-2023", 1, "Queen", "Bohemian Rhapsody", "song-1"),
         ("entry-2023-2", "run-2023", 2, "Led Zeppelin", "Stairway To Heaven", "song-4"),
         ("entry-2023-3", "run-2023", 3, "Eagles", "Hotel California", "song-3"),
-        ("entry-2023-4", "run-2023", 4, "Pink Floyd", "Wish You Were Here", "song-5"),  # Not in 2024
+        (
+            "entry-2023-4",
+            "run-2023",
+            4,
+            "Pink Floyd",
+            "Wish You Were Here",
+            "song-5",
+        ),  # Not in 2024
         # Top 40 2024-W01
         ("entry-w01-1", "run-t40-w01", 1, "Queen", "Bohemian Rhapsody", "song-1"),
         ("entry-w01-2", "run-t40-w01", 2, "The Beatles", "Hey Jude", "song-2"),

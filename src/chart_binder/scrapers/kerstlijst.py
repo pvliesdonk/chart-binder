@@ -31,7 +31,7 @@ class KerstlijstImporter:
     [
       {
         "artiest": "Wham!",
-        "titel": "Last Christmas",
+        "title": "Last Christmas",
         "hitlists": {
           "spotweb": {
             "2020": 1,
@@ -76,7 +76,7 @@ class KerstlijstImporter:
         """Parse a single song entry from JSON."""
         try:
             artist = item.get("artiest", "").strip()
-            title = item.get("titel", "").strip()
+            title = item.get("title", "").strip()
 
             if not artist or not title:
                 logger.warning(f"Skipping entry with missing artist/title: {item}")
@@ -139,9 +139,7 @@ class KerstlijstImporter:
             years.update(song.positions.keys())
         return years
 
-    def get_entries_by_year(
-        self, songs: list[KerstlijstSong]
-    ) -> dict[int, list[ScrapedEntry]]:
+    def get_entries_by_year(self, songs: list[KerstlijstSong]) -> dict[int, list[ScrapedEntry]]:
         """
         Get chart entries grouped by year.
 
