@@ -27,7 +27,7 @@ from chart_binder.console import (
     print_warning,
     set_console,
 )
-from chart_binder.llm import ReviewAction, ReviewQueue, ReviewSource
+from chart_binder.llm import ReviewAction, ReviewItem, ReviewQueue, ReviewSource
 from chart_binder.safe_logging import configure_rich_logging
 
 # Supported audio file extensions
@@ -64,6 +64,8 @@ charts_app = typer.Typer(help="Chart data scraping and management")
 review_app = typer.Typer(help="Review and resolve indeterminate decisions")
 analytics_app = typer.Typer(help="Cross-chart querying and analytics")
 playlist_app = typer.Typer(help="Generate playlists from chart data")
+override_app = typer.Typer(help="Override management commands")
+llm_app = typer.Typer(help="LLM adjudication commands")
 
 app.add_typer(cache_app, name="cache")
 app.add_typer(coverage_app, name="coverage")
@@ -71,6 +73,8 @@ app.add_typer(charts_app, name="charts")
 app.add_typer(review_app, name="review")
 app.add_typer(analytics_app, name="analytics")
 app.add_typer(playlist_app, name="playlist")
+app.add_typer(override_app, name="override")
+app.add_typer(llm_app, name="llm")
 
 
 # Global state (set by callback)
@@ -100,6 +104,71 @@ def _current_state() -> tuple[Config, OutputFormat]:
 def _reviewed_by() -> str:
     """Resolve reviewed_by identifier for audit logs."""
     return os.getenv("CHART_BINDER_REVIEWED_BY") or getpass.getuser() or "cli_user"
+
+
+def _normalize_scope_id(value: str) -> str:
+    """Normalize scope IDs for consistent override matching."""
+    return value.strip().lower()
+
+
+def _apply_review_action(
+    config: Config,
+    queue: ReviewQueue,
+    item: ReviewItem,
+    *,
+    action: ReviewAction,
+    crg_mbid: str | None = None,
+    rr_mbid: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Apply a review action and persist overrides when needed."""
+    if action == ReviewAction.ACCEPT:
+        action_data = {"crg_mbid": crg_mbid, "rr_mbid": rr_mbid}
+    elif action == ReviewAction.ACCEPT_LLM:
+        action_data = item.llm_suggestion
+    else:
+        action_data = None
+
+    succeeded = queue.complete_review(
+        item.review_id,
+        action=action,
+        action_data=action_data,
+        reviewed_by=_reviewed_by(),
+        notes=notes,
+    )
+
+    if not succeeded:
+        print_error(f"Failed to complete review: {item.review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    target_crg = crg_mbid
+    target_rr = rr_mbid
+    if action == ReviewAction.ACCEPT_LLM and item.llm_suggestion:
+        target_crg = item.llm_suggestion.get("crg_mbid")
+        target_rr = item.llm_suggestion.get("rr_mbid")
+
+    if target_crg:
+        from chart_binder.decisions_db import DecisionsDB
+
+        scope = "file"
+        scope_id = item.file_id
+        if item.work_key:
+            scope = "track"
+            scope_id = _normalize_scope_id(item.work_key)
+
+        if scope_id:
+            db = DecisionsDB(config.database.decisions_path)
+            db.create_override(
+                scope=scope,
+                scope_id=scope_id,
+                override_type="crg",
+                target_crg_mbid=target_crg,
+                target_rr_mbid=target_rr,
+                note=notes or "Manual review accept",
+                created_by="cli_user",
+            )
+
+
 def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
     """Collect audio files from paths (files or directories).
 
@@ -524,9 +593,11 @@ def decide(
     from chart_binder.musicgraph import MusicGraphDB
     from chart_binder.normalize import Normalizer
     from chart_binder.resolver import (
+        CanonicalDecision,
         ConfigSnapshot,
         CRGRationale,
         DecisionState,
+        DecisionTrace,
         Resolver,
         RRRationale,
     )
@@ -547,6 +618,10 @@ def decide(
             logger.debug(f"Initialized decisions DB at {config.database.decisions_path}")
         except Exception as e:
             logger.warning(f"Could not initialize decisions DB: {e}")
+
+    review_queue: ReviewQueue | None = None
+    if config.llm.enabled and config.llm.review_queue_path:
+        review_queue = ReviewQueue(config.llm.review_queue_path)
 
     # Create resolver with config
     resolver_config = ConfigSnapshot(
@@ -596,9 +671,7 @@ def decide(
 
         adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
         auto_accept_threshold = config.llm.auto_accept_threshold
-        logger.info(
-            f"LLM adjudication enabled using ReAct pattern (auto-accept threshold: {auto_accept_threshold})"
-        )
+        logger.info("LLM adjudication enabled using ReAct pattern (advisory mode; review required)")
 
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
@@ -617,6 +690,15 @@ def decide(
 
                 # Get or calculate fingerprint for stable identity
                 fingerprint, duration_sec = _get_or_calc_fingerprint(audio_file, tagset, logger)
+
+                file_id_for_review = None
+                if fingerprint and duration_sec:
+                    file_id_for_review = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+                else:
+                    stat = audio_file.stat()
+                    file_id_for_review = DecisionsDB.generate_file_id_fallback(
+                        audio_file, stat.st_size, stat.st_mtime
+                    )
 
                 # Source 1: Existing MB IDs from tags (as evidence, not gospel)
                 if tagset.ids.mb_recording_id:
@@ -732,7 +814,77 @@ def decide(
                     evidence_bundle_obj, audio_file, tagset, musicgraph_db
                 )
 
-                decision = resolver.resolve(evidence_bundle)
+                decision = None
+                override = None
+                if decisions_db:
+                    file_id_override = None
+                    if fingerprint and duration_sec:
+                        file_id_override = DecisionsDB.generate_file_id(fingerprint, duration_sec)
+
+                    override = decisions_db.get_applicable_override(
+                        file_id=file_id_override,
+                        artist=tagset.artist,
+                        title=tagset.title,
+                    )
+
+                if override:
+                    override_crg, override_rr = DecisionsDB.extract_override_targets(override)
+                    if override_crg:
+                        trace = DecisionTrace(config_snapshot=resolver_config)
+                        trace.evidence_hash = resolver._hash_evidence(evidence_bundle)
+                        trace.considered_candidates = resolver._build_candidate_list(
+                            evidence_bundle
+                        )
+                        trace.artist_origin_country = evidence_bundle.get("artist", {}).get(
+                            "begin_area_country"
+                        ) or evidence_bundle.get("artist", {}).get("wikidata_country")
+                        trace.crg_selection = {
+                            "rule": CRGRationale.MANUAL_OVERRIDE,
+                            "override_id": override.get("override_id"),
+                            "scope": override.get("scope"),
+                        }
+
+                        rr_mbid = override_rr
+                        rr_rationale = (
+                            RRRationale.MANUAL_OVERRIDE if rr_mbid else RRRationale.INDETERMINATE
+                        )
+
+                        if not rr_mbid:
+                            rr_result = resolver._select_rr(
+                                evidence_bundle, override_crg, trace.artist_origin_country, trace
+                            )
+                            if rr_result["state"] != DecisionState.INDETERMINATE:
+                                rr_mbid = rr_result["rr_mbid"]
+                                rr_rationale = rr_result["rationale"]
+                                trace.rr_selection = {
+                                    "rule": rr_rationale,
+                                    **{
+                                        k: v
+                                        for k, v in rr_result.items()
+                                        if k not in ["rr_mbid", "rationale", "state"]
+                                    },
+                                }
+                            else:
+                                trace.rr_selection = rr_result
+                                trace.missing_facts.extend(rr_result.get("missing_facts", []))
+                        else:
+                            trace.rr_selection = {
+                                "rule": rr_rationale,
+                                "override_id": override.get("override_id"),
+                            }
+
+                        decision = CanonicalDecision(
+                            state=DecisionState.DECIDED if rr_mbid else DecisionState.INDETERMINATE,
+                            release_group_mbid=override_crg,
+                            release_mbid=rr_mbid,
+                            crg_rationale=CRGRationale.MANUAL_OVERRIDE,
+                            rr_rationale=rr_rationale if rr_mbid else RRRationale.INDETERMINATE,
+                            decision_trace=trace,
+                        )
+                        decision.compact_tag = trace.to_compact_tag()
+
+                if decision is None:
+                    decision = resolver.resolve(evidence_bundle)
 
                 # If decision is INDETERMINATE and LLM adjudication is enabled, try to adjudicate
                 llm_adjudicated = False
@@ -756,30 +908,35 @@ def decide(
                         llm_confidence = adjudication_result.confidence
                         llm_rationale = adjudication_result.rationale
 
-                        # If high confidence, auto-accept and update decision
-                        if (
-                            adjudication_result.outcome != AdjudicationOutcome.ERROR
-                            and adjudication_result.confidence >= auto_accept_threshold
+                        if adjudication_result.outcome in (
+                            AdjudicationOutcome.ACCEPTED,
+                            AdjudicationOutcome.REVIEW,
                         ):
-                            decision.state = DecisionState.DECIDED
-                            decision.release_group_mbid = adjudication_result.crg_mbid
-                            decision.release_mbid = adjudication_result.rr_mbid
-                            decision.crg_rationale = CRGRationale.LLM_ADJUDICATION
-                            decision.rr_rationale = RRRationale.LLM_ADJUDICATION
-                            # Update decision trace to reflect LLM adjudication
-                            decision.decision_trace.crg_selection = {
-                                "rule": str(CRGRationale.LLM_ADJUDICATION),
-                                "confidence": adjudication_result.confidence,
-                                "rationale": adjudication_result.rationale,
-                            }
-                            decision.decision_trace.rr_selection = {
-                                "rule": str(RRRationale.LLM_ADJUDICATION),
-                            }
-                            llm_adjudicated = True
-                            logger.info(
-                                f"LLM adjudicated: CRG={adjudication_result.crg_mbid}, "
-                                f"confidence={adjudication_result.confidence:.2f}"
-                            )
+                            if review_queue:
+                                suggestion = {
+                                    "crg_mbid": adjudication_result.crg_mbid,
+                                    "rr_mbid": adjudication_result.rr_mbid,
+                                    "confidence": adjudication_result.confidence,
+                                    "rationale": adjudication_result.rationale,
+                                    "model_id": adjudication_result.model_id,
+                                    "adjudication_id": adjudication_result.adjudication_id,
+                                }
+                                work_key = f"{tagset.artist or ''} // {tagset.title or ''}".strip()
+                                review_queue.add_item(
+                                    file_id=file_id_for_review or "",
+                                    work_key=work_key,
+                                    source=ReviewSource.LLM_REVIEW,
+                                    evidence_bundle=evidence_bundle,
+                                    decision_trace=decision_trace_dict,
+                                    llm_suggestion=suggestion,
+                                )
+                                logger.info(
+                                    f"Queued LLM suggestion for review: {work_key} (confidence={adjudication_result.confidence:.2f})"
+                                )
+                            else:
+                                logger.warning(
+                                    "LLM suggestion generated but no review queue is configured."
+                                )
                         else:
                             logger.debug(
                                 f"LLM confidence {adjudication_result.confidence:.2f} "
@@ -2074,23 +2231,12 @@ def review_list(
     """List items needing review."""
     config, output_format = _current_state()
     queue = ReviewQueue(config.llm.review_queue_path)
-<<<<<<< HEAD
     try:
         source_filter = ReviewSource(source) if source else None
     except ValueError:
         valid = ", ".join([s.value for s in ReviewSource])
         print_error(f"Invalid review source: '{source}'. Valid options are: {valid}")
         raise typer.Exit(code=ExitCode.ERROR) from None
-||||||| parent of f7a0c16 (feat(review): wire typer commands and queue review)
-    # TODO: Implement review list command
-    # This command lists entries needing human review from the review queue
-    # See cli.py:review_list for implementation (if exists)
-    print_error("review list command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
-=======
-    source_filter = ReviewSource(source) if source else None
->>>>>>> f7a0c16 (feat(review): wire typer commands and queue review)
     items = queue.get_pending(source=source_filter, limit=limit)
 
     if output_format == OutputFormat.JSON:
@@ -2124,6 +2270,13 @@ def review_list(
 @review_app.command("show")
 def review_show(
     review_id: Annotated[str, typer.Argument(help="Review ID")],
+    interactive: Annotated[
+        bool,
+        typer.Option(
+            "--interactive/--no-interactive",
+            help="Prompt for action after showing review details",
+        ),
+    ] = False,
 ) -> None:
     """Show details for a review item."""
     config, output_format = _current_state()
@@ -2153,6 +2306,49 @@ def review_show(
     else:
         cprint(item.to_display())
 
+    if output_format == OutputFormat.TEXT and interactive:
+        action = typer.prompt(
+            "Action (accept/accept-llm/skip/exit)",
+            default="exit",
+        ).strip()
+
+        if action == "accept":
+            crg_mbid = typer.prompt("CRG MBID").strip()
+            rr_mbid = typer.prompt("RR MBID (optional)", default="").strip() or None
+            notes = typer.prompt("Notes (optional)", default="").strip() or None
+            _apply_review_action(
+                config,
+                queue,
+                item,
+                action=ReviewAction.ACCEPT,
+                crg_mbid=crg_mbid,
+                rr_mbid=rr_mbid,
+                notes=notes,
+            )
+        elif action == "accept-llm":
+            if not item.llm_suggestion:
+                print_error("No LLM suggestion available for this review.")
+                raise typer.Exit(code=ExitCode.ERROR)
+            notes = typer.prompt("Notes (optional)", default="").strip() or None
+            _apply_review_action(
+                config,
+                queue,
+                item,
+                action=ReviewAction.ACCEPT_LLM,
+                notes=notes,
+            )
+        elif action == "skip":
+            notes = typer.prompt("Reason for skipping (optional)", default="").strip() or None
+            _apply_review_action(
+                config,
+                queue,
+                item,
+                action=ReviewAction.SKIP,
+                notes=notes,
+            )
+        else:
+            raise typer.Exit(code=ExitCode.SUCCESS)
+
     raise typer.Exit(code=ExitCode.SUCCESS)
 
 
@@ -2166,32 +2362,56 @@ def review_accept(
     """Accept a specific CRG for a review item."""
     config, output_format = _current_state()
     queue = ReviewQueue(config.llm.review_queue_path)
-    succeeded = queue.complete_review(
-        review_id,
+    item = queue.get_item(review_id)
+
+    if not item:
+        print_error(f"Review item not found: {review_id}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    _apply_review_action(
+        config,
+        queue,
+        item,
         action=ReviewAction.ACCEPT,
-        action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
-<<<<<<< HEAD
-        reviewed_by=_reviewed_by(),
-||||||| parent of f7a0c16 (feat(review): wire typer commands and queue review)
-    # TODO: Implement review accept command
-    # This command accepts a review decision and updates the database
-    print_error("review accept command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
-=======
-        reviewed_by="cli_user",
->>>>>>> f7a0c16 (feat(review): wire typer commands and queue review)
+        crg_mbid=crg_mbid,
+        rr_mbid=rr_mbid,
         notes=notes,
     )
-
-    if not succeeded:
-        print_error(f"Failed to complete review: {review_id}")
-        raise typer.Exit(code=ExitCode.ERROR)
 
     if output_format == OutputFormat.JSON:
         cprint(json.dumps({"status": "accepted", "review_id": review_id}, indent=2))
     else:
         print_success(f"Accepted review {review_id[:8]}... with CRG {crg_mbid}")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+@review_app.command("accept-llm")
+def review_accept_llm(
+    review_id: Annotated[str, typer.Argument(help="Review ID")],
+    notes: Annotated[str | None, typer.Option(help="Review notes")] = None,
+) -> None:
+    """Accept the LLM suggestion for a review item."""
+    config, output_format = _current_state()
+    queue = ReviewQueue(config.llm.review_queue_path)
+    item = queue.get_item(review_id)
+
+    if not item or not item.llm_suggestion:
+        print_error(f"No LLM suggestion for review: {review_id}")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    _apply_review_action(
+        config,
+        queue,
+        item,
+        action=ReviewAction.ACCEPT_LLM,
+        notes=notes,
+    )
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"status": "accepted_llm", "review_id": review_id}, indent=2))
+    else:
+        print_success(f"Accepted LLM suggestion for review {review_id[:8]}...")
 
     raise typer.Exit(code=ExitCode.SUCCESS)
 
@@ -2204,31 +2424,207 @@ def review_reject(
     """Reject/skip a review item."""
     config, output_format = _current_state()
     queue = ReviewQueue(config.llm.review_queue_path)
-    succeeded = queue.complete_review(
-        review_id,
+    item = queue.get_item(review_id)
+
+    if not item:
+        print_error(f"Review item not found: {review_id}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    _apply_review_action(
+        config,
+        queue,
+        item,
         action=ReviewAction.SKIP,
-<<<<<<< HEAD
-        reviewed_by=_reviewed_by(),
-||||||| parent of f7a0c16 (feat(review): wire typer commands and queue review)
-    # TODO: Implement review reject command
-    # This command rejects/skips a review item
-    print_error("review reject command not yet implemented in Typer CLI")
-    print_error("Review system commands are lower priority - contribute if needed!")
-    raise typer.Exit(code=ExitCode.ERROR)
-=======
-        reviewed_by="cli_user",
->>>>>>> f7a0c16 (feat(review): wire typer commands and queue review)
         notes=notes,
     )
-
-    if not succeeded:
-        print_error(f"Failed to skip review: {review_id}")
-        raise typer.Exit(code=ExitCode.ERROR)
 
     if output_format == OutputFormat.JSON:
         cprint(json.dumps({"status": "skipped", "review_id": review_id}, indent=2))
     else:
         print_success(f"Skipped review {review_id[:8]}...")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+# ====================================================================
+# OVERRIDE COMMANDS
+# ====================================================================
+
+
+@override_app.command("add")
+def override_add(
+    file_id: Annotated[str | None, typer.Option("--file-id", help="File ID to override")] = None,
+    artist: Annotated[str | None, typer.Option(help="Artist name for scope")] = None,
+    title: Annotated[str | None, typer.Option(help="Track title for scope")] = None,
+    crg_mbid: Annotated[str, typer.Option("--crg", help="CRG MBID to force")] = "",
+    rr_mbid: Annotated[str | None, typer.Option("--rr", help="RR MBID to force")] = None,
+    reason: Annotated[str, typer.Option(help="Reason for override")] = "",
+) -> None:
+    """Add an override rule."""
+    config, output_format = _current_state()
+
+    scope = None
+    scope_id = None
+
+    if file_id:
+        scope = "file"
+        scope_id = file_id
+    elif artist and title:
+        scope = "track"
+        scope_id = _normalize_scope_id(f"{artist} // {title}")
+    elif artist:
+        scope = "artist"
+        scope_id = _normalize_scope_id(artist)
+
+    if not scope or not scope_id:
+        print_error("Provide --file-id, or --artist with --title, or --artist for overrides.")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    if not crg_mbid:
+        print_error("--crg is required for overrides.")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    if not reason:
+        print_error("--reason is required for overrides.")
+        raise typer.Exit(code=ExitCode.ERROR)
+
+    from chart_binder.decisions_db import DecisionsDB
+
+    db = DecisionsDB(config.database.decisions_path)
+    override_id = db.create_override(
+        scope=scope,
+        scope_id=scope_id,
+        override_type="crg",
+        target_crg_mbid=crg_mbid,
+        target_rr_mbid=rr_mbid,
+        note=reason,
+        created_by="cli_user",
+    )
+
+    if output_format == OutputFormat.JSON:
+        cprint(
+            json.dumps(
+                {
+                    "override_id": override_id,
+                    "scope": scope,
+                    "scope_id": scope_id,
+                    "crg_mbid": crg_mbid,
+                    "rr_mbid": rr_mbid,
+                    "reason": reason,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print_success(f"Override created: {override_id[:8]}... ({scope})")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+@override_app.command("list")
+def override_list(
+    scope: Annotated[str | None, typer.Option(help="Filter by scope")] = None,
+    scope_id: Annotated[str | None, typer.Option(help="Filter by scope ID")] = None,
+) -> None:
+    """List override rules."""
+    config, output_format = _current_state()
+    from chart_binder.decisions_db import DecisionsDB
+
+    db = DecisionsDB(config.database.decisions_path)
+    overrides = db.list_override_rules(scope=scope, scope_id=scope_id)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(overrides, indent=2))
+    else:
+        if not overrides:
+            print_success("No override rules found.")
+            raise typer.Exit(code=ExitCode.SUCCESS)
+
+        cprint(f"Override Rules ({len(overrides)}):")
+        cprint("=" * 60)
+        for rule in overrides:
+            crg_mbid, rr_mbid = DecisionsDB.extract_override_targets(rule)
+            cprint(f"ID:    {rule.get('override_id', '')[:8]}...")
+            cprint(f"Scope: {rule.get('scope')} ({rule.get('scope_id')})")
+            if crg_mbid:
+                cprint(f"CRG:   {crg_mbid}")
+            if rr_mbid:
+                cprint(f"RR:    {rr_mbid}")
+            if rule.get("note"):
+                cprint(f"Note:  {rule.get('note')}")
+            cprint("=" * 60)
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+@override_app.command("remove")
+def override_remove(
+    override_id: Annotated[str, typer.Argument(help="Override ID to remove")],
+) -> None:
+    """Remove an override rule."""
+    config, output_format = _current_state()
+    from chart_binder.decisions_db import DecisionsDB
+
+    db = DecisionsDB(config.database.decisions_path)
+    removed = db.delete_override_rule(override_id)
+
+    if not removed:
+        print_error(f"Override not found: {override_id}")
+        raise typer.Exit(code=ExitCode.NO_RESULTS)
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps({"removed": True, "override_id": override_id}, indent=2))
+    else:
+        print_success(f"Override removed: {override_id[:8]}...")
+
+    raise typer.Exit(code=ExitCode.SUCCESS)
+
+
+# ====================================================================
+# LLM COMMANDS
+# ====================================================================
+
+
+@llm_app.command("status")
+def llm_status() -> None:
+    """Show LLM configuration and provider status."""
+    config, output_format = _current_state()
+    from chart_binder.llm import ProviderRegistry
+
+    registry = ProviderRegistry()
+    provider_config = {
+        "provider": config.llm.provider,
+        "model_id": config.llm.model_id,
+        "ollama_base_url": config.llm.ollama_base_url,
+        "api_key_env": config.llm.api_key_env,
+    }
+    provider = registry.create_from_config(provider_config)
+
+    result = {
+        "enabled": config.llm.enabled,
+        "provider": config.llm.provider,
+        "model_id": config.llm.model_id,
+        "provider_available": provider.is_available(),
+        "auto_accept_threshold": config.llm.auto_accept_threshold,
+        "review_threshold": config.llm.review_threshold,
+        "timeout_s": config.llm.timeout_s,
+        "max_tokens": config.llm.max_tokens,
+    }
+
+    if output_format == OutputFormat.JSON:
+        cprint(json.dumps(result, indent=2))
+    else:
+        cprint("LLM Configuration Status")
+        cprint("=" * 40)
+        cprint(f"  Enabled: {result['enabled']}")
+        cprint(f"  Provider: {result['provider']}")
+        cprint(f"  Model: {result['model_id']}")
+        status_icon = "✔︎" if result["provider_available"] else "✘"
+        cprint(f"  Provider Available: {status_icon}")
+        cprint(f"  Auto-accept Threshold: {result['auto_accept_threshold']}")
+        cprint(f"  Review Threshold: {result['review_threshold']}")
+        cprint(f"  Timeout: {result['timeout_s']}s")
+        cprint(f"  Max Tokens: {result['max_tokens']}")
 
     raise typer.Exit(code=ExitCode.SUCCESS)
 
