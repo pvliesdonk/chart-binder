@@ -1396,7 +1396,7 @@ def charts_scrape(
     # Check entry count sanity
     if not result.is_valid:
         msg = (
-            f"⚠ Entry count sanity check failed: got {result.actual_count}, "
+            f"⚠ Entry count sanity check failed: got {result.rank_count} ranks, "
             f"expected ~{result.expected_count} (shortage: {result.shortage})"
         )
         if strict:
@@ -1461,6 +1461,7 @@ def charts_scrape(
         "chart_db_id": chart_db_id,
         "period": period,
         "entries_count": result.actual_count,
+        "rank_count": result.rank_count,
         "expected_count": result.expected_count,
         "is_valid": result.is_valid,
         "continuity_overlap": result.continuity_overlap,
@@ -1480,7 +1481,8 @@ def charts_scrape(
         output.write_text(json.dumps(entries_list, indent=2, ensure_ascii=False))
         if output_format == OutputFormat.TEXT:
             click.echo(
-                f"✔︎ Scraped {result.actual_count}/{result.expected_count} entries to {output}"
+                f"✔︎ Scraped {result.rank_count}/{result.expected_count} ranks, "
+                f"{result.actual_count} entries to {output}"
             )
         elif output_format == OutputFormat.JSON:
             click.echo(json.dumps({"status": "success", "output_file": str(output)}, indent=2))
@@ -1490,7 +1492,8 @@ def charts_scrape(
         else:
             status = "✔︎" if result.is_valid else "⚠"
             click.echo(
-                f"{status} Scraped {result.actual_count}/{result.expected_count} entries for {chart_type} {period}"
+                f"{status} Scraped {result.rank_count}/{result.expected_count} ranks, "
+                f"{result.actual_count} entries for {chart_type} {period}"
             )
             click.echo("\nFirst 10 entries:")
             for rank, artist, title in result.entries[:10]:
@@ -1515,7 +1518,10 @@ def charts_scrape(
         run_id = etl.ingest(chart_db_id, period, entries_for_ingest)
 
         if output_format == OutputFormat.TEXT:
-            click.echo(f"✔︎ Ingested {result.actual_count} entries (run_id: {run_id[:8]}...)")
+            click.echo(
+                f"✔︎ Ingested {result.rank_count} ranks, {result.actual_count} entries "
+                f"(run_id: {run_id[:8]}...)"
+            )
         elif output_format == OutputFormat.JSON:
             click.echo(json.dumps({"ingested": True, "run_id": run_id}, indent=2))
 
@@ -1562,9 +1568,10 @@ def charts_scrape_missing(
     scraper_cls, chart_db_id = SCRAPER_REGISTRY[chart_type]
 
     # Determine year range
-    current_year = datetime.datetime.now().year
-    if end_year is None:
-        end_year = current_year
+    today = datetime.date.today()
+    current_iso_year, current_iso_week, _ = today.isocalendar()
+    if end_year is None or end_year > current_iso_year:
+        end_year = current_iso_year
 
     # Set default start years per chart type
     default_start_years = {
@@ -1586,8 +1593,10 @@ def charts_scrape_missing(
     if chart_type == "t40":
         # Weekly chart - generate YYYY-Www for each week
         for year in range(start_year, end_year + 1):
-            # Approximately 52 weeks per year
-            for week in range(1, 53):
+            last_week = datetime.date(year, 12, 28).isocalendar().week
+            if year == current_iso_year:
+                last_week = min(last_week, current_iso_week)
+            for week in range(1, last_week + 1):
                 expected_periods.append(f"{year}-W{week:02d}")
     else:
         # Yearly charts
@@ -1665,7 +1674,7 @@ def charts_scrape_missing(
                     failed += 1
                     click.echo(
                         f"  [{i}/{len(missing_periods)}] {period}: ✘ sanity check failed "
-                        f"({result.actual_count}/{result.expected_count})"
+                        f"({result.rank_count}/{result.expected_count} ranks, {result.actual_count} entries)"
                     )
                     continue
 
@@ -1674,7 +1683,7 @@ def charts_scrape_missing(
                 if output_format == OutputFormat.TEXT:
                     click.echo(
                         f"  [{i}/{len(missing_periods)}] {period}: {status} "
-                        f"{result.actual_count}/{result.expected_count} entries"
+                        f"{result.rank_count}/{result.expected_count} ranks, {result.actual_count} entries"
                     )
 
                 # Ingest if requested
