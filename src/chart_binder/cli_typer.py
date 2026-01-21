@@ -5,8 +5,10 @@ Modern CLI with beautiful output, type-safe commands, and integrated progress tr
 
 from __future__ import annotations
 
+import getpass
 import json
 import logging
+import os
 import sqlite3
 import sys
 from enum import StrEnum
@@ -93,6 +95,11 @@ def _current_state() -> tuple[Config, OutputFormat]:
         raise typer.Exit(code=ExitCode.ERROR)
 
     return cfg, output
+
+
+def _reviewed_by() -> str:
+    """Resolve reviewed_by identifier for audit logs."""
+    return os.getenv("CHART_BINDER_REVIEWED_BY") or getpass.getuser() or "cli_user"
 
 
 def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
@@ -1290,7 +1297,9 @@ def coverage_missing(
 
 @coverage_app.command("indeterminate")
 def coverage_indeterminate(
-    chart_id: Annotated[str | None, typer.Option("--chart", "-c", help="Filter by chart ID")] = None,
+    chart_id: Annotated[
+        str | None, typer.Option("--chart", "-c", help="Filter by chart ID")
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", "-n", help="Maximum results")] = 50,
 ) -> None:
     """List indeterminate decisions requiring review.
@@ -2067,7 +2076,12 @@ def review_list(
     """List items needing review."""
     config, output_format = _current_state()
     queue = ReviewQueue(config.llm.review_queue_path)
-    source_filter = ReviewSource(source) if source else None
+    try:
+        source_filter = ReviewSource(source) if source else None
+    except ValueError:
+        valid = ", ".join([s.value for s in ReviewSource])
+        print_error(f"Invalid review source: '{source}'. Valid options are: {valid}")
+        raise typer.Exit(code=ExitCode.ERROR) from None
     items = queue.get_pending(source=source_filter, limit=limit)
 
     if output_format == OutputFormat.JSON:
@@ -2147,7 +2161,7 @@ def review_accept(
         review_id,
         action=ReviewAction.ACCEPT,
         action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
-        reviewed_by="cli_user",
+        reviewed_by=_reviewed_by(),
         notes=notes,
     )
 
@@ -2174,7 +2188,7 @@ def review_reject(
     succeeded = queue.complete_review(
         review_id,
         action=ReviewAction.SKIP,
-        reviewed_by="cli_user",
+        reviewed_by=_reviewed_by(),
         notes=notes,
     )
 
@@ -2232,7 +2246,9 @@ def analytics_history(
     history = analytics.get_song_chart_history(song.song_id)
 
     if not history:
-        print_warning(f"Song found but has no chart appearances: {song.artist_canonical} - {song.title_canonical}")
+        print_warning(
+            f"Song found but has no chart appearances: {song.artist_canonical} - {song.title_canonical}"
+        )
         raise typer.Exit(code=ExitCode.NO_RESULTS)
 
     result = {
@@ -2443,13 +2459,27 @@ def analytics_lookup(
 
 @playlist_app.command("generate")
 def playlist_generate(
-    chart_period: Annotated[str, typer.Argument(help="Chart and period (chart_id:period, e.g., 'nl_top2000:2024')")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path("playlist.m3u"),
-    format: Annotated[str, typer.Option("--format", "-f", help="Playlist format (m3u or m3u8)")] = "m3u",
-    music_library: Annotated[Path | None, typer.Option("--library", "-l", help="Path to music library")] = None,
-    beets_db: Annotated[Path | None, typer.Option("--beets", "-b", help="Path to beets database")] = None,
-    relative_paths: Annotated[bool, typer.Option("--relative", "-r", help="Use relative paths")] = False,
-    show_missing: Annotated[bool, typer.Option("--show-missing", help="Show missing entries report")] = False,
+    chart_period: Annotated[
+        str, typer.Argument(help="Chart and period (chart_id:period, e.g., 'nl_top2000:2024')")
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path(
+        "playlist.m3u"
+    ),
+    format: Annotated[
+        str, typer.Option("--format", "-f", help="Playlist format (m3u or m3u8)")
+    ] = "m3u",
+    music_library: Annotated[
+        Path | None, typer.Option("--library", "-l", help="Path to music library")
+    ] = None,
+    beets_db: Annotated[
+        Path | None, typer.Option("--beets", "-b", help="Path to beets database")
+    ] = None,
+    relative_paths: Annotated[
+        bool, typer.Option("--relative", "-r", help="Use relative paths")
+    ] = False,
+    show_missing: Annotated[
+        bool, typer.Option("--show-missing", help="Show missing entries report")
+    ] = False,
 ) -> None:
     """Generate M3U/M3U8 playlist from a chart run.
 
@@ -2493,7 +2523,9 @@ def playlist_generate(
 
     if not lib_path and not beets_path:
         print_warning("No music library or beets database configured.")
-        print_warning("Set MUSIC_LIBRARY or BEETS_CONFIG environment variables, or use --library/--beets options.")
+        print_warning(
+            "Set MUSIC_LIBRARY or BEETS_CONFIG environment variables, or use --library/--beets options."
+        )
 
     # Create generator
     db = ChartsDB(config.database.charts_path)
@@ -2546,7 +2578,9 @@ def playlist_generate(
         cprint(f"  Output: {result.output_path}")
         cprint(f"  Format: {playlist_format.value}")
         cprint("")
-        cprint(f"  [green]Found:[/green] {result.found}/{result.total} entries ({result.coverage_pct:.1f}% coverage)")
+        cprint(
+            f"  [green]Found:[/green] {result.found}/{result.total} entries ({result.coverage_pct:.1f}% coverage)"
+        )
 
         if result.missing:
             cprint(f"  [yellow]Missing:[/yellow] {len(result.missing)} entries")
@@ -2656,7 +2690,9 @@ def playlist_info(
         if link_pct < 50:
             print_warning("Low song linkage. Run 'canon charts link' to improve coverage.")
         elif mbid_pct < link_pct * 0.5:
-            print_warning("Many linked songs missing MBIDs. Run 'canon charts enrich' to add MBIDs.")
+            print_warning(
+                "Many linked songs missing MBIDs. Run 'canon charts enrich' to add MBIDs."
+            )
 
     raise typer.Exit(code=ExitCode.SUCCESS)
 

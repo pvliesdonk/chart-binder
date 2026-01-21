@@ -86,7 +86,6 @@ def resolve_artist_title(
     """
     from chart_binder.candidates import CandidateBuilder
     from chart_binder.fetcher import FetcherConfig, FetchMode, UnifiedFetcher
-    from chart_binder.llm import ReviewQueue, ReviewSource
     from chart_binder.musicgraph import MusicGraphDB
     from chart_binder.normalize import Normalizer
     from chart_binder.resolver import (
@@ -149,6 +148,7 @@ def resolve_artist_title(
             auto_accept_threshold,
             fingerprint,
             duration_sec,
+            config,
         )
     else:
         # Create new fetcher for one-off resolution
@@ -164,6 +164,7 @@ def resolve_artist_title(
                 auto_accept_threshold,
                 fingerprint,
                 duration_sec,
+                config,
             )
 
 
@@ -178,6 +179,7 @@ def _resolve_with_fetcher(
     auto_accept_threshold: float,
     fingerprint: str | None,
     duration_sec: float | None,
+    config: Config,
 ) -> ResolutionResult:
     """
     Internal helper to resolve artist/title using a provided fetcher.
@@ -324,6 +326,7 @@ def _resolve_with_fetcher(
             import sys
 
             from chart_binder.llm.adjudicator import AdjudicationOutcome
+            from chart_binder.llm.review_queue import ReviewQueue, ReviewSource
 
             review_queue: ReviewQueue | None = None
             if config.llm.review_queue_path:
