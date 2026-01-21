@@ -283,6 +283,42 @@ def _resolve_with_fetcher(
     # Convert to dict format
     evidence_bundle = _convert_evidence_bundle(evidence_bundle_obj, artist, title, musicgraph_db)
 
+    # Apply overrides before resolver rules
+    override_result = None
+    if config.database.decisions_path:
+        from chart_binder.decisions_db import DecisionsDB
+
+        decisions_db = DecisionsDB(config.database.decisions_path)
+        override = decisions_db.get_applicable_override(
+            file_id=None,
+            artist=artist,
+            title=title,
+        )
+        if override:
+            crg_mbid, rr_mbid = decisions_db.extract_override_targets(override)
+            if crg_mbid:
+                override_result = ResolutionResult(
+                    state=DecisionState.DECIDED.value,
+                    crg_mbid=crg_mbid,
+                    rr_mbid=rr_mbid,
+                    crg_rationale=str(CRGRationale.MANUAL_OVERRIDE),
+                    rr_rationale=str(RRRationale.MANUAL_OVERRIDE) if rr_mbid else None,
+                    confidence=1.0,
+                    trace=f"manual_override:{override.get('override_id')}",
+                    evidence_bundle=evidence_bundle,
+                )
+
+                for rec in evidence_bundle.get("recording_candidates", []):
+                    for rg in rec.get("rg_candidates", []):
+                        if rg.get("mb_rg_id") == crg_mbid:
+                            override_result.recording_mbid = rec.get("mb_recording_mbid")
+                            break
+                    if override_result.recording_mbid:
+                        break
+
+    if override_result:
+        return override_result
+
     # Resolve
     decision = resolver.resolve(evidence_bundle)
 
@@ -327,7 +363,7 @@ def _resolve_with_fetcher(
             import sys
 
             from chart_binder.llm.adjudicator import AdjudicationOutcome
-            from chart_binder.llm.review_queue import ReviewQueue, ReviewSource
+            from chart_binder.llm import ReviewQueue, ReviewSource
 
             review_queue: ReviewQueue | None = None
             if config.llm.review_queue_path:

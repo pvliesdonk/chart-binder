@@ -207,7 +207,7 @@ class DecisionsDB:
                 override_id TEXT PRIMARY KEY,
                 scope TEXT NOT NULL,
                 scope_id TEXT NOT NULL,
-                directive TEXT NOT NULL,
+                directive TEXT,
                 note TEXT,
                 created_by TEXT,
                 created_at REAL NOT NULL
@@ -228,6 +228,30 @@ class DecisionsDB:
 
         conn.commit()
         conn.close()
+        self._ensure_override_columns()
+
+    def _ensure_override_columns(self) -> None:
+        """Ensure override_rule has structured override columns."""
+        with self._db_connection() as conn:
+            cursor = conn.execute("PRAGMA table_info(override_rule)")
+            columns = {row[1] for row in cursor.fetchall()}
+            updates: list[str] = []
+
+            if "override_type" not in columns:
+                updates.append("ALTER TABLE override_rule ADD COLUMN override_type TEXT")
+            if "target_crg_mbid" not in columns:
+                updates.append("ALTER TABLE override_rule ADD COLUMN target_crg_mbid TEXT")
+            if "target_rr_mbid" not in columns:
+                updates.append("ALTER TABLE override_rule ADD COLUMN target_rr_mbid TEXT")
+            if "target_label" not in columns:
+                updates.append("ALTER TABLE override_rule ADD COLUMN target_label TEXT")
+            if "override_behavior" not in columns:
+                updates.append("ALTER TABLE override_rule ADD COLUMN override_behavior TEXT")
+
+            for statement in updates:
+                conn.execute(statement)
+            if updates:
+                conn.commit()
 
     @staticmethod
     def generate_file_id(fingerprint: str, duration_sec: int) -> str:
@@ -521,6 +545,58 @@ class DecisionsDB:
             conn.commit()
             return override_id
 
+    def create_override(
+        self,
+        scope: str,
+        scope_id: str,
+        override_type: str,
+        target_crg_mbid: str | None = None,
+        target_rr_mbid: str | None = None,
+        target_label: str | None = None,
+        override_behavior: str | None = None,
+        note: str | None = None,
+        created_by: str | None = None,
+    ) -> str:
+        """Create a structured override rule."""
+        override_id = str(uuid.uuid4())
+        now = time.time()
+
+        with self._db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO override_rule
+                    (
+                        override_id,
+                        scope,
+                        scope_id,
+                        override_type,
+                        target_crg_mbid,
+                        target_rr_mbid,
+                        target_label,
+                        override_behavior,
+                        note,
+                        created_by,
+                        created_at
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    override_id,
+                    scope,
+                    scope_id,
+                    override_type,
+                    target_crg_mbid,
+                    target_rr_mbid,
+                    target_label,
+                    override_behavior,
+                    note,
+                    created_by,
+                    now,
+                ),
+            )
+            conn.commit()
+            return override_id
+
     def get_override_rules(self, scope: str, scope_id: str) -> list[dict[str, Any]]:
         """Get override rules for a given scope."""
         with self._db_connection() as conn:
@@ -535,6 +611,105 @@ class DecisionsDB:
                 (scope, scope_id),
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def list_override_rules(
+        self,
+        scope: str | None = None,
+        scope_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List override rules with optional filtering."""
+        with self._db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            if scope and scope_id:
+                cursor.execute(
+                    """
+                    SELECT * FROM override_rule
+                    WHERE scope = ? AND scope_id = ?
+                    ORDER BY created_at DESC
+                    """,
+                    (scope, scope_id),
+                )
+            elif scope:
+                cursor.execute(
+                    """
+                    SELECT * FROM override_rule
+                    WHERE scope = ?
+                    ORDER BY created_at DESC
+                    """,
+                    (scope,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT * FROM override_rule
+                    ORDER BY created_at DESC
+                    """
+                )
+
+            return [dict(row) for row in cursor.fetchall()]
+
+    def delete_override_rule(self, override_id: str) -> bool:
+        """Delete an override rule by ID."""
+        with self._db_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM override_rule WHERE override_id = ?",
+                (override_id,),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_applicable_override(
+        self,
+        *,
+        file_id: str | None,
+        artist: str | None,
+        title: str | None,
+    ) -> dict[str, Any] | None:
+        """Return the highest-priority override for the given context."""
+        scopes: list[tuple[str, str]] = []
+
+        if file_id:
+            scopes.append(("file", file_id))
+
+        if artist and title:
+            work_key = f"{artist} // {title}".strip().lower()
+            scopes.append(("track", work_key))
+
+        if artist:
+            scopes.append(("artist", artist.strip().lower()))
+
+        for scope, scope_id in scopes:
+            overrides = self.get_override_rules(scope, scope_id)
+            if overrides:
+                return overrides[0]
+
+        return None
+
+    @staticmethod
+    def extract_override_targets(
+        override: dict[str, Any],
+    ) -> tuple[str | None, str | None]:
+        """Extract CRG/RR targets from a stored override row."""
+        crg_mbid = override.get("target_crg_mbid")
+        rr_mbid = override.get("target_rr_mbid")
+
+        if crg_mbid or rr_mbid:
+            return crg_mbid, rr_mbid
+
+        directive = override.get("directive")
+        if not directive:
+            return None, None
+
+        parts = [part.strip() for part in directive.split(",") if part.strip()]
+        for part in parts:
+            if part.startswith("prefer_rg="):
+                crg_mbid = part.replace("prefer_rg=", "", 1).strip() or crg_mbid
+            if part.startswith("prefer_release="):
+                rr_mbid = part.replace("prefer_release=", "", 1).strip() or rr_mbid
+
+        return crg_mbid, rr_mbid
 
 
 ## Tests
@@ -557,6 +732,50 @@ def test_decisions_db_schema(tmp_path):
     assert "decision_history" in tables
     assert "override_rule" in tables
     assert "schema_meta" in tables
+
+
+def test_override_schema_columns(tmp_path):
+    """Test override_rule columns include structured override fields."""
+    db = DecisionsDB(tmp_path / "decisions.sqlite")
+    conn = db._get_connection()
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(override_rule)")
+    columns = {row[1] for row in cursor.fetchall()}
+    conn.close()
+
+    assert "override_type" in columns
+    assert "target_crg_mbid" in columns
+    assert "target_rr_mbid" in columns
+    assert "target_label" in columns
+    assert "override_behavior" in columns
+
+
+def test_create_override_and_lookup(tmp_path):
+    """Test creating and retrieving structured overrides."""
+    db = DecisionsDB(tmp_path / "decisions.sqlite")
+
+    override_id = db.create_override(
+        scope="track",
+        scope_id="artist // title",
+        override_type="crg",
+        target_crg_mbid="rg-123",
+        target_rr_mbid="rel-456",
+        note="manual test",
+        created_by="test",
+    )
+
+    overrides = db.get_override_rules("track", "artist // title")
+    assert len(overrides) == 1
+    assert overrides[0]["override_id"] == override_id
+
+    applicable = db.get_applicable_override(
+        file_id=None, artist="artist", title="title"
+    )
+    assert applicable is not None
+
+    crg_mbid, rr_mbid = db.extract_override_targets(applicable)
+    assert crg_mbid == "rg-123"
+    assert rr_mbid == "rel-456"
 
 
 def test_file_id_generation():
