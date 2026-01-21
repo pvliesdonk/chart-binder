@@ -100,8 +100,6 @@ def _current_state() -> tuple[Config, OutputFormat]:
 def _reviewed_by() -> str:
     """Resolve reviewed_by identifier for audit logs."""
     return os.getenv("CHART_BINDER_REVIEWED_BY") or getpass.getuser() or "cli_user"
-
-
 def _collect_audio_files(paths: tuple[Path, ...]) -> list[Path]:
     """Collect audio files from paths (files or directories).
 
@@ -2076,12 +2074,23 @@ def review_list(
     """List items needing review."""
     config, output_format = _current_state()
     queue = ReviewQueue(config.llm.review_queue_path)
+<<<<<<< HEAD
     try:
         source_filter = ReviewSource(source) if source else None
     except ValueError:
         valid = ", ".join([s.value for s in ReviewSource])
         print_error(f"Invalid review source: '{source}'. Valid options are: {valid}")
         raise typer.Exit(code=ExitCode.ERROR) from None
+||||||| parent of f7a0c16 (feat(review): wire typer commands and queue review)
+    # TODO: Implement review list command
+    # This command lists entries needing human review from the review queue
+    # See cli.py:review_list for implementation (if exists)
+    print_error("review list command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
+=======
+    source_filter = ReviewSource(source) if source else None
+>>>>>>> f7a0c16 (feat(review): wire typer commands and queue review)
     items = queue.get_pending(source=source_filter, limit=limit)
 
     if output_format == OutputFormat.JSON:
@@ -2161,7 +2170,17 @@ def review_accept(
         review_id,
         action=ReviewAction.ACCEPT,
         action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
+<<<<<<< HEAD
         reviewed_by=_reviewed_by(),
+||||||| parent of f7a0c16 (feat(review): wire typer commands and queue review)
+    # TODO: Implement review accept command
+    # This command accepts a review decision and updates the database
+    print_error("review accept command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
+=======
+        reviewed_by="cli_user",
+>>>>>>> f7a0c16 (feat(review): wire typer commands and queue review)
         notes=notes,
     )
 
@@ -2188,7 +2207,17 @@ def review_reject(
     succeeded = queue.complete_review(
         review_id,
         action=ReviewAction.SKIP,
+<<<<<<< HEAD
         reviewed_by=_reviewed_by(),
+||||||| parent of f7a0c16 (feat(review): wire typer commands and queue review)
+    # TODO: Implement review reject command
+    # This command rejects/skips a review item
+    print_error("review reject command not yet implemented in Typer CLI")
+    print_error("Review system commands are lower priority - contribute if needed!")
+    raise typer.Exit(code=ExitCode.ERROR)
+=======
+        reviewed_by="cli_user",
+>>>>>>> f7a0c16 (feat(review): wire typer commands and queue review)
         notes=notes,
     )
 
