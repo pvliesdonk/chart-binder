@@ -21,6 +21,7 @@ from typing import Any
 class CRGRationale(StrEnum):
     """Rationale codes for Canonical Release Group selection."""
 
+    MANUAL_OVERRIDE = "CRG:MANUAL_OVERRIDE"
     SOUNDTRACK_PREMIERE = "CRG:SOUNDTRACK_PREMIERE"
     ALBUM_LEAD_WINDOW = "CRG:ALBUM_LEAD_WINDOW"
     ALBUM_SAME_DATE_TIEBREAKER = "CRG:ALBUM_SAME_DATE_TIEBREAKER"
@@ -37,6 +38,7 @@ class CRGRationale(StrEnum):
 class RRRationale(StrEnum):
     """Rationale codes for Representative Release selection."""
 
+    MANUAL_OVERRIDE = "RR:MANUAL_OVERRIDE"
     ORIGIN_COUNTRY_EARLIEST = "RR:ORIGIN_COUNTRY_EARLIEST"
     WORLD_EARLIEST = "RR:WORLD_EARLIEST"
     REISSUE_FILTER_APPLIED = "RR:REISSUE_FILTER_APPLIED"
