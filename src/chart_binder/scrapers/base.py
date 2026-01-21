@@ -57,13 +57,17 @@ class ScrapeResult:
         return len(self.entries)
 
     @property
+    def rank_count(self) -> int:
+        return len({rank for rank, _, _ in self.entries})
+
+    @property
     def is_valid(self) -> bool:
         """Check if scrape result passes sanity checks."""
-        if self.actual_count == 0:
+        if self.rank_count == 0:
             return False
         # Allow 10% tolerance for expected count
         min_expected = int(self.expected_count * 0.9)
-        return self.actual_count >= min_expected
+        return self.rank_count >= min_expected
 
     @property
     def continuity_valid(self) -> bool:
@@ -77,11 +81,14 @@ class ScrapeResult:
     @property
     def shortage(self) -> int:
         """How many entries short of expected (0 if at or above expected)."""
-        return max(0, self.expected_count - self.actual_count)
+        return max(0, self.expected_count - self.rank_count)
 
     def __str__(self) -> str:
         status = "✔︎" if self.is_valid else "✘"
-        base = f"{status} {self.chart_type} {self.period}: {self.actual_count}/{self.expected_count} entries"
+        base = (
+            f"{status} {self.chart_type} {self.period}: "
+            f"{self.rank_count}/{self.expected_count} ranks, {self.actual_count} entries"
+        )
         if self.continuity_overlap is not None:
             cont_status = "✔︎" if self.continuity_valid else "⚠"
             base += f" [{cont_status} {self.continuity_overlap:.0%} overlap]"
@@ -299,7 +306,7 @@ class ChartScraper(ABC):
         if not result.is_valid:
             logger.warning(
                 f"Scrape validation failed for {self.chart_db_id} {period}: "
-                f"got {result.actual_count}, expected ~{result.expected_count}"
+                f"got {result.rank_count} ranks, expected ~{result.expected_count}"
             )
 
         return result
