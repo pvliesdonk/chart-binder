@@ -40,10 +40,12 @@ from chart_binder.llm.structured_output import (
 from chart_binder.llm.tools import create_music_tools
 
 if TYPE_CHECKING:
+    from langchain_core.callbacks import BaseCallbackHandler
     from langchain_core.language_models import BaseChatModel
     from langchain_core.tools import BaseTool
 
     from chart_binder.config import LLMConfig
+    from chart_binder.llm.llm_logger import LLMLogger
     from chart_binder.llm.searxng import SearxNGSearchTool
 
 log = logging.getLogger(__name__)
@@ -136,11 +138,20 @@ class AgentAdjudicator:
         search_tool: SearchTool | None = None,
         web_search_tool: SearxNGSearchTool | None = None,
         db_path: str | None = None,
+        llm_logger: LLMLogger | None = None,
     ):
         self.config = config
         self._web_search_tool = web_search_tool
         self._model: BaseChatModel | None = None
         self._tools: list[BaseTool] | None = None
+        self._llm_logger = llm_logger
+        self._callbacks: list[BaseCallbackHandler] | None = None
+
+        # Set up logging callbacks if logger provided
+        if llm_logger is not None:
+            from chart_binder.llm.langchain_callbacks import create_logging_callbacks
+
+            self._callbacks = create_logging_callbacks(llm_logger, stage="adjudication")
 
         # Initialize SearchTool with database and MusicBrainz client if provided
         if search_tool is not None:
@@ -317,10 +328,15 @@ class AgentAdjudicator:
             system_prompt=AGENT_SYSTEM_PROMPT,
         )
 
+        # Build config with callbacks
+        run_config: dict[str, Any] = {"recursion_limit": self.MAX_AGENT_ITERATIONS}
+        if self._callbacks:
+            run_config["callbacks"] = self._callbacks
+
         # Run the agent
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_prompt)]},
-            config={"recursion_limit": self.MAX_AGENT_ITERATIONS},
+            config=run_config,
         )
 
         # Extract context from agent run
@@ -359,8 +375,13 @@ class AgentAdjudicator:
 
         context_parts = []
 
+        # Build config with callbacks
+        invoke_config: dict[str, Any] = {}
+        if self._callbacks:
+            invoke_config["callbacks"] = self._callbacks
+
         for _ in range(self.MAX_AGENT_ITERATIONS):
-            response = await model_with_tools.ainvoke(messages)
+            response = await model_with_tools.ainvoke(messages, config=invoke_config)
             messages.append(response)
 
             # Check for tool calls
