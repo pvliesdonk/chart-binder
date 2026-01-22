@@ -146,9 +146,11 @@ class AgentAdjudicator:
         if search_tool is not None:
             self._search_tool = search_tool
         elif db_path:
+            from pathlib import Path
+
             from chart_binder.musicgraph import MusicGraphDB
 
-            db = MusicGraphDB(db_path)
+            db = MusicGraphDB(Path(db_path))
             self._search_tool = SearchTool(music_graph_db=db)
             log.debug("SearchTool initialized with database: %s", db_path)
         else:
