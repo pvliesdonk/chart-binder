@@ -2145,6 +2145,16 @@ def review() -> None:
     pass
 
 
+def _resolve_review_item(queue: Any, review_id: str) -> tuple[Any | None, list[Any]]:
+    item = queue.get_item(review_id)
+    if item:
+        return item, []
+    matches = queue.find_items_by_prefix(review_id, limit=10)
+    if len(matches) == 1:
+        return matches[0], []
+    return None, matches
+
+
 @review.command("list")
 @click.option("--source", type=click.Choice(["indeterminate", "llm_review", "conflict"]))
 @click.option("--limit", default=20, help="Maximum items to show")
@@ -2197,10 +2207,18 @@ def review_show(ctx: click.Context, review_id: str) -> None:
     output_format: OutputFormat = ctx.obj["output"]
 
     queue = ReviewQueue(config.llm.review_queue_path)
-    item = queue.get_item(review_id)
+    item, matches = _resolve_review_item(queue, review_id)
 
     if not item:
-        click.echo(f"Review item not found: {review_id}", err=True)
+        if matches:
+            click.echo(
+                f"Review ID is ambiguous; matches {len(matches)} items:",
+                err=True,
+            )
+            for match in matches:
+                click.echo(f"  {match.review_id}", err=True)
+        else:
+            click.echo(f"Review item not found: {review_id}", err=True)
         sys.exit(ExitCode.NO_RESULTS)
 
     if output_format == OutputFormat.JSON:
@@ -2241,8 +2259,21 @@ def review_accept(
     output_format: OutputFormat = ctx.obj["output"]
 
     queue = ReviewQueue(config.llm.review_queue_path)
+    item, matches = _resolve_review_item(queue, review_id)
+    if not item:
+        if matches:
+            click.echo(
+                f"Review ID is ambiguous; matches {len(matches)} items:",
+                err=True,
+            )
+            for match in matches:
+                click.echo(f"  {match.review_id}", err=True)
+        else:
+            click.echo(f"Review item not found: {review_id}", err=True)
+        sys.exit(ExitCode.NO_RESULTS)
+
     success = queue.complete_review(
-        review_id,
+        item.review_id,
         action=ReviewAction.ACCEPT,
         action_data={"crg_mbid": crg_mbid, "rr_mbid": rr_mbid},
         reviewed_by="cli_user",
@@ -2273,14 +2304,25 @@ def review_accept_llm(ctx: click.Context, review_id: str, notes: str | None) -> 
     output_format: OutputFormat = ctx.obj["output"]
 
     queue = ReviewQueue(config.llm.review_queue_path)
-    item = queue.get_item(review_id)
+    item, matches = _resolve_review_item(queue, review_id)
 
-    if not item or not item.llm_suggestion:
+    if not item:
+        if matches:
+            click.echo(
+                f"Review ID is ambiguous; matches {len(matches)} items:",
+                err=True,
+            )
+            for match in matches:
+                click.echo(f"  {match.review_id}", err=True)
+        else:
+            click.echo(f"Review item not found: {review_id}", err=True)
+        sys.exit(ExitCode.NO_RESULTS)
+    if not item.llm_suggestion:
         click.echo(f"No LLM suggestion for review: {review_id}", err=True)
         sys.exit(ExitCode.ERROR)
 
     success = queue.complete_review(
-        review_id,
+        item.review_id,
         action=ReviewAction.ACCEPT_LLM,
         action_data=item.llm_suggestion,
         reviewed_by="cli_user",
@@ -2311,8 +2353,20 @@ def review_skip(ctx: click.Context, review_id: str, notes: str | None) -> None:
     output_format: OutputFormat = ctx.obj["output"]
 
     queue = ReviewQueue(config.llm.review_queue_path)
+    item, matches = _resolve_review_item(queue, review_id)
+    if not item:
+        if matches:
+            click.echo(
+                f"Review ID is ambiguous; matches {len(matches)} items:",
+                err=True,
+            )
+            for match in matches:
+                click.echo(f"  {match.review_id}", err=True)
+        else:
+            click.echo(f"Review item not found: {review_id}", err=True)
+        sys.exit(ExitCode.NO_RESULTS)
     success = queue.complete_review(
-        review_id,
+        item.review_id,
         action=ReviewAction.SKIP,
         reviewed_by="cli_user",
         notes=notes,

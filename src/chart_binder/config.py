@@ -5,6 +5,7 @@ import tomllib
 from enum import StrEnum
 from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
@@ -157,6 +158,10 @@ class Config(BaseModel):
         All values are gathered into a single dictionary first, then validated
         by Pydantic to ensure consistent type checking and coercion.
         """
+        if cls._should_load_dotenv():
+            load_dotenv(override=False)
+        cls._apply_env_aliases()
+
         config_dict: dict[str, object] = {}
 
         if config_path and config_path.exists():
@@ -164,6 +169,52 @@ class Config(BaseModel):
 
         config_dict = cls._merge_env_overrides(config_dict)
         return cls.model_validate(config_dict)
+
+    @classmethod
+    def _apply_env_aliases(cls) -> None:
+        def set_if_missing(target: str, value: str | None) -> None:
+            if value is None:
+                return
+            if os.getenv(target) is None:
+                os.environ[target] = value
+
+        aliases: dict[str, tuple[str, ...]] = {
+            "CHART_BINDER_LLM_ENABLED": ("LLM_ENABLED",),
+            "CHART_BINDER_LLM_PROVIDER": ("LLM_PROVIDER",),
+            "CHART_BINDER_LLM_MODEL_ID": ("LLM_MODEL_ID",),
+            "CHART_BINDER_LLM_TEMPERATURE": ("LLM_TEMPERATURE",),
+            "CHART_BINDER_LLM_TIMEOUT_S": ("LLM_TIMEOUT_S",),
+            "CHART_BINDER_LLM_MAX_TOKENS": ("LLM_MAX_TOKENS",),
+            "CHART_BINDER_LLM_AUTO_ACCEPT_THRESHOLD": ("LLM_AUTO_ACCEPT_THRESHOLD",),
+            "CHART_BINDER_LLM_REVIEW_THRESHOLD": ("LLM_REVIEW_THRESHOLD",),
+            "CHART_BINDER_LLM_PROMPT_TEMPLATE_VERSION": ("LLM_PROMPT_TEMPLATE_VERSION",),
+            "CHART_BINDER_LLM_REVIEW_QUEUE_PATH": ("LLM_REVIEW_QUEUE_PATH",),
+            "CHART_BINDER_LLM_OLLAMA_BASE_URL": ("OLLAMA_HOST", "OLLAMA_BASE_URL"),
+            "CHART_BINDER_LLM_OPENAI_BASE_URL": ("OPENAI_BASE_URL", "OPENAI_API_BASE"),
+            "CHART_BINDER_SEARXNG_URL": ("SEARXNG_URL", "SEARX_URL"),
+            "CHART_BINDER_SEARXNG_TIMEOUT_S": ("SEARXNG_TIMEOUT_S", "SEARX_TIMEOUT_S"),
+            "CHART_BINDER_SEARXNG_ENABLED": ("SEARXNG_ENABLED", "SEARX_ENABLED"),
+        }
+
+        for target, sources in aliases.items():
+            for source in sources:
+                if value := os.getenv(source):
+                    set_if_missing(target, value)
+                    break
+
+        if os.getenv("CHART_BINDER_LLM_API_KEY_ENV") is None:
+            for source in ("OPENAI_API_KEY", "OPEN_AI_KEY", "OPEN_AI_API_KEY"):
+                if os.getenv(source):
+                    os.environ["CHART_BINDER_LLM_API_KEY_ENV"] = source
+                    break
+
+    @classmethod
+    def _should_load_dotenv(cls) -> bool:
+        if os.getenv("PYTEST_CURRENT_TEST") is not None:
+            return False
+        if dotenv_enabled := os.getenv("CHART_BINDER_DOTENV"):
+            return dotenv_enabled.lower() in ("true", "1", "yes")
+        return True
 
     @classmethod
     def _merge_env_overrides(cls, config_dict: dict[str, object]) -> dict[str, object]:
