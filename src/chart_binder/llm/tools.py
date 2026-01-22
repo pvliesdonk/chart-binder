@@ -437,7 +437,10 @@ def web_fetch(url: str) -> str:
     try:
         import httpx
 
-        client = httpx.Client(timeout=10.0, follow_redirects=True)
+        headers = {
+            "User-Agent": "chart-binder/1.0 (music metadata tool; +https://github.com/pvliesdonk/chart-binder)"
+        }
+        client = httpx.Client(timeout=10.0, follow_redirects=True, headers=headers)
         response = client.get(url)
         response.raise_for_status()
 

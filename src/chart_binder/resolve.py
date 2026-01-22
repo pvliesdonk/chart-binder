@@ -131,7 +131,11 @@ def resolve_artist_title(
                 log.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
-        adjudicator = AgentAdjudicator(config=config.llm, web_search_tool=web_search)
+        adjudicator = AgentAdjudicator(
+            config=config.llm,
+            web_search_tool=web_search,
+            db_path=str(config.database.music_graph_path),
+        )
         auto_accept_threshold = config.llm.auto_accept_threshold
 
     # Use provided fetcher or create a new one

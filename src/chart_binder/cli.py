@@ -623,7 +623,11 @@ def decide(
                 logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
-        adjudicator = AgentAdjudicator(config=config.llm, web_search_tool=web_search)
+        adjudicator = AgentAdjudicator(
+            config=config.llm,
+            web_search_tool=web_search,
+            db_path=str(musicgraph_path),
+        )
         auto_accept_threshold = config.llm.auto_accept_threshold
         logger.info(f"LLM adjudication enabled (auto-accept threshold: {auto_accept_threshold})")
 
@@ -1917,7 +1921,11 @@ def link(
                 timeout=config.llm.searxng.timeout_s,
             )
 
-        adjudicator = AgentAdjudicator(config=config.llm, web_search_tool=web_search)
+        adjudicator = AgentAdjudicator(
+            config=config.llm,
+            web_search_tool=web_search,
+            db_path=str(config.database.music_graph_path),
+        )
         click.echo("LLM adjudication enabled for low-confidence matches", err=True)
 
     # Pass config to ChartsETL so it uses the shared resolver pipeline (7-rule algorithm)

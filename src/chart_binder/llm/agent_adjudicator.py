@@ -103,25 +103,21 @@ CRITICAL DECISION RULES (apply in order):
    - PREFER releases from the artist's origin country
    - If origin country unavailable, prefer earliest release in the CRG
 
-TOOL USAGE:
-You have access to MusicBrainz search tools. Use them to:
-- Verify release dates and types when evidence is unclear
-- Find additional releases within a release group
-- Confirm artist origin country
-- Search the web for additional context if needed
+IMPORTANT - DECISION WORKFLOW:
+1. FIRST: Analyze the evidence bundle provided - it usually contains all information needed
+2. ONLY use tools if the evidence is truly unclear or missing critical dates
+3. LIMIT tool calls to 2-3 maximum - don't get stuck searching
+4. If web_fetch fails, proceed with available information
+5. Make a decision even with incomplete data - assign lower confidence if uncertain
 
 REASONING PROCESS:
-1. Eliminate all compilations
-2. Identify earliest single/EP and earliest album dates
+1. Eliminate all compilations from candidates
+2. Identify earliest single/EP and earliest album dates from the evidence
 3. Calculate days between them - if ≤90 days, prefer album
 4. Within chosen CRG, find releases matching origin country
 5. State your confidence (0.0-1.0)
 
-When you have gathered enough information, provide your final answer with:
-- crg_mbid: The selected release group MBID
-- rr_mbid: The selected release MBID within the CRG
-- confidence: Your confidence level (0.0-1.0)
-- rationale: A concise one-line explanation"""
+STOP CONDITION: Once you can identify a CRG and RR from the evidence (even with some uncertainty), provide your final answer. Do not keep searching indefinitely."""
 
 
 class AgentAdjudicator:
@@ -131,7 +127,7 @@ class AgentAdjudicator:
     more reliable adjudication than the ReAct prompt approach.
     """
 
-    MAX_AGENT_ITERATIONS = 10
+    MAX_AGENT_ITERATIONS = 15
     MAX_VALIDATION_RETRIES = 3
 
     def __init__(
@@ -139,12 +135,25 @@ class AgentAdjudicator:
         config: LLMConfig,
         search_tool: SearchTool | None = None,
         web_search_tool: SearxNGSearchTool | None = None,
+        db_path: str | None = None,
     ):
         self.config = config
-        self._search_tool = search_tool or SearchTool()
         self._web_search_tool = web_search_tool
         self._model: BaseChatModel | None = None
         self._tools: list[BaseTool] | None = None
+
+        # Initialize SearchTool with database if provided
+        if search_tool is not None:
+            self._search_tool = search_tool
+        elif db_path:
+            from chart_binder.musicgraph import MusicGraphDB
+
+            db = MusicGraphDB(db_path)
+            self._search_tool = SearchTool(music_graph_db=db)
+            log.debug("SearchTool initialized with database: %s", db_path)
+        else:
+            self._search_tool = SearchTool()
+            log.warning("SearchTool initialized without database - searches will be limited")
 
     @property
     def model(self) -> BaseChatModel:
