@@ -391,10 +391,34 @@ def _resolve_with_fetcher(
             result.llm_confidence = adjudication_result.confidence
             result.llm_rationale = adjudication_result.rationale
 
-            if adjudication_result.outcome in (
-                AdjudicationOutcome.ACCEPTED,
-                AdjudicationOutcome.REVIEW,
+            if (
+                adjudication_result.outcome == AdjudicationOutcome.ACCEPTED
+                and adjudication_result.confidence >= auto_accept_threshold
             ):
+                result.llm_adjudicated = True
+                result.llm_confidence = adjudication_result.confidence
+                result.llm_rationale = adjudication_result.rationale
+                result.confidence = adjudication_result.confidence
+                result.state = DecisionState.DECIDED.value
+                result.crg_mbid = adjudication_result.crg_mbid
+                result.rr_mbid = adjudication_result.rr_mbid
+                result.crg_rationale = str(CRGRationale.LLM_ADJUDICATION)
+                result.rr_rationale = str(RRRationale.LLM_ADJUDICATION)
+
+                if result.crg_mbid and result.recording_mbid is None:
+                    for rec in evidence_bundle.get("recording_candidates", []):
+                        for rg in rec.get("rg_candidates", []):
+                            if rg.get("mb_rg_id") == result.crg_mbid:
+                                result.recording_mbid = rec.get("mb_recording_mbid")
+                                break
+                        if result.recording_mbid:
+                            break
+
+                log.info(
+                    f"LLM adjudicated: CRG={adjudication_result.crg_mbid}, "
+                    f"confidence={adjudication_result.confidence:.2f}"
+                )
+            elif adjudication_result.outcome == AdjudicationOutcome.REVIEW:
                 if review_queue:
                     suggestion = {
                         "crg_mbid": adjudication_result.crg_mbid,

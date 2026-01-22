@@ -281,6 +281,23 @@ class ReviewQueue:
             row = cursor.fetchone()
             return self._row_to_item(row) if row else None
 
+    def find_items_by_prefix(self, review_id_prefix: str, limit: int = 20) -> list[ReviewItem]:
+        """Find review items by ID prefix."""
+        if not review_id_prefix:
+            return []
+        with self._db_connection() as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT * FROM review_queue
+                WHERE review_id LIKE ?
+                ORDER BY created_at ASC
+                LIMIT ?
+                """,
+                (f"{review_id_prefix}%", limit),
+            )
+            return [self._row_to_item(row) for row in cursor.fetchall()]
+
     def complete_review(
         self,
         review_id: str,
@@ -453,6 +470,20 @@ def test_add_and_get_item(tmp_path):
     assert item.work_key == "artist // title"
     assert item.source == ReviewSource.INDETERMINATE
     assert item.evidence_bundle == {"artist": {"name": "Test"}}
+
+
+def test_find_items_by_prefix(tmp_path):
+    """Test finding items by review ID prefix."""
+    queue = ReviewQueue(tmp_path / "review.sqlite")
+    review_id = queue.add_item(
+        file_id="file-1",
+        work_key="key1",
+        source=ReviewSource.LLM_REVIEW,
+        evidence_bundle={},
+    )
+    prefix = review_id[:8]
+    matches = queue.find_items_by_prefix(prefix)
+    assert any(match.review_id == review_id for match in matches)
 
 
 def test_get_pending(tmp_path):
