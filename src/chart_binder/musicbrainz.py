@@ -383,6 +383,53 @@ class MusicBrainzClient:
             disambiguation=data.get("disambiguation"),
         )
 
+    async def browse_releases_by_release_group(
+        self, rg_mbid: str, limit: int = 100, offset: int = 0
+    ) -> list[MusicBrainzRelease]:
+        """Browse releases belonging to a release group.
+
+        Uses the MusicBrainz browse API: /release?release-group={mbid}
+
+        Args:
+            rg_mbid: Release group MBID
+            limit: Max results per page
+            offset: Pagination offset
+
+        Returns:
+            List of MusicBrainzRelease objects
+        """
+        params = {
+            "release-group": rg_mbid,
+            "inc": "labels",
+            "limit": str(limit),
+            "offset": str(offset),
+        }
+        data = await self._request("release", params)
+
+        results: list[MusicBrainzRelease] = []
+        for rel in data.get("releases", []):
+            # Extract label info
+            label = None
+            if "label-info" in rel and rel["label-info"]:
+                first_label = rel["label-info"][0]
+                if "label" in first_label and first_label["label"]:
+                    label = first_label["label"].get("name")
+
+            results.append(
+                MusicBrainzRelease(
+                    mbid=rel["id"],
+                    title=rel.get("title", ""),
+                    release_group_mbid=rg_mbid,
+                    date=rel.get("date"),
+                    country=rel.get("country"),
+                    label=label,
+                    barcode=rel.get("barcode"),
+                    disambiguation=rel.get("disambiguation"),
+                )
+            )
+
+        return results
+
     async def get_artist(self, mbid: str) -> MusicBrainzArtist:
         """
         Get artist by MBID.
@@ -529,9 +576,7 @@ class SyncMusicBrainzClient:
         include_releases: bool = False,
     ) -> MusicBrainzRecording:
         """Sync wrapper for get_recording."""
-        return self._run_async(
-            self._client.get_recording(mbid, include_isrcs, include_releases)
-        )
+        return self._run_async(self._client.get_recording(mbid, include_isrcs, include_releases))
 
     def get_recording_with_releases(self, mbid: str) -> dict[str, Any]:
         """Sync wrapper for get_recording_with_releases."""
@@ -545,9 +590,7 @@ class SyncMusicBrainzClient:
         self, work_mbid: str, limit: int = 100, offset: int = 0
     ) -> list[dict[str, Any]]:
         """Sync wrapper for browse_recordings_by_work."""
-        return self._run_async(
-            self._client.browse_recordings_by_work(work_mbid, limit, offset)
-        )
+        return self._run_async(self._client.browse_recordings_by_work(work_mbid, limit, offset))
 
     def browse_all_recordings_by_work(
         self, work_mbid: str, max_recordings: int = 500
@@ -565,6 +608,14 @@ class SyncMusicBrainzClient:
         """Sync wrapper for get_release."""
         return self._run_async(self._client.get_release(mbid))
 
+    def browse_releases_by_release_group(
+        self, rg_mbid: str, limit: int = 100, offset: int = 0
+    ) -> list[MusicBrainzRelease]:
+        """Sync wrapper for browse_releases_by_release_group."""
+        return self._run_async(
+            self._client.browse_releases_by_release_group(rg_mbid, limit, offset)
+        )
+
     def get_artist(self, mbid: str) -> MusicBrainzArtist:
         """Sync wrapper for get_artist."""
         return self._run_async(self._client.get_artist(mbid))
@@ -578,9 +629,7 @@ class SyncMusicBrainzClient:
         limit: int = 25,
     ) -> list[MusicBrainzRecording]:
         """Sync wrapper for search_recordings."""
-        return self._run_async(
-            self._client.search_recordings(query, isrc, artist, title, limit)
-        )
+        return self._run_async(self._client.search_recordings(query, isrc, artist, title, limit))
 
     def search_artists(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
         """Search for artists by name (sync).
