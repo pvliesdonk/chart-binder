@@ -78,48 +78,41 @@ class AdjudicationResponse(BaseModel):
     )
 
 
-# Agent system prompt - combines domain rules with tool usage instructions
-AGENT_SYSTEM_PROMPT = """You are a music metadata expert specialized in determining the canonical release for recordings.
+# Agent system prompt - expert judgment under ambiguity. The deterministic
+# rule engine already ran and could not decide, so we ask the LLM for its
+# music domain knowledge rather than re-executing the same logic.
+AGENT_SYSTEM_PROMPT = """\
+You are a music metadata expert. An automated system tried to determine the \
+canonical release for a recording but could not decide. You are being consulted \
+for your expert judgment.
 
-Your task is to analyze evidence about a recording and determine:
-1. The Canonical Release Group (CRG): The authoritative release group where this recording first appeared
-2. The Representative Release (RR): The specific release within the CRG to use for metadata
+Your task: determine which release group is the CANONICAL one (where this \
+recording first appeared as an official release) and pick a representative \
+release within it.
 
-CRITICAL DECISION RULES (apply in order):
+IMPORTANT - THINK BEFORE ACTING:
+You MUST write your analysis as text before making any tool calls.
+Look at the evidence provided — state what you observe, then decide whether \
+you need more information.
 
-1. **Compilations are never canonical** - Exclude any release group with "Secondary: Compilation"
+If the evidence already contains a clear answer, state it directly. \
+Do not search for things you already have.
 
-2. **Lead Single Window Rule (90 days)**:
-   - If the earliest single/EP is within 90 days BEFORE an album, choose the ALBUM as CRG
-   - Only if the single is >90 days before the album should you choose the single
-   - Example: Single Oct 1974, Album Nov 1 1974 = ~30 days = Choose ALBUM
+WHEN TO USE TOOLS:
+- Only when you identify a specific gap in the evidence (e.g., "I can see \
+candidate X but its type is unknown and I need to verify whether it is a \
+single or album")
+- Maximum 2 tool calls per session
+- NEVER repeat a tool call that already returned results or no_results
+- If a tool returns no_results, the ID may be from a different data source — \
+proceed with what you have
 
-3. **Soundtrack Exception**: If the recording was created specifically for a soundtrack, the soundtrack is CRG
-
-4. **Live vs Studio**: Live recordings are only CRG if no studio version exists
-
-5. **Remixes**: Link to the original single/EP release, not remix compilations
-
-6. **Representative Release Selection**:
-   - Within the chosen CRG, select the specific release (RR)
-   - PREFER releases from the artist's origin country
-   - If origin country unavailable, prefer earliest release in the CRG
-
-IMPORTANT - DECISION WORKFLOW:
-1. FIRST: Analyze the evidence bundle provided - it usually contains all information needed
-2. ONLY use tools if the evidence is truly unclear or missing critical dates
-3. LIMIT tool calls to 2-3 maximum - don't get stuck searching
-4. If web_fetch fails, proceed with available information
-5. Make a decision even with incomplete data - assign lower confidence if uncertain
-
-REASONING PROCESS:
-1. Eliminate all compilations from candidates
-2. Identify earliest single/EP and earliest album dates from the evidence
-3. Calculate days between them - if ≤90 days, prefer album
-4. Within chosen CRG, find releases matching origin country
-5. State your confidence (0.0-1.0)
-
-STOP CONDITION: Once you can identify a CRG and RR from the evidence (even with some uncertainty), provide your final answer. Do not keep searching indefinitely."""
+RESPOND WITH:
+- crg_mbid: The release group ID you select as canonical
+- rr_mbid: A specific release ID within that group (prefer artist's origin \
+country if known, otherwise the earliest available release)
+- confidence: 0.0-1.0 reflecting how certain you are
+- rationale: Brief explanation of your reasoning"""
 
 
 class AgentAdjudicator:
@@ -129,7 +122,7 @@ class AgentAdjudicator:
     more reliable adjudication than the ReAct prompt approach.
     """
 
-    MAX_AGENT_ITERATIONS = 15
+    MAX_AGENT_ITERATIONS = 5
     MAX_VALIDATION_RETRIES = 3
 
     def __init__(
@@ -173,9 +166,7 @@ class AgentAdjudicator:
             sync_mb_client = SyncMusicBrainzClient(async_mb_client)
 
             self._search_tool = SearchTool(music_graph_db=db, mb_client=sync_mb_client)
-            log.debug(
-                "SearchTool initialized with database and MusicBrainz client: %s", db_path
-            )
+            log.debug("SearchTool initialized with database and MusicBrainz client: %s", db_path)
         else:
             self._search_tool = SearchTool()
             log.warning("SearchTool initialized without database - searches will be limited")
@@ -357,7 +348,8 @@ class AgentAdjudicator:
         """Simple agent fallback using tool binding.
 
         Used when create_agent is not available. Runs a simpler
-        loop that binds tools to the model.
+        loop that binds tools to the model. Includes deduplication
+        to prevent infinite tool-calling loops.
 
         Args:
             user_prompt: The evidence-based user prompt
@@ -365,6 +357,8 @@ class AgentAdjudicator:
         Returns:
             Dict with gathered context
         """
+        from langchain_core.messages import ToolMessage
+
         # Bind tools to model
         model_with_tools = self.model.bind_tools(self.tools)
 
@@ -373,7 +367,9 @@ class AgentAdjudicator:
             HumanMessage(content=user_prompt),
         ]
 
-        context_parts = []
+        context_parts: list[str] = []
+        seen_calls: set[str] = set()
+        no_result_count = 0
 
         # Build config with callbacks
         invoke_config: dict[str, Any] = {}
@@ -384,20 +380,60 @@ class AgentAdjudicator:
             response = await model_with_tools.ainvoke(messages, config=invoke_config)
             messages.append(response)
 
+            # Capture any text content the model produces
+            if response.content:
+                context_parts.append(str(response.content))
+
             # Check for tool calls
             if hasattr(response, "tool_calls") and response.tool_calls:
-                # Execute tool calls
                 for tool_call in response.tool_calls:
                     tool_name = tool_call.get("name", "")
                     tool_args = tool_call.get("args", {})
 
-                    # Find and execute the tool
-                    result = await self._execute_tool(tool_name, tool_args)
+                    # Deduplication: skip repeated identical calls
+                    call_key = f"{tool_name}:{json.dumps(tool_args, sort_keys=True)}"
+                    if call_key in seen_calls:
+                        log.warning("Duplicate tool call, breaking loop: %s", call_key)
+                        result = json.dumps(
+                            {
+                                "result": "already_searched",
+                                "action": "This exact search was already performed. "
+                                "Use the evidence provided to make your decision.",
+                            }
+                        )
+                    else:
+                        seen_calls.add(call_key)
+                        result = await self._execute_tool(tool_name, tool_args)
+
+                    # Track no_results to detect futile loops
+                    try:
+                        parsed = json.loads(result)
+                        if parsed.get("result") in ("no_results", "already_searched"):
+                            no_result_count += 1
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                    if no_result_count >= 3:
+                        log.warning("3+ failed/duplicate tool calls, terminating agent phase")
+                        messages.append(
+                            ToolMessage(
+                                content=json.dumps(
+                                    {
+                                        "result": "agent_terminated",
+                                        "action": "Too many failed searches. "
+                                        "Make your decision from the evidence provided.",
+                                    }
+                                ),
+                                tool_call_id=tool_call.get("id", ""),
+                            )
+                        )
+                        # Get one final response without tools
+                        final = await self.model.ainvoke(messages, config=invoke_config)
+                        if final.content:
+                            context_parts.append(str(final.content))
+                        return {"context": "\n\n".join(context_parts)}
+
                     context_parts.append(f"[{tool_name}]: {result}")
-
-                    # Add tool result to conversation
-                    from langchain_core.messages import ToolMessage
-
                     messages.append(
                         ToolMessage(
                             content=result,
@@ -405,9 +441,7 @@ class AgentAdjudicator:
                         )
                     )
             else:
-                # No more tool calls - agent is done
-                if response.content:
-                    context_parts.append(str(response.content))
+                # No tool calls - agent is done
                 break
 
         return {"context": "\n\n".join(context_parts)}
@@ -718,13 +752,7 @@ class AgentAdjudicator:
                     album_date = parse_date(earliest_album)
                     gap_days = (album_date - single_date).days
 
-                    lines.append(f"\n**GAP: {gap_days} days**")
-                    if 0 < gap_days <= 90:
-                        lines.append("-> Single within 90-day lead window -> **PREFER ALBUM**")
-                    elif gap_days > 90:
-                        lines.append("-> Single >90 days before album -> Prefer single")
-                    elif gap_days < 0:
-                        lines.append("-> Album released first")
+                    lines.append(f"- Gap between single and album: {gap_days} days")
                 except Exception:
                     pass
 
@@ -741,9 +769,16 @@ class AgentAdjudicator:
 
         # Instructions
         lines.append("## Task")
-        lines.append("Determine the Canonical Release Group (CRG) and Representative Release (RR).")
-        lines.append("Use the available tools if you need additional information.")
-        lines.append("Then provide your final answer with confidence score and rationale.")
+        lines.append(
+            "The automated canonicalization system could not determine the answer. "
+            "Use your music metadata expertise to select the canonical release group "
+            "and a representative release."
+        )
+        lines.append("")
+        lines.append(
+            "Write your analysis as text first. If you need additional information "
+            "that is not in the evidence above, use a tool to fill that specific gap."
+        )
 
         return "\n".join(lines)
 

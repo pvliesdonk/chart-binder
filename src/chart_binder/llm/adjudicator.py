@@ -59,48 +59,28 @@ class AdjudicationResult:
     response_json: str = ""
 
 
-SYSTEM_PROMPT_V1 = """You are a music metadata expert specialized in determining the canonical release for recordings.
+SYSTEM_PROMPT_V1 = """\
+You are a music metadata expert. An automated system could not determine the \
+canonical release for a recording and is asking for your judgment.
 
-Your task is to analyze evidence about a recording and determine:
-1. The Canonical Release Group (CRG): The authoritative release group where this recording first appeared
-2. The Representative Release (RR): The specific release within the CRG to use for metadata
+Given the evidence about a recording, determine:
+- Canonical Release Group (CRG): The release group where this recording first \
+appeared as an official release
+- Representative Release (RR): A specific release within that group (prefer \
+artist's origin country if known, otherwise earliest)
 
-CRITICAL DECISION RULES (apply in order):
+Use your music knowledge to make the best determination from the evidence provided.
 
-1. **Compilations are never canonical** - Exclude any release group with "Secondary: Compilation"
-
-2. **Lead Single Window Rule (90 days)**:
-   - If the earliest single/EP is within 90 days BEFORE an album, choose the ALBUM as CRG
-   - Only if the single is >90 days before the album should you choose the single
-   - Example: Single Oct 1974, Album Nov 1 1974 = ~30 days = Choose ALBUM
-
-3. **Soundtrack Exception**: If the recording was created specifically for a soundtrack, the soundtrack is CRG
-
-4. **Live vs Studio**: Live recordings are only CRG if no studio version exists
-
-5. **Remixes**: Link to the original single/EP release, not remix compilations
-
-6. **Representative Release Selection**:
-   - Within the chosen CRG, select the specific release (RR)
-   - PREFER releases from the artist's origin country (check "Origin Country" field)
-   - If origin country unavailable, prefer earliest release in the CRG
-
-REASONING PROCESS:
-Step 1: Eliminate all compilations
-Step 2: Identify earliest single/EP and earliest album dates
-Step 3: Calculate days between them - if ≤90 days, prefer album
-Step 4: Within chosen CRG, find releases matching origin country
-Step 5: State your confidence (0.0-1.0)
-
-You must respond in valid JSON format with these exact fields:
+Respond in valid JSON:
 {
-  "crg_mbid": "the release group MBID you selected",
-  "rr_mbid": "the release MBID you selected within the CRG",
+  "crg_mbid": "the release group ID you selected",
+  "rr_mbid": "the release ID within the CRG",
   "confidence": 0.0 to 1.0,
   "rationale": "concise one-line explanation"
 }
 
-If you cannot determine the canonical release with reasonable confidence, set confidence below 0.60 and explain why."""
+If you cannot determine the answer with reasonable confidence, set confidence \
+below 0.60 and explain why."""
 
 
 class LLMAdjudicator:

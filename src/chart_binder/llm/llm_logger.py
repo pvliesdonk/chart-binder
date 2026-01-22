@@ -230,9 +230,7 @@ def test_llm_logger_with_tool_calls(tmp_path: Path) -> None:
         tokens_used=50,
         finish_reason="tool_calls",
         duration_seconds=2.0,
-        tool_calls=[
-            {"id": "call_1", "name": "search_artist", "arguments": {"query": "Beatles"}}
-        ],
+        tool_calls=[{"id": "call_1", "name": "search_artist", "arguments": {"query": "Beatles"}}],
     )
     logger.log(entry)
 

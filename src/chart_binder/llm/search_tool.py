@@ -465,6 +465,9 @@ class SearchTool:
     def get_release_group_releases(self, rg_mbid: str) -> SearchResponse:
         """Get all releases in a release group.
 
+        Hybrid approach: checks local DB first, falls back to MusicBrainz
+        browse API if local DB has no results for this MBID.
+
         Args:
             rg_mbid: Release group MBID
 
@@ -473,18 +476,44 @@ class SearchTool:
         """
         results: list[SearchResult] = []
 
-        if self._db is None:
-            return SearchResponse(query=rg_mbid, results=[], total_count=0)
-
-        if hasattr(self._db, "get_releases_in_group"):
+        # Try local DB first
+        if self._db and hasattr(self._db, "get_releases_in_group"):
             releases = self._db.get_releases_in_group(rg_mbid)
-            results.extend(self._release_to_result(r) for r in releases[: self._max_results])
-            return SearchResponse(
-                query=f"releases in RG {rg_mbid}",
-                results=results,
-                total_count=len(releases),
-                truncated=len(releases) > self._max_results,
-            )
+            if releases:
+                results.extend(self._release_to_result(r) for r in releases[: self._max_results])
+                return SearchResponse(
+                    query=f"releases in RG {rg_mbid}",
+                    results=results,
+                    total_count=len(releases),
+                    truncated=len(releases) > self._max_results,
+                )
+
+        # Fallback to MusicBrainz browse API
+        if self._mb_client and hasattr(self._mb_client, "browse_releases_by_release_group"):
+            try:
+                api_releases = self._mb_client.browse_releases_by_release_group(rg_mbid)
+                for rel in api_releases[: self._max_results]:
+                    results.append(
+                        SearchResult(
+                            result_type=SearchResultType.RELEASE,
+                            id=rel.mbid,
+                            title=rel.title,
+                            metadata={
+                                "date": rel.date,
+                                "country": rel.country,
+                                "label": rel.label,
+                                "barcode": rel.barcode,
+                            },
+                        )
+                    )
+                return SearchResponse(
+                    query=f"releases in RG {rg_mbid}",
+                    results=results,
+                    total_count=len(api_releases),
+                    truncated=len(api_releases) > self._max_results,
+                )
+            except Exception as e:
+                log.debug(f"MB API browse releases failed for RG {rg_mbid}: {e}")
 
         return SearchResponse(
             query=f"releases in RG {rg_mbid}",

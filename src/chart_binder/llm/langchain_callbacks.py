@@ -79,7 +79,9 @@ class LLMLoggingCallback(BaseCallbackHandler):
                 flat_messages.append(
                     {
                         "role": msg.type,
-                        "content": msg_content if isinstance(msg_content, str) else str(msg_content),
+                        "content": msg_content
+                        if isinstance(msg_content, str)
+                        else str(msg_content),
                     }
                 )
 

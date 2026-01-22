@@ -90,19 +90,19 @@ def search_artist(query: str) -> str:
             return _json_response(
                 "no_results",
                 query=query,
-                action="Try a different spelling or use web_search for more context",
+                action="Proceed with available evidence",
             )
 
         return _json_response(
             "success",
             content=response.to_context_string(),
             count=response.total_count,
-            action="Use get_artist with an MBID to get detailed info",
+            action="Use this information in your analysis",
         )
 
     except Exception as e:
         log.error("Artist search error: %s", e)
-        return _json_response("error", error=str(e), action="Try again or use web_search")
+        return _json_response("error", error=str(e), action="Proceed with available evidence")
 
 
 @tool
@@ -174,14 +174,14 @@ def search_recording(title: str, artist: str | None = None) -> str:
                 "no_results",
                 title=title,
                 artist=artist,
-                action="Try searching with different spelling or without artist filter",
+                action="Proceed with available evidence",
             )
 
         return _json_response(
             "success",
             content=response.to_context_string(),
             count=response.total_count,
-            action="Use get_recording with an MBID for details, or search_release_group to find albums",
+            action="Analyze these results and make your decision",
         )
 
     except Exception as e:
@@ -259,14 +259,14 @@ def search_release_group(title: str, artist: str | None = None) -> str:
                 "no_results",
                 title=title,
                 artist=artist,
-                action="Try different spelling or use web_search for more context",
+                action="Proceed with available evidence",
             )
 
         return _json_response(
             "success",
             content=response.to_context_string(),
             count=response.total_count,
-            action="Use get_release_group for details or get_releases_in_group to see all releases",
+            action="Analyze these results and make your decision",
         )
 
     except Exception as e:
@@ -307,7 +307,7 @@ def get_release_group(mbid: str) -> str:
         return _json_response(
             "success",
             content=response.to_context_string(),
-            action="Use get_releases_in_group to see individual releases in this group",
+            action="Use this information to make your decision",
         )
 
     except Exception as e:
@@ -350,7 +350,7 @@ def get_releases_in_group(rg_mbid: str) -> str:
             "success",
             content=response.to_context_string(),
             count=response.total_count,
-            action="Select the representative release - prefer earliest in artist's origin country",
+            action="Select the representative release and make your decision",
         )
 
     except Exception as e:
@@ -387,7 +387,7 @@ def web_search(query: str) -> str:
             return _json_response(
                 "no_results",
                 query=query,
-                action="Try different search terms",
+                action="Proceed with available evidence",
             )
 
         # Format results
@@ -406,7 +406,7 @@ def web_search(query: str) -> str:
             "success",
             content="\n".join(lines),
             count=len(response.results),
-            action="Use web_fetch to get more details from a specific URL",
+            action="Use these results in your analysis",
         )
 
     except Exception as e:
