@@ -645,7 +645,7 @@ def decide(
     adjudicator = None
     auto_accept_threshold = 0.85
     if config.llm.enabled:
-        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+        from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
         # Initialize SearxNG web search if enabled
         web_search = None
@@ -662,9 +662,9 @@ def decide(
                 logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
-        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        adjudicator = AgentAdjudicator(config=config.llm, web_search_tool=web_search)
         auto_accept_threshold = config.llm.auto_accept_threshold
-        logger.info("LLM adjudication enabled using ReAct pattern (advisory mode; review required)")
+        logger.info("LLM adjudication enabled (advisory mode; review required)")
 
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
@@ -2094,7 +2094,7 @@ def charts_link(
     # Initialize LLM adjudicator if enabled for low-confidence matches
     adjudicator = None
     if config.llm.enabled and strategy == "multi_source":
-        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+        from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
         # Initialize SearxNG web search if enabled
         web_search = None
@@ -2106,7 +2106,7 @@ def charts_link(
                 timeout=config.llm.searxng.timeout_s,
             )
 
-        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        adjudicator = AgentAdjudicator(config=config.llm, web_search_tool=web_search)
         cprint("[blue]LLM adjudication enabled for low-confidence matches[/blue]")
 
     # Pass config to ChartsETL so it uses the shared resolver pipeline (7-rule algorithm)
