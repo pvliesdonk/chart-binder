@@ -45,115 +45,8 @@ if TYPE_CHECKING:
 
     from chart_binder.config import LLMConfig
     from chart_binder.llm.searxng import SearxNGSearchTool
-    from chart_binder.musicbrainz import MusicBrainzClient
 
 log = logging.getLogger(__name__)
-
-
-class SyncMusicBrainzClient:
-    """Sync wrapper for MusicBrainzClient's async methods.
-
-    SearchTool expects sync methods, but MusicBrainzClient has async methods.
-    This wrapper runs async methods in an event loop for sync access.
-    """
-
-    def __init__(self, mb_client: MusicBrainzClient):
-        self._client = mb_client
-
-    def _run_async(self, coro: Any) -> Any:
-        """Run an async coroutine synchronously."""
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're in an async context, create a new loop in a thread
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, coro)
-                    return future.result()
-            else:
-                return loop.run_until_complete(coro)
-        except RuntimeError:
-            # No event loop exists
-            return asyncio.run(coro)
-
-    def search_recordings(
-        self,
-        query: str | None = None,
-        isrc: str | None = None,
-        artist: str | None = None,
-        title: str | None = None,
-        limit: int = 25,
-    ) -> list[Any]:
-        """Sync wrapper for search_recordings."""
-        return self._run_async(
-            self._client.search_recordings(
-                query=query, isrc=isrc, artist=artist, title=title, limit=limit
-            )
-        )
-
-    def search_artists(self, query: str, limit: int = 25) -> list[Any]:
-        """Sync wrapper for search_artists."""
-        # MusicBrainzClient doesn't have search_artists, but SearchTool expects it
-        # We'll implement a search using the generic search endpoint
-        return self._run_async(self._search_artists_async(query, limit))
-
-    async def _search_artists_async(self, query: str, limit: int) -> list[dict[str, Any]]:
-        """Search for artists by name."""
-        params = {"query": f'artist:"{query}"', "limit": str(limit), "fmt": "json"}
-        await self._client._rate_limit()
-
-        url = f"{self._client.BASE_URL}/artist"
-
-        if self._client.cache:
-            cache_key = f"{url}?{self._client._make_cache_key(params)}"
-            cached = self._client.cache.get(cache_key)
-            if cached:
-                return cached.json().get("artists", [])
-
-        response = await self._client._client.get(url, params=params)
-        response.raise_for_status()
-
-        if self._client.cache:
-            cache_key = f"{url}?{self._client._make_cache_key(params)}"
-            self._client.cache.put(cache_key, response)
-
-        return response.json().get("artists", [])
-
-    def search_release_groups(
-        self, title: str, artist: str | None = None, limit: int = 25
-    ) -> list[dict[str, Any]]:
-        """Sync wrapper for search_release_groups."""
-        return self._run_async(self._search_release_groups_async(title, artist, limit))
-
-    async def _search_release_groups_async(
-        self, title: str, artist: str | None, limit: int
-    ) -> list[dict[str, Any]]:
-        """Search for release groups by title and optional artist."""
-        query_parts = [f'releasegroup:"{title}"']
-        if artist:
-            query_parts.append(f'artist:"{artist}"')
-        query = " AND ".join(query_parts)
-
-        params = {"query": query, "limit": str(limit), "fmt": "json"}
-        await self._client._rate_limit()
-
-        url = f"{self._client.BASE_URL}/release-group"
-
-        if self._client.cache:
-            cache_key = f"{url}?{self._client._make_cache_key(params)}"
-            cached = self._client.cache.get(cache_key)
-            if cached:
-                return cached.json().get("release-groups", [])
-
-        response = await self._client._client.get(url, params=params)
-        response.raise_for_status()
-
-        if self._client.cache:
-            cache_key = f"{url}?{self._client._make_cache_key(params)}"
-            self._client.cache.put(cache_key, response)
-
-        return response.json().get("release-groups", [])
 
 
 class AdjudicationResponse(BaseModel):
@@ -256,7 +149,7 @@ class AgentAdjudicator:
             from pathlib import Path
 
             from chart_binder.http_cache import HttpCache
-            from chart_binder.musicbrainz import MusicBrainzClient
+            from chart_binder.musicbrainz import MusicBrainzClient, SyncMusicBrainzClient
             from chart_binder.musicgraph import MusicGraphDB
 
             db = MusicGraphDB(Path(db_path))

@@ -489,6 +489,177 @@ class MusicBrainzClient:
         await self.close()
 
 
+class SyncMusicBrainzClient:
+    """Sync wrapper for MusicBrainzClient's async methods.
+
+    Many parts of the codebase expect sync methods, but MusicBrainzClient
+    uses async for rate limiting and HTTP requests. This wrapper runs async
+    methods in an event loop for sync access.
+
+    Usage:
+        async_client = MusicBrainzClient(cache=cache)
+        sync_client = SyncMusicBrainzClient(async_client)
+        results = sync_client.search_recordings(title="Yesterday", artist="Beatles")
+    """
+
+    def __init__(self, client: MusicBrainzClient):
+        self._client = client
+
+    def _run_async(self, coro: Any) -> Any:
+        """Run an async coroutine synchronously."""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If we're in an async context, create a new loop in a thread
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, coro)
+                    return future.result()
+            else:
+                return loop.run_until_complete(coro)
+        except RuntimeError:
+            # No event loop exists
+            return asyncio.run(coro)
+
+    def get_recording(
+        self,
+        mbid: str,
+        include_isrcs: bool = True,
+        include_releases: bool = False,
+    ) -> MusicBrainzRecording:
+        """Sync wrapper for get_recording."""
+        return self._run_async(
+            self._client.get_recording(mbid, include_isrcs, include_releases)
+        )
+
+    def get_recording_with_releases(self, mbid: str) -> dict[str, Any]:
+        """Sync wrapper for get_recording_with_releases."""
+        return self._run_async(self._client.get_recording_with_releases(mbid))
+
+    def get_recording_with_work(self, mbid: str) -> dict[str, Any]:
+        """Sync wrapper for get_recording_with_work."""
+        return self._run_async(self._client.get_recording_with_work(mbid))
+
+    def browse_recordings_by_work(
+        self, work_mbid: str, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
+        """Sync wrapper for browse_recordings_by_work."""
+        return self._run_async(
+            self._client.browse_recordings_by_work(work_mbid, limit, offset)
+        )
+
+    def browse_all_recordings_by_work(
+        self, work_mbid: str, max_recordings: int = 500
+    ) -> list[dict[str, Any]]:
+        """Sync wrapper for browse_all_recordings_by_work."""
+        return self._run_async(
+            self._client.browse_all_recordings_by_work(work_mbid, max_recordings)
+        )
+
+    def get_release_group(self, mbid: str) -> MusicBrainzReleaseGroup:
+        """Sync wrapper for get_release_group."""
+        return self._run_async(self._client.get_release_group(mbid))
+
+    def get_release(self, mbid: str) -> MusicBrainzRelease:
+        """Sync wrapper for get_release."""
+        return self._run_async(self._client.get_release(mbid))
+
+    def get_artist(self, mbid: str) -> MusicBrainzArtist:
+        """Sync wrapper for get_artist."""
+        return self._run_async(self._client.get_artist(mbid))
+
+    def search_recordings(
+        self,
+        query: str | None = None,
+        isrc: str | None = None,
+        artist: str | None = None,
+        title: str | None = None,
+        limit: int = 25,
+    ) -> list[MusicBrainzRecording]:
+        """Sync wrapper for search_recordings."""
+        return self._run_async(
+            self._client.search_recordings(query, isrc, artist, title, limit)
+        )
+
+    def search_artists(self, query: str, limit: int = 25) -> list[dict[str, Any]]:
+        """Search for artists by name (sync).
+
+        Note: MusicBrainzClient doesn't have a dedicated search_artists method,
+        so we implement it using the generic search endpoint.
+        """
+        return self._run_async(self._search_artists_async(query, limit))
+
+    async def _search_artists_async(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Search for artists by name."""
+        params = {"query": f'artist:"{query}"', "limit": str(limit), "fmt": "json"}
+        await self._client._rate_limit()
+
+        url = f"{self._client.BASE_URL}/artist"
+
+        if self._client.cache:
+            cache_key = f"{url}?{self._client._make_cache_key(params)}"
+            cached = self._client.cache.get(cache_key)
+            if cached:
+                return cached.json().get("artists", [])
+
+        response = await self._client._client.get(url, params=params)
+        response.raise_for_status()
+
+        if self._client.cache:
+            cache_key = f"{url}?{self._client._make_cache_key(params)}"
+            self._client.cache.put(cache_key, response)
+
+        return response.json().get("artists", [])
+
+    def search_release_groups(
+        self, title: str, artist: str | None = None, limit: int = 25
+    ) -> list[dict[str, Any]]:
+        """Search for release groups by title and optional artist (sync).
+
+        Note: MusicBrainzClient doesn't have a dedicated search_release_groups method,
+        so we implement it using the generic search endpoint.
+        """
+        return self._run_async(self._search_release_groups_async(title, artist, limit))
+
+    async def _search_release_groups_async(
+        self, title: str, artist: str | None, limit: int
+    ) -> list[dict[str, Any]]:
+        """Search for release groups by title and optional artist."""
+        query_parts = [f'releasegroup:"{title}"']
+        if artist:
+            query_parts.append(f'artist:"{artist}"')
+        query = " AND ".join(query_parts)
+
+        params = {"query": query, "limit": str(limit), "fmt": "json"}
+        await self._client._rate_limit()
+
+        url = f"{self._client.BASE_URL}/release-group"
+
+        if self._client.cache:
+            cache_key = f"{url}?{self._client._make_cache_key(params)}"
+            cached = self._client.cache.get(cache_key)
+            if cached:
+                return cached.json().get("release-groups", [])
+
+        response = await self._client._client.get(url, params=params)
+        response.raise_for_status()
+
+        if self._client.cache:
+            cache_key = f"{url}?{self._client._make_cache_key(params)}"
+            self._client.cache.put(cache_key, response)
+
+        return response.json().get("release-groups", [])
+
+    def _request(self, endpoint: str, params: dict[str, str]) -> dict[str, Any]:
+        """Sync wrapper for _request (low-level API access)."""
+        return self._run_async(self._client._request(endpoint, params))
+
+    def close(self) -> None:
+        """Close the underlying async client."""
+        self._run_async(self._client.close())
+
+
 ## Tests
 
 
