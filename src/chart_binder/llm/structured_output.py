@@ -139,9 +139,7 @@ def strip_null_values(data: dict[str, Any]) -> dict[str, Any]:
             result[key] = strip_null_values(value)
         elif isinstance(value, list):
             result[key] = [
-                strip_null_values(v) if isinstance(v, dict) else v
-                for v in value
-                if v is not None
+                strip_null_values(v) if isinstance(v, dict) else v for v in value if v is not None
             ]
         else:
             result[key] = value

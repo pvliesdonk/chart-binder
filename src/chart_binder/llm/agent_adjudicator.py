@@ -199,9 +199,7 @@ class AgentAdjudicator:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        return loop.run_until_complete(
-            self._adjudicate_async(evidence_bundle, decision_trace)
-        )
+        return loop.run_until_complete(self._adjudicate_async(evidence_bundle, decision_trace))
 
     async def _adjudicate_async(
         self,
@@ -486,7 +484,11 @@ class AgentAdjudicator:
                 )
 
         # All retries exhausted - return best effort
-        log.warning("Structured output failed after %d attempts: %s", self.MAX_VALIDATION_RETRIES, last_errors)
+        log.warning(
+            "Structured output failed after %d attempts: %s",
+            self.MAX_VALIDATION_RETRIES,
+            last_errors,
+        )
         return AdjudicationResponse(
             crg_mbid=None,
             rr_mbid=None,

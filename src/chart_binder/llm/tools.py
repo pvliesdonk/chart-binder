@@ -452,12 +452,8 @@ def web_fetch(url: str) -> str:
         content = response.text
 
         # Simple HTML tag stripping
-        content = re.sub(
-            r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL | re.IGNORECASE
-        )
-        content = re.sub(
-            r"<style[^>]*>.*?</style>", "", content, flags=re.DOTALL | re.IGNORECASE
-        )
+        content = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL | re.IGNORECASE)
+        content = re.sub(r"<style[^>]*>.*?</style>", "", content, flags=re.DOTALL | re.IGNORECASE)
         content = re.sub(r"<[^>]+>", " ", content)
         content = re.sub(r"\s+", " ", content).strip()
 
