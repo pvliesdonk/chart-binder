@@ -105,7 +105,7 @@ from chart_binder.charts_db import (
     LinkMethod,
 )
 from chart_binder.charts_export import ChartsBlob, ChartScore, ChartsExporter
-from chart_binder.cli import main
+from chart_binder.cli_typer import main
 from chart_binder.config import Config
 from chart_binder.decisions_db import DecisionsDB
 from chart_binder.discogs import DiscogsClient

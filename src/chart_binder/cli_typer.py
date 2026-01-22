@@ -82,6 +82,7 @@ class AppState:
     config: Config
     output_format: OutputFormat
     verbose: int
+    log_llm: bool
 
 
 state = AppState()
@@ -292,7 +293,7 @@ def _convert_evidence_bundle(
 
 
 @app.callback()
-def main(
+def _callback(
     config_path: Annotated[
         Path | None,
         typer.Option("--config", help="Path to configuration TOML file", exists=True),
@@ -338,6 +339,10 @@ def main(
         float | None,
         typer.Option(help="LLM temperature (0.0-2.0)"),
     ] = None,
+    log: Annotated[
+        bool,
+        typer.Option("--log", help="Log LLM calls to logs/llm_calls.jsonl"),
+    ] = False,
     # SearxNG options
     searxng_url: Annotated[str | None, typer.Option(help="SearxNG instance URL")] = None,
     searxng_enabled: Annotated[
@@ -424,6 +429,7 @@ def main(
     state.config = cfg
     state.output_format = output
     state.verbose = verbose
+    state.log_llm = log
 
 
 # ====================================================================
@@ -662,10 +668,20 @@ def decide(
                 logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
+        # Initialize LLM logger if --log flag is set
+        llm_logger = None
+        if state.log_llm:
+            from chart_binder.llm.llm_logger import LLMLogger
+
+            log_dir = Path("logs")
+            llm_logger = LLMLogger(log_dir, enabled=True)
+            logger.info(f"LLM call logging enabled: {llm_logger.log_path}")
+
         adjudicator = AgentAdjudicator(
             config=config.llm,
             web_search_tool=web_search,
             db_path=str(musicgraph_path),
+            llm_logger=llm_logger,
         )
         auto_accept_threshold = config.llm.auto_accept_threshold
         logger.info("LLM adjudication enabled (advisory mode; review required)")
@@ -2110,10 +2126,20 @@ def charts_link(
                 timeout=config.llm.searxng.timeout_s,
             )
 
+        # Initialize LLM logger if --log flag is set
+        llm_logger = None
+        if state.log_llm:
+            from chart_binder.llm.llm_logger import LLMLogger
+
+            log_dir = Path("logs")
+            llm_logger = LLMLogger(log_dir, enabled=True)
+            cprint(f"[dim]LLM call logging enabled: {llm_logger.log_path}[/dim]")
+
         adjudicator = AgentAdjudicator(
             config=config.llm,
             web_search_tool=web_search,
             db_path=str(config.database.music_graph_path),
+            llm_logger=llm_logger,
         )
         cprint("[blue]LLM adjudication enabled for low-confidence matches[/blue]")
 
@@ -3133,10 +3159,10 @@ def playlist_info(
 # ====================================================================
 
 
-def cli() -> None:
+def main() -> None:
     """Entry point for the CLI."""
     app()
 
 
 if __name__ == "__main__":
-    cli()
+    main()
