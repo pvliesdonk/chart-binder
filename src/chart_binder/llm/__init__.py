@@ -1,10 +1,10 @@
 """LLM adjudication module for Chart-Binder (Epic 13).
 
 This module provides:
-- Plugin system for multiple LLM providers (Ollama, OpenAI)
-- Structured prompts for music metadata adjudication
-- Confidence-based decision making
-- Search tool for LLM context gathering
+- LangChain-based agent with native tool calling
+- Structured output with Pydantic validation
+- Provider-agnostic model factory (Ollama, OpenAI, Anthropic)
+- Search tools for MusicBrainz context gathering
 - Human review queue for low-confidence decisions
 """
 
@@ -14,6 +14,15 @@ from chart_binder.llm.adjudicator import (
     AdjudicationOutcome,
     AdjudicationResult,
     LLMAdjudicator,
+)
+from chart_binder.llm.agent_adjudicator import (
+    AdjudicationResponse,
+    AgentAdjudicator,
+)
+from chart_binder.llm.langchain_provider import (
+    LangChainProviderError,
+    create_chat_model,
+    get_default_model,
 )
 from chart_binder.llm.providers import (
     LLMProvider,
@@ -29,17 +38,34 @@ from chart_binder.llm.searxng import (
     SearxNGResult,
     SearxNGSearchTool,
 )
+from chart_binder.llm.structured_output import (
+    StructuredOutputStrategy,
+    with_structured_output,
+)
+from chart_binder.llm.tools import create_music_tools
 
 __all__ = [
-    # Providers
+    # LangChain provider factory
+    "create_chat_model",
+    "get_default_model",
+    "LangChainProviderError",
+    # Legacy providers
     "LLMProvider",
     "ProviderRegistry",
     "OllamaProvider",
     "OpenAIProvider",
-    # Adjudication
+    # Agent adjudicator
+    "AgentAdjudicator",
+    "AdjudicationResponse",
+    # Legacy adjudicator interface
     "LLMAdjudicator",
     "AdjudicationResult",
     "AdjudicationOutcome",
+    # Structured output
+    "StructuredOutputStrategy",
+    "with_structured_output",
+    # Tools
+    "create_music_tools",
     # Search tool
     "SearchTool",
     "SearchResult",

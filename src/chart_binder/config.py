@@ -85,8 +85,9 @@ class SearxNGConfig(BaseModel):
 class LLMConfig(BaseModel):
     """LLM adjudication configuration (Epic 13).
 
-    Uses ReAct (Reasoning + Acting) pattern for tool calling via prompt engineering.
-    This approach is more transparent and works consistently across LLM providers.
+    Uses LangChain agent with native tool calling and structured output.
+    Supports multiple providers (Ollama, OpenAI, Anthropic) with provider-agnostic
+    model factory and Pydantic schema validation.
     """
 
     # Enable/disable LLM adjudication

@@ -17,7 +17,11 @@ from typing import Any
 from chart_binder.acoustid import AcoustIDClient
 from chart_binder.discogs import DiscogsClient
 from chart_binder.http_cache import HttpCache
-from chart_binder.musicbrainz import MusicBrainzClient, extract_discogs_ids
+from chart_binder.musicbrainz import (
+    MusicBrainzClient,
+    SyncMusicBrainzClient,
+    extract_discogs_ids,
+)
 from chart_binder.musicgraph import MusicGraphDB
 from chart_binder.normalize import Normalizer
 from chart_binder.spotify import SpotifyClient
@@ -138,10 +142,12 @@ class UnifiedFetcher:
         }
 
         # Initialize clients
-        self.mb_client = MusicBrainzClient(
+        # Keep async client for async methods, wrap with sync for sync methods
+        self._async_mb_client = MusicBrainzClient(
             cache=self._caches["musicbrainz"],
             rate_limit_per_sec=config.musicbrainz_rate_limit,
         )
+        self.mb_client = SyncMusicBrainzClient(self._async_mb_client)
 
         # AcoustID (optional - requires API key)
         try:
@@ -1195,7 +1201,7 @@ class UnifiedFetcher:
         """Helper: async ISRC search on MusicBrainz."""
         results = []
         try:
-            mb_results = await self.mb_client.search_recordings(isrc=isrc)
+            mb_results = await self._async_mb_client.search_recordings(isrc=isrc)
             for rec in mb_results:
                 results.append(
                     {
@@ -1214,7 +1220,7 @@ class UnifiedFetcher:
         """Helper: async text search on MusicBrainz."""
         results = []
         try:
-            mb_results = await self.mb_client.search_recordings(
+            mb_results = await self._async_mb_client.search_recordings(
                 artist=artist, title=title, limit=100
             )
             for rec in mb_results:
@@ -1233,7 +1239,7 @@ class UnifiedFetcher:
 
     async def close_async(self) -> None:
         """Close all clients (async version)."""
-        await self.mb_client.close()
+        await self._async_mb_client.close()
         if self.acoustid_client:
             self.acoustid_client.close()
         self.discogs_client.close()

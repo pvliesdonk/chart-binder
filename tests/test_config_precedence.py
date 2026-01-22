@@ -5,9 +5,9 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
-from chart_binder.cli import canon
+from chart_binder.cli_typer import app
 from chart_binder.config import Config
 
 
@@ -141,7 +141,7 @@ enabled = false
 
         # Invoke CLI with arguments that should override both env and TOML
         result = runner.invoke(
-            canon,
+            app,
             [
                 "--config",
                 str(config_path),

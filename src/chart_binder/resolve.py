@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from chart_binder.config import Config
-    from chart_binder.llm.react_adjudicator import ReActAdjudicator
+    from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def resolve_artist_title(
     *,
     fingerprint: str | None = None,
     duration_sec: float | None = None,
-    adjudicator: ReActAdjudicator | None = None,
+    adjudicator: AgentAdjudicator | None = None,
     fetcher: Any | None = None,  # Optional pre-initialized UnifiedFetcher
 ) -> ResolutionResult:
     """
@@ -117,7 +117,7 @@ def resolve_artist_title(
     # Initialize LLM adjudicator if enabled and not provided
     auto_accept_threshold = 0.85
     if adjudicator is None and config.llm.enabled:
-        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+        from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
         web_search = None
         if config.llm.searxng.enabled:
@@ -131,7 +131,11 @@ def resolve_artist_title(
                 log.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
-        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        adjudicator = AgentAdjudicator(
+            config=config.llm,
+            web_search_tool=web_search,
+            db_path=str(config.database.music_graph_path),
+        )
         auto_accept_threshold = config.llm.auto_accept_threshold
 
     # Use provided fetcher or create a new one

@@ -1338,7 +1338,7 @@ class ChartsETL:
         db: ChartsDB,
         normalizer: Normalizer | None = None,
         fetcher: Any | None = None,  # UnifiedFetcher, avoid circular import
-        adjudicator: Any | None = None,  # ReActAdjudicator, avoid circular import
+        adjudicator: Any | None = None,  # AgentAdjudicator, avoid circular import
         config: Any | None = None,  # Config, avoid circular import
     ):
         self.db = db

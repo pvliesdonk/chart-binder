@@ -82,6 +82,7 @@ class AppState:
     config: Config
     output_format: OutputFormat
     verbose: int
+    log_llm: bool
 
 
 state = AppState()
@@ -292,7 +293,7 @@ def _convert_evidence_bundle(
 
 
 @app.callback()
-def main(
+def _callback(
     config_path: Annotated[
         Path | None,
         typer.Option("--config", help="Path to configuration TOML file", exists=True),
@@ -338,6 +339,10 @@ def main(
         float | None,
         typer.Option(help="LLM temperature (0.0-2.0)"),
     ] = None,
+    log: Annotated[
+        bool,
+        typer.Option("--log", help="Log LLM calls to logs/llm_calls.jsonl"),
+    ] = False,
     # SearxNG options
     searxng_url: Annotated[str | None, typer.Option(help="SearxNG instance URL")] = None,
     searxng_enabled: Annotated[
@@ -424,6 +429,7 @@ def main(
     state.config = cfg
     state.output_format = output
     state.verbose = verbose
+    state.log_llm = log
 
 
 # ====================================================================
@@ -645,7 +651,7 @@ def decide(
     adjudicator = None
     auto_accept_threshold = 0.85
     if config.llm.enabled:
-        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+        from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
         # Initialize SearxNG web search if enabled
         web_search = None
@@ -662,9 +668,23 @@ def decide(
                 logger.warning(f"SearxNG configured but unavailable at {config.llm.searxng.url}")
                 web_search = None
 
-        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        # Initialize LLM logger if --log flag is set
+        llm_logger = None
+        if state.log_llm:
+            from chart_binder.llm.llm_logger import LLMLogger
+
+            log_dir = Path("logs")
+            llm_logger = LLMLogger(log_dir, enabled=True)
+            logger.info(f"LLM call logging enabled: {llm_logger.log_path}")
+
+        adjudicator = AgentAdjudicator(
+            config=config.llm,
+            web_search_tool=web_search,
+            db_path=str(musicgraph_path),
+            llm_logger=llm_logger,
+        )
         auto_accept_threshold = config.llm.auto_accept_threshold
-        logger.info("LLM adjudication enabled using ReAct pattern (advisory mode; review required)")
+        logger.info("LLM adjudication enabled (advisory mode; review required)")
 
     audio_files = _collect_audio_files(paths)
     logger.debug(f"Collected {len(audio_files)} audio files")
@@ -2094,7 +2114,7 @@ def charts_link(
     # Initialize LLM adjudicator if enabled for low-confidence matches
     adjudicator = None
     if config.llm.enabled and strategy == "multi_source":
-        from chart_binder.llm.react_adjudicator import ReActAdjudicator
+        from chart_binder.llm.agent_adjudicator import AgentAdjudicator
 
         # Initialize SearxNG web search if enabled
         web_search = None
@@ -2106,7 +2126,21 @@ def charts_link(
                 timeout=config.llm.searxng.timeout_s,
             )
 
-        adjudicator = ReActAdjudicator(config=config.llm, search_tool=web_search)
+        # Initialize LLM logger if --log flag is set
+        llm_logger = None
+        if state.log_llm:
+            from chart_binder.llm.llm_logger import LLMLogger
+
+            log_dir = Path("logs")
+            llm_logger = LLMLogger(log_dir, enabled=True)
+            cprint(f"[dim]LLM call logging enabled: {llm_logger.log_path}[/dim]")
+
+        adjudicator = AgentAdjudicator(
+            config=config.llm,
+            web_search_tool=web_search,
+            db_path=str(config.database.music_graph_path),
+            llm_logger=llm_logger,
+        )
         cprint("[blue]LLM adjudication enabled for low-confidence matches[/blue]")
 
     # Pass config to ChartsETL so it uses the shared resolver pipeline (7-rule algorithm)
@@ -3125,10 +3159,10 @@ def playlist_info(
 # ====================================================================
 
 
-def cli() -> None:
+def main() -> None:
     """Entry point for the CLI."""
     app()
 
 
 if __name__ == "__main__":
-    cli()
+    main()

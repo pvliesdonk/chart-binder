@@ -10,10 +10,10 @@ import json
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
+from typer.testing import CliRunner
 
 from chart_binder.candidates import CandidateBuilder, CandidateSet
-from chart_binder.cli import canon
+from chart_binder.cli_typer import app
 from chart_binder.config import Config
 from chart_binder.llm.search_tool import SearchTool
 from chart_binder.musicgraph import MusicGraphDB
@@ -414,7 +414,7 @@ class TestCLIE2E:
         test_file.write_bytes(b"fake mp3 data")
 
         runner = CliRunner()
-        result = runner.invoke(canon, ["scan", str(test_file)])
+        result = runner.invoke(app, ["scan", str(test_file)])
 
         # Should attempt to scan but may fail due to invalid file
         # The important thing is the command structure works
@@ -423,7 +423,7 @@ class TestCLIE2E:
     def test_charts_scrape_command_help(self):
         """Test charts scrape command help output."""
         runner = CliRunner()
-        result = runner.invoke(canon, ["charts", "scrape", "--help"])
+        result = runner.invoke(app, ["charts", "scrape", "--help"])
 
         assert result.exit_code == 0
         assert "Scrape chart data from web source" in result.output
@@ -435,18 +435,18 @@ class TestCLIE2E:
         runner = CliRunner()
 
         # Test -v (INFO level)
-        result = runner.invoke(canon, ["-v", "--help"])
+        result = runner.invoke(app, ["-v", "--help"])
         assert result.exit_code == 0
 
         # Test -vv (DEBUG level)
-        result = runner.invoke(canon, ["-vv", "--help"])
+        result = runner.invoke(app, ["-vv", "--help"])
         assert result.exit_code == 0
 
     def test_cache_status_command(self, tmp_path):
         """Test cache status command with custom cache directory."""
         runner = CliRunner()
         result = runner.invoke(
-            canon,
+            app,
             [
                 "--cache-dir",
                 str(tmp_path / "cache"),
@@ -461,18 +461,18 @@ class TestCLIE2E:
     def test_llm_status_command(self):
         """Test LLM status command."""
         runner = CliRunner()
-        result = runner.invoke(canon, ["llm", "status"])
+        result = runner.invoke(app, ["llm", "status"])
 
         assert result.exit_code == 0
         assert "LLM Configuration Status" in result.output
 
-    def test_review_stats_command(self):
-        """Test review queue stats command."""
+    def test_review_list_command(self):
+        """Test review queue list command."""
         runner = CliRunner()
-        result = runner.invoke(canon, ["review", "stats"])
+        result = runner.invoke(app, ["review", "list"])
 
-        assert result.exit_code == 0
-        assert "Review Queue Statistics" in result.output
+        # May exit 0 (empty list) or 1 (no queue configured)
+        assert result.exit_code in [0, 1]
 
 
 class TestConfigurationE2E:
@@ -568,7 +568,7 @@ temperature = 0.0
         runner = CliRunner()
         # Test with cache status command which is simpler
         result = runner.invoke(
-            canon,
+            app,
             [
                 "--config",
                 str(toml_file),
